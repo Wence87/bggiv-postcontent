@@ -1,0 +1,77 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Product {
+  SPONSORSHIP
+  ADS
+  NEWS
+  PROMO
+  GIVEAWAY
+}
+
+enum BookingStatus {
+  DRAFT_RESERVED
+  SUBMITTED
+  CANCELLED
+  PUBLISHED
+}
+
+enum SubmissionDraftStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  CANCELLED
+}
+
+model Booking {
+  id            String   @id @default(cuid())
+  product       Product
+  groupId       String?
+  startsAtUtc   DateTime?
+  endsAtUtc     DateTime?
+  monthKey      String?
+  weekKey       String?
+  status        BookingStatus @default(SUBMITTED)
+  reservedByOrderId String?
+  expiresAt     DateTime?
+  companyName   String
+  customerEmail String
+  orderRef      String
+  internalNote  String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  submissionDrafts SubmissionDraft[]
+
+  @@unique([monthKey])
+  @@index([groupId])
+  @@index([weekKey])
+  @@index([startsAtUtc])
+  @@index([status, expiresAt])
+  @@index([reservedByOrderId])
+}
+
+model SubmissionDraft {
+  id            String @id @default(cuid())
+  orderId       String @unique
+  orderKey      String
+  email         String
+  product       Product
+  durationWeeks Int?
+  status        SubmissionDraftStatus @default(DRAFT)
+  title         String?
+  body          String?
+  bookingId     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  booking       Booking? @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([product])
+}

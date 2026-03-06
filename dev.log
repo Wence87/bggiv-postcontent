@@ -1,0 +1,72 @@
+
+> bggiveaways-app-availability-management@0.1.0 dev
+> next dev
+
+   ▲ Next.js 15.5.12
+   - Local:        http://localhost:3000
+   - Network:      http://192.168.1.235:3000
+   - Environments: .env
+
+ ✓ Starting...
+ ✓ Ready in 1170ms
+ ○ Compiling /_not-found ...
+ ✓ Compiled /_not-found in 1192ms (545 modules)
+ GET /apple-touch-icon-precomposed.png 404 in 1391ms
+ GET /apple-touch-icon.png 404 in 1383ms
+ ✓ Compiled in 44ms (234 modules)
+ ○ Compiling /admin ...
+ ✓ Compiled /admin in 1503ms (2611 modules)
+ GET /admin 200 in 1691ms
+ ✓ Compiled /api/public/availability in 261ms (2633 modules)
+ GET /api/public/availability?product=news&from=2026-02-13T11%3A30%3A28.445Z&to=2026-05-13T11%3A30%3A28.445Z 200 in 1250ms
+ GET /api/public/availability?product=ads&from=2026-02-13T11%3A30%3A28.445Z&to=2026-08-13T11%3A30%3A28.445Z 200 in 1493ms
+ GET /api/public/availability?product=sponsorship&from=2026-02-13T11%3A30%3A28.445Z&to=2027-02-13T11%3A30%3A28.445Z 200 in 1496ms
+ ✓ Compiled /api/admin/bookings in 311ms (2636 modules)
+ GET /api/public/availability?product=news&from=2026-02-13T11%3A30%3A48.926Z&to=2026-05-13T11%3A30%3A48.926Z 200 in 555ms
+ GET /api/public/availability?product=sponsorship&from=2026-02-13T11%3A30%3A48.926Z&to=2027-02-13T11%3A30%3A48.926Z 200 in 567ms
+ GET /api/public/availability?product=ads&from=2026-02-13T11%3A30%3A48.926Z&to=2026-08-13T11%3A30%3A48.926Z 200 in 561ms
+Error [PrismaClientKnownRequestError]: 
+Invalid `prisma.booking.findMany()` invocation:
+
+
+The column `Booking.groupId` does not exist in the current database.
+    at async GET (src/app/api/admin/bookings/route.ts:247:20)
+  245 |   const toMonthKey = getMonthKeyFromDate(to, BUSINESS_TZ);
+  246 |
+> 247 |   const bookings = await prisma.booking.findMany({
+      |                    ^
+  248 |     where: {
+  249 |       OR: [
+  250 |         { {
+  code: 'P2022',
+  meta: [Object],
+  clientVersion: '6.19.2'
+}
+ GET /api/admin/bookings?from=2026-02-13T11%3A30%3A48.926Z&to=2027-02-13T11%3A30%3A48.926Z 500 in 851ms
+ GET /api/admin/bookings 401 in 15ms
+ GET /api/admin/bookings 401 in 12ms
+ GET /api/admin/bookings 401 in 23ms
+ GET /api/admin/bookings?from=2026-02-13T11%3A32%3A27.641Z&to=2027-02-13T11%3A32%3A27.641Z 401 in 29ms
+ GET /api/public/availability?product=sponsorship&from=2026-02-13T11%3A32%3A27.641Z&to=2027-02-13T11%3A32%3A27.641Z 200 in 205ms
+ GET /api/public/availability?product=news&from=2026-02-13T11%3A32%3A27.641Z&to=2026-05-13T11%3A32%3A27.641Z 200 in 206ms
+ GET /api/public/availability?product=ads&from=2026-02-13T11%3A32%3A27.641Z&to=2026-08-13T11%3A32%3A27.641Z 200 in 216ms
+ GET /api/admin/bookings?from=2026-02-13T11%3A34%3A07.027Z&to=2027-02-13T11%3A34%3A07.027Z 401 in 26ms
+ GET /api/public/availability?product=news&from=2026-02-13T11%3A34%3A07.027Z&to=2026-05-13T11%3A34%3A07.027Z 200 in 203ms
+ GET /api/public/availability?product=sponsorship&from=2026-02-13T11%3A34%3A07.027Z&to=2027-02-13T11%3A34%3A07.027Z 200 in 210ms
+ GET /api/public/availability?product=ads&from=2026-02-13T11%3A34%3A07.027Z&to=2026-08-13T11%3A34%3A07.027Z 200 in 209ms
+ GET /admin 200 in 186ms
+ GET /api/public/availability?product=news&from=2026-02-13T11%3A34%3A10.076Z&to=2026-05-13T11%3A34%3A10.076Z 200 in 177ms
+ GET /api/public/availability?product=sponsorship&from=2026-02-13T11%3A34%3A10.076Z&to=2027-02-13T11%3A34%3A10.076Z 200 in 181ms
+ GET /api/public/availability?product=ads&from=2026-02-13T11%3A34%3A10.076Z&to=2026-08-13T11%3A34%3A10.076Z 200 in 183ms
+ GET /api/admin/bookings?from=2026-02-13T11%3A34%3A10.080Z&to=2027-02-13T11%3A34%3A10.080Z 401 in 15ms
+ GET /api/public/availability?product=sponsorship&from=2026-02-13T11%3A34%3A10.080Z&to=2027-02-13T11%3A34%3A10.080Z 200 in 231ms
+ GET /api/public/availability?product=news&from=2026-02-13T11%3A34%3A10.080Z&to=2026-05-13T11%3A34%3A10.080Z 200 in 444ms
+ GET /api/public/availability?product=ads&from=2026-02-13T11%3A34%3A10.080Z&to=2026-08-13T11%3A34%3A10.080Z 200 in 449ms
+ GET /admin 200 in 67ms
+ GET /api/public/availability?product=sponsorship&from=2026-02-13T11%3A34%3A19.292Z&to=2027-02-13T11%3A34%3A19.292Z 200 in 173ms
+ GET /api/public/availability?product=ads&from=2026-02-13T11%3A34%3A19.292Z&to=2026-08-13T11%3A34%3A19.292Z 200 in 177ms
+ GET /api/public/availability?product=news&from=2026-02-13T11%3A34%3A19.292Z&to=2026-05-13T11%3A34%3A19.292Z 200 in 180ms
+ GET /api/public/availability?product=ads&from=2026-02-13T11%3A34%3A19.288Z&to=2026-08-13T11%3A34%3A19.288Z 200 in 188ms
+ GET /api/public/availability?product=news&from=2026-02-13T11%3A34%3A19.288Z&to=2026-05-13T11%3A34%3A19.288Z 200 in 190ms
+ GET /api/public/availability?product=sponsorship&from=2026-02-13T11%3A34%3A19.288Z&to=2027-02-13T11%3A34%3A19.288Z 200 in 192ms
+ GET /api/admin/bookings?from=2026-02-13T11%3A34%3A19.292Z&to=2027-02-13T11%3A34%3A19.292Z 401 in 13ms
