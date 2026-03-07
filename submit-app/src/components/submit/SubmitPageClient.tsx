@@ -22,6 +22,21 @@ type ProductFormField = {
   max_length?: number;
 };
 
+const DEFAULT_POSTS_FORM_FIELDS: ProductFormField[] = [
+  { key: "company_name", label: "Company name", type: "text", required: true, readonly: true },
+  { key: "contact_email", label: "Contact email", type: "email", required: true, readonly: true },
+  {
+    key: "cover_image_upload",
+    label: "Cover image",
+    type: "file",
+    required: true,
+    accept: ".jpg,.jpeg,image/jpeg",
+  },
+  { key: "title", label: "Title", type: "text", required: true, max_length: 150 },
+  { key: "body", label: "Body", type: "textarea", required: true, max_length: 1000 },
+  { key: "notes", label: "Notes", type: "textarea", required: false },
+];
+
 type OrderContextResponse = {
   product: {
     product_type: "sponsorship" | "ads" | "news" | "promo" | "giveaway";
@@ -318,11 +333,17 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
   }
 
   const currentContext = context;
-  const formFields = currentContext.product.form_fields ?? [];
   const isPostsProduct =
     currentContext.product.product_type === "news" ||
     currentContext.product.product_type === "promo" ||
     currentContext.product.product_type === "giveaway";
+  const contextFormFields = currentContext.product.form_fields ?? [];
+  const formFields =
+    contextFormFields.length > 0
+      ? contextFormFields
+      : isPostsProduct
+        ? DEFAULT_POSTS_FORM_FIELDS
+        : [];
   const postBodyMaxLength = isPostsProduct ? parsePostBodyMaxLength(currentContext) : null;
 
   function setFieldValue(key: string, value: string) {
@@ -816,6 +837,7 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
               selectedHour={selectedPostHour}
               onSelectHour={setSelectedPostHour}
               onlyAvailableSelection
+              reservedStartsAtUtc={reservationChoice.startsAtUtc ?? null}
             />
             {reservationLegend}
           </div>
