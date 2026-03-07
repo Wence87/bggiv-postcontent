@@ -8,7 +8,7 @@ export default function SubmitSuccessPage() {
       <header className="mb-8">
         <BrandHeader
           title="Submission Received"
-          subtitle="Your advertising submission has been saved successfully."
+          subtitle="Your submission has been saved successfully."
         />
       </header>
 
@@ -17,8 +17,8 @@ export default function SubmitSuccessPage() {
           Our team will review your submission and process it in WordPress.
         </p>
         <div className="mt-4">
-          <Link href="/public-calendar">
-            <Button variant="outline">Back to Public Calendar</Button>
+          <Link href="https://boardgamegiveaways.com">
+            <Button variant="outline">Back to Home</Button>
           </Link>
         </div>
       </section>
