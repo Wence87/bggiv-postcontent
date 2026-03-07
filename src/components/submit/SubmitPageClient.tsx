@@ -1,333 +1,194 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { PostsCalendar } from "@/components/public/PostsCalendar";
-import { StatusTile } from "@/components/public/StatusTile";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { resolveTimeZoneDateTimeToUtc } from "@/lib/timezone";
 
-type ProductType = "sponsorship" | "ads" | "news" | "promo" | "giveaway";
-type AvailabilityStatus = "available" | "taken" | "locked";
-
-type DraftResponse = {
-  draft: {
-    orderId: string;
-    email: string;
-    productType: ProductType;
-    durationWeeks: number | null;
-    status: "DRAFT" | "SUBMITTED" | "APPROVED" | "CANCELLED";
-    title: string | null;
-    body: string | null;
-    booking: {
-      id: string;
-      status: "DRAFT_RESERVED" | "SUBMITTED" | "CANCELLED" | "PUBLISHED";
-      monthKey: string | null;
-      weekKey: string | null;
-      startsAtUtc: string | null;
-      expiresAt: string | null;
-    } | null;
+type OrderContextResponse = {
+  product: {
+    product_type: string;
+    form_id: string;
+    product_key: string;
+    base_fields: string[];
   };
+  options: Array<{
+    option_key: string;
+    business_type: string;
+    enabled: boolean;
+  }>;
+  enabled_options: string[];
+  derived_values: Record<string, unknown>;
+  activated_blocks: Array<{
+    name: string;
+    fields: string;
+    validation: string;
+  }>;
+  config_version: number | null;
 };
 
-type SponsorshipResponse = {
-  months: { monthKey: string; status: AvailabilityStatus }[];
-};
-
-type AdsResponse = {
-  weeks: { weekKey: string; status: AvailabilityStatus; remainingSlots: number; totalSlots: number }[];
-};
-
-type PostsResponse = {
-  days: Record<string, { dayStatus: AvailabilityStatus; hours: Record<number, AvailabilityStatus> }>;
-};
-
-function toPostsProduct(product: ProductType): "NEWS" | "PROMO_DEAL" | "GIVEAWAY" {
-  if (product === "promo") return "PROMO_DEAL";
-  if (product === "giveaway") return "GIVEAWAY";
-  return "NEWS";
-}
-
-function localDatetime(value: string): string {
-  return new Intl.DateTimeFormat("en-GB", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "Europe/Brussels",
-  }).format(new Date(value));
-}
+type DiagnosticState = {
+  endpoint: string;
+  status: number;
+  responseBody: unknown;
+} | null;
 
 type SubmitPageClientProps = {
   token: string;
+  diag?: boolean;
 };
 
-export function SubmitPageClient({ token }: SubmitPageClientProps) {
+const WP_BASE_URL = (process.env.NEXT_PUBLIC_WP_BASE_URL || "https://boardgamegiveaways.com").replace(/\/$/, "");
+
+export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [draft, setDraft] = useState<DraftResponse["draft"] | null>(null);
+  const [context, setContext] = useState<OrderContextResponse | null>(null);
+  const [diagnostic, setDiagnostic] = useState<DiagnosticState>(null);
 
-  const [months, setMonths] = useState<SponsorshipResponse["months"]>([]);
-  const [weeks, setWeeks] = useState<AdsResponse["weeks"]>([]);
-  const [postDays, setPostDays] = useState<PostsResponse["days"]>({});
-
-  const [selectedMonthKey, setSelectedMonthKey] = useState<string | null>(null);
-  const [selectedWeekKey, setSelectedWeekKey] = useState<string | null>(null);
-  const [selectedPostDayKey, setSelectedPostDayKey] = useState<string | null>(null);
-  const [selectedPostHour, setSelectedPostHour] = useState<number | null>(null);
-
-  const [title, setTitle] = useState("");
-  const [body, setBody] = useState("");
-  const [reserving, setReserving] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-
-  const loadDraft = async () => {
-    const response = await fetch(`/api/submit/bootstrap?token=${encodeURIComponent(token)}`);
-    const data = (await response.json()) as DraftResponse | { code?: string; message?: string };
-    if (!response.ok || !("draft" in data)) {
-      throw new Error("message" in data && data.message ? data.message : "Token verification failed");
-    }
-    setDraft(data.draft);
-    setTitle(data.draft.title ?? "");
-    setBody(data.draft.body ?? "");
-    return data.draft;
-  };
-
-  const loadAvailability = async (productType: ProductType) => {
-    if (productType === "sponsorship") {
-      const response = await fetch("/api/public/availability/sponsorship");
-      const data = (await response.json()) as SponsorshipResponse;
-      setMonths(data.months ?? []);
-      return;
-    }
-
-    if (productType === "ads") {
-      const response = await fetch("/api/public/availability/ads");
-      const data = (await response.json()) as AdsResponse;
-      setWeeks(data.weeks ?? []);
-      return;
-    }
-
-    const response = await fetch(`/api/public/availability/posts?product=${productType.toUpperCase()}`);
-    const data = (await response.json()) as PostsResponse;
-    setPostDays(data.days ?? {});
-  };
-
-  const refresh = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const nextDraft = await loadDraft();
-      await loadAvailability(nextDraft.productType);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load submission");
-    } finally {
-      setLoading(false);
-    }
-  };
+  const contextEndpoint = useMemo(
+    () => `${WP_BASE_URL}/wp-json/bgg/v1/order-context?token=${encodeURIComponent(token)}`,
+    [token]
+  );
 
   useEffect(() => {
-    void refresh();
-  }, [token]);
+    let cancelled = false;
 
-  useEffect(() => {
-    if (!months.length) return;
-    if (selectedMonthKey && months.some((month) => month.monthKey === selectedMonthKey)) return;
-    const firstAvailable = months.find((month) => month.status === "available");
-    setSelectedMonthKey(firstAvailable?.monthKey ?? months[0].monthKey);
-  }, [months, selectedMonthKey]);
+    async function loadContext() {
+      setLoading(true);
+      setError(null);
 
-  useEffect(() => {
-    if (!weeks.length) return;
-    if (selectedWeekKey && weeks.some((week) => week.weekKey === selectedWeekKey)) return;
-    const firstAvailable = weeks.find((week) => week.status === "available");
-    setSelectedWeekKey(firstAvailable?.weekKey ?? weeks[0].weekKey);
-  }, [weeks, selectedWeekKey]);
+      try {
+        const response = await fetch(contextEndpoint, {
+          method: "GET",
+          headers: {
+            Accept: "application/json",
+          },
+        });
 
-  const selectedPostStatus = useMemo(() => {
-    if (!selectedPostDayKey || selectedPostHour == null) return null;
-    return postDays[selectedPostDayKey]?.hours?.[selectedPostHour] ?? null;
-  }, [postDays, selectedPostDayKey, selectedPostHour]);
-
-  const selectedMonth = months.find((month) => month.monthKey === selectedMonthKey) ?? null;
-  const selectedWeek = weeks.find((week) => week.weekKey === selectedWeekKey) ?? null;
-
-  const canReserve = useMemo(() => {
-    if (!draft) return false;
-    if (draft.status === "SUBMITTED" || draft.booking?.status === "SUBMITTED") return false;
-
-    if (draft.productType === "sponsorship") return selectedMonth?.status === "available";
-    if (draft.productType === "ads") return selectedWeek?.status === "available";
-    return selectedPostStatus === "available";
-  }, [draft, selectedMonth, selectedPostStatus, selectedWeek]);
-
-  const reserveSlot = async () => {
-    if (!draft || !canReserve) return;
-    setReserving(true);
-    setError(null);
-
-    try {
-      const payload: Record<string, unknown> = { token };
-      if (draft.productType === "sponsorship") payload.monthKey = selectedMonthKey;
-      if (draft.productType === "ads") payload.weekKey = selectedWeekKey;
-      if (draft.productType === "news" || draft.productType === "promo" || draft.productType === "giveaway") {
-        if (!selectedPostDayKey || selectedPostHour == null) {
-          throw new Error("Select an available day and hour");
+        const responseText = await response.text();
+        let parsed: unknown = null;
+        try {
+          parsed = responseText ? JSON.parse(responseText) : null;
+        } catch {
+          parsed = { raw: responseText.slice(0, 1000) };
         }
-        const [year, month, day] = selectedPostDayKey.split("-").map((v) => Number(v));
-        const startsAtUtc = resolveTimeZoneDateTimeToUtc(year, month, day, selectedPostHour, 0, "Europe/Brussels");
-        payload.startsAtUtc = startsAtUtc.toISOString();
-      }
 
-      const response = await fetch("/api/submit/reserve", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const data = (await response.json()) as { code?: string };
-      if (!response.ok) {
-        throw new Error(data.code ?? "Reservation failed");
-      }
+        if (!response.ok) {
+          if (!cancelled) {
+            setDiagnostic({
+              endpoint: contextEndpoint,
+              status: response.status,
+              responseBody: parsed,
+            });
+            setError("Invalid or expired token");
+          }
+          return;
+        }
 
-      await refresh();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Reservation failed");
-    } finally {
-      setReserving(false);
+        if (!parsed || typeof parsed !== "object" || !("product" in parsed)) {
+          if (!cancelled) {
+            setDiagnostic({
+              endpoint: contextEndpoint,
+              status: response.status,
+              responseBody: parsed,
+            });
+            setError("Invalid order context payload");
+          }
+          return;
+        }
+
+        if (!cancelled) {
+          setContext(parsed as OrderContextResponse);
+          setDiagnostic({
+            endpoint: contextEndpoint,
+            status: response.status,
+            responseBody: diag ? parsed : { ok: true },
+          });
+        }
+      } catch (fetchError) {
+        if (!cancelled) {
+          setDiagnostic({
+            endpoint: contextEndpoint,
+            status: 0,
+            responseBody: {
+              error: fetchError instanceof Error ? fetchError.message : "Network error",
+            },
+          });
+          setError("Unable to load order context");
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
     }
-  };
 
-  const submitContent = async () => {
-    setSubmitting(true);
-    setError(null);
+    void loadContext();
 
-    try {
-      const response = await fetch("/api/submit/finalize", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, title, body }),
-      });
-      const data = (await response.json()) as { code?: string };
-      if (!response.ok) {
-        throw new Error(data.code ?? "Submission failed");
-      }
-      await refresh();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Submission failed");
-    } finally {
-      setSubmitting(false);
-    }
-  };
+    return () => {
+      cancelled = true;
+    };
+  }, [contextEndpoint, diag]);
 
   if (loading) {
-    return <div className="rounded-md border bg-white p-4 text-sm text-muted-foreground">Loading submission...</div>;
+    return <div className="rounded-md border bg-white p-4 text-sm text-muted-foreground">Loading submission context...</div>;
   }
 
-  if (error || !draft) {
-    return <div className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error ?? "Invalid submission link"}</div>;
+  if (error || !context) {
+    return (
+      <div className="space-y-4">
+        <div className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          {error ?? "Invalid submission link"}
+        </div>
+
+        {diag && diagnostic ? (
+          <pre className="overflow-auto rounded-md border bg-slate-950 p-4 text-xs text-slate-100">
+            {JSON.stringify(diagnostic, null, 2)}
+          </pre>
+        ) : null}
+      </div>
+    );
   }
 
   return (
     <div className="space-y-6">
       <section className="rounded-md border bg-white p-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold">Order {draft.orderId}</h2>
-          <Badge variant="secondary">{draft.productType.toUpperCase()}</Badge>
+          <h2 className="text-base font-semibold">Submission Context</h2>
+          <Badge variant="secondary">{context.product.product_type.toUpperCase()}</Badge>
         </div>
-        <p className="mt-1 text-sm text-muted-foreground">{draft.email}</p>
-        {draft.durationWeeks ? (
-          <p className="mt-1 text-sm text-muted-foreground">Duration: {draft.durationWeeks} week(s)</p>
-        ) : null}
+        <p className="mt-2 text-sm text-muted-foreground">Form: {context.product.form_id}</p>
+        <p className="text-sm text-muted-foreground">Product key: {context.product.product_key}</p>
       </section>
 
       <section className="rounded-md border bg-white p-4">
-        <h3 className="text-base font-semibold">1. Select and reserve a slot</h3>
-
-        {draft.productType === "sponsorship" ? (
-          <div className="mt-3 grid gap-2 sm:grid-cols-2">
-            {months.map((month) => (
-              <StatusTile
-                key={month.monthKey}
-                status={month.status}
-                selected={month.monthKey === selectedMonthKey}
-                onClick={() => setSelectedMonthKey(month.monthKey)}
-                title={month.monthKey}
-                subtitle={month.status}
-              />
-            ))}
-          </div>
-        ) : null}
-
-        {draft.productType === "ads" ? (
-          <div className="mt-3 grid gap-2">
-            {weeks.map((week) => (
-              <StatusTile
-                key={week.weekKey}
-                status={week.status}
-                selected={week.weekKey === selectedWeekKey}
-                onClick={() => setSelectedWeekKey(week.weekKey)}
-                title={week.weekKey}
-                subtitle={`${week.remainingSlots}/${week.totalSlots} remaining`}
-              />
-            ))}
-          </div>
-        ) : null}
-
-        {(draft.productType === "news" || draft.productType === "promo" || draft.productType === "giveaway") ? (
-          <div className="mt-3">
-            <PostsCalendar
-              product={toPostsProduct(draft.productType)}
-              selectedDayKey={selectedPostDayKey}
-              onSelectDayKey={setSelectedPostDayKey}
-              selectedHour={selectedPostHour}
-              onSelectHour={setSelectedPostHour}
-            />
-          </div>
-        ) : null}
-
-        <div className="mt-4 flex items-center gap-3">
-          <Button type="button" disabled={!canReserve || reserving} onClick={() => void reserveSlot()}>
-            {reserving ? "Reserving..." : "Reserve selected slot"}
-          </Button>
-          {draft.booking?.status === "DRAFT_RESERVED" && draft.booking.expiresAt ? (
-            <p className="text-sm text-muted-foreground">
-              Reserved until {localDatetime(draft.booking.expiresAt)} (Europe/Brussels)
-            </p>
-          ) : null}
-        </div>
+        <h3 className="text-base font-semibold">Enabled options</h3>
+        <p className="mt-2 text-sm text-muted-foreground">
+          {context.enabled_options.length ? context.enabled_options.join(", ") : "No enabled options"}
+        </p>
       </section>
 
       <section className="rounded-md border bg-white p-4">
-        <h3 className="text-base font-semibold">2. Submit content</h3>
-        <div className="mt-3 grid gap-3">
-          <div className="grid gap-2">
-            <Label htmlFor="submit-title">Title</Label>
-            <Input id="submit-title" value={title} onChange={(event) => setTitle(event.target.value)} />
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="submit-body">Body</Label>
-            <textarea
-              id="submit-body"
-              value={body}
-              onChange={(event) => setBody(event.target.value)}
-              rows={8}
-              className="w-full rounded-md border px-3 py-2 text-sm"
-            />
-          </div>
-          <Button
-            type="button"
-            onClick={() => void submitContent()}
-            disabled={
-              submitting ||
-              !(draft.booking?.status === "DRAFT_RESERVED" || draft.booking?.status === "SUBMITTED") ||
-              !title.trim() ||
-              !body.trim()
-            }
-          >
-            {submitting ? "Submitting..." : "Submit"}
-          </Button>
-        </div>
+        <h3 className="text-base font-semibold">Activated blocks</h3>
+        <pre className="mt-2 overflow-auto rounded-md bg-slate-100 p-3 text-xs">
+          {JSON.stringify(context.activated_blocks, null, 2)}
+        </pre>
       </section>
+
+      <section className="rounded-md border bg-white p-4">
+        <h3 className="text-base font-semibold">Derived values</h3>
+        <pre className="mt-2 overflow-auto rounded-md bg-slate-100 p-3 text-xs">
+          {JSON.stringify(context.derived_values, null, 2)}
+        </pre>
+      </section>
+
+      {diag && diagnostic ? (
+        <section className="rounded-md border bg-white p-4">
+          <h3 className="text-base font-semibold">Diagnostic</h3>
+          <pre className="mt-2 overflow-auto rounded-md bg-slate-950 p-3 text-xs text-slate-100">
+            {JSON.stringify(diagnostic, null, 2)}
+          </pre>
+        </section>
+      ) : null}
     </div>
   );
 }

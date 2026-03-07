@@ -30,6 +30,7 @@ cp .env.example .env
 - `ADMIN_SLUG_SECRET`: secret path segment for admin URL
 - `ADMIN_BOOTSTRAP_KEY`: bootstrap key to set admin session cookie
 - `BGGIV_TOKEN_SECRET`: shared HMAC secret with Woo plugin
+- `NEXT_PUBLIC_WP_BASE_URL`: WordPress base URL for order-context API (default `https://boardgamegiveaways.com`)
 - `ENABLE_RESERVATION_CLEANUP_INTERVAL`: set to `1` to run in-process cleanup every 15 min
 - `CLEANUP_CRON_SECRET`: secret for external cleanup endpoint calls
 
@@ -47,6 +48,7 @@ The Woo plugin now supports a normalized order-context API based on generated co
 - Config source artifact: `../wordpress-plugin-package/config/order-context.config.json`
 - Generator script: `scripts/generate-order-context-config.mjs`
 - REST endpoint: `POST /wp-json/bgg/v1/order-context-token` then `GET /wp-json/bgg/v1/order-context?token=...`
+- Submit page diagnostic mode: `/submit?token=...&diag=1`
 
 Regenerate config from CSV:
 

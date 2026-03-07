@@ -9,6 +9,8 @@ export default async function SubmitPage({ searchParams }: SubmitPageProps) {
   const params = await searchParams;
   const tokenValue = params.token;
   const token = Array.isArray(tokenValue) ? tokenValue[0] : tokenValue;
+  const diagValue = params.diag;
+  const diag = (Array.isArray(diagValue) ? diagValue[0] : diagValue) === "1";
 
   return (
     <main className="mx-auto min-h-screen w-full max-w-7xl px-6 py-12">
@@ -24,7 +26,7 @@ export default async function SubmitPage({ searchParams }: SubmitPageProps) {
           Missing token in URL.
         </div>
       ) : (
-        <SubmitPageClient token={token} />
+        <SubmitPageClient token={token} diag={diag} />
       )}
     </main>
   );
