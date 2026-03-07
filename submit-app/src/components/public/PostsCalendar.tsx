@@ -40,6 +40,7 @@ type PostsCalendarProps = {
   selectedHour: number | null;
   onSelectHour: (hour: number | null) => void;
   onlyAvailableSelection?: boolean;
+  // Confirmed reservation slot (UTC ISO) for "mine" visual state.
   reservedStartsAtUtc?: string | null;
 };
 
