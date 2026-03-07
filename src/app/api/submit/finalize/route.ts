@@ -32,6 +32,20 @@ function hasValidJpegExtension(name: string): boolean {
   return lower.endsWith(".jpg") || lower.endsWith(".jpeg");
 }
 
+function monthKeyToRange(monthKey: string): { startDate: string; endDate: string } | null {
+  const match = /^(\d{4})-(\d{2})$/.exec(monthKey);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  if (month < 1 || month > 12) return null;
+  const first = new Date(Date.UTC(year, month - 1, 1));
+  const last = new Date(Date.UTC(year, month, 0));
+  return {
+    startDate: `${first.getUTCFullYear()}-${String(first.getUTCMonth() + 1).padStart(2, "0")}-${String(first.getUTCDate()).padStart(2, "0")}`,
+    endDate: `${last.getUTCFullYear()}-${String(last.getUTCMonth() + 1).padStart(2, "0")}-${String(last.getUTCDate()).padStart(2, "0")}`,
+  };
+}
+
 function getJpegDimensions(buffer: Uint8Array): { width: number; height: number } | null {
   if (buffer.length < 4 || buffer[0] !== 0xff || buffer[1] !== 0xd8) {
     return null;
@@ -200,8 +214,10 @@ export async function POST(request: NextRequest) {
   const prefilledContactEmail = normalizeString((context as { prefill?: { contact_email?: string } }).prefill?.contact_email);
   const effectiveCompanyName = prefilledCompanyName || companyName;
   const effectiveContactEmail = prefilledContactEmail || contactEmail;
+  let effectiveStartDate = startDate;
+  let effectiveEndDate = normalizeString(formData.end_date);
 
-  if (!effectiveCompanyName || !effectiveContactEmail || !targetUrl || !startDate) {
+  if (!effectiveCompanyName || !effectiveContactEmail || !targetUrl) {
     return badRequest("Missing required form fields");
   }
 
@@ -258,11 +274,25 @@ export async function POST(request: NextRequest) {
     return apiError(409, "RESERVATION_MISMATCH", "Reserved slot does not match");
   }
 
+  if (expectedProduct === Product.SPONSORSHIP) {
+    const range = reservationMonthKey ? monthKeyToRange(reservationMonthKey) : null;
+    if (!range) {
+      return badRequest("Missing or invalid reservation month");
+    }
+    effectiveStartDate = range.startDate;
+    effectiveEndDate = range.endDate;
+  }
+  if (!effectiveStartDate) {
+    return badRequest("Missing required start_date");
+  }
+
   const imageBuffer = await file.arrayBuffer();
-  const imageBytes = new Uint8Array(imageBuffer);
-  const dimensions = getJpegDimensions(imageBytes);
-  if (!dimensions || dimensions.width !== 680 || dimensions.height !== 680) {
-    return badRequest("Invalid image dimensions. Required size is 680 × 680 px.");
+  if (expectedProduct === Product.ADS) {
+    const imageBytes = new Uint8Array(imageBuffer);
+    const dimensions = getJpegDimensions(imageBytes);
+    if (!dimensions || dimensions.width !== 680 || dimensions.height !== 680) {
+      return badRequest("Invalid image dimensions. Required size is 680 × 680 px.");
+    }
   }
 
   try {
@@ -276,7 +306,7 @@ export async function POST(request: NextRequest) {
         websiteUrl: "",
         targetUrl,
         adFormat: "",
-        startDate,
+        startDate: effectiveStartDate,
         notes,
         reservation: {
           monthKey: reservationMonthKey || undefined,
@@ -289,7 +319,11 @@ export async function POST(request: NextRequest) {
           size: file.size,
           data: imageBuffer,
         },
-        formData,
+        formData: {
+          ...formData,
+          start_date: effectiveStartDate,
+          end_date: effectiveEndDate || undefined,
+        },
       });
 
       const updated = await tx.booking.updateMany({

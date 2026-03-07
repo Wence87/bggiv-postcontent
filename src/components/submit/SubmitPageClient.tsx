@@ -83,6 +83,20 @@ function weekKeyToDate(weekKey: string): string {
   return `${monday.getUTCFullYear()}-${String(monday.getUTCMonth() + 1).padStart(2, "0")}-${String(monday.getUTCDate()).padStart(2, "0")}`;
 }
 
+function monthKeyToRange(monthKey: string): { startDate: string; endDate: string } | null {
+  const match = /^(\d{4})-(\d{2})$/.exec(monthKey);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  if (month < 1 || month > 12) return null;
+  const first = new Date(Date.UTC(year, month - 1, 1));
+  const last = new Date(Date.UTC(year, month, 0));
+  return {
+    startDate: `${first.getUTCFullYear()}-${String(first.getUTCMonth() + 1).padStart(2, "0")}-${String(first.getUTCDate()).padStart(2, "0")}`,
+    endDate: `${last.getUTCFullYear()}-${String(last.getUTCMonth() + 1).padStart(2, "0")}-${String(last.getUTCDate()).padStart(2, "0")}`,
+  };
+}
+
 function productToPostsView(productType: OrderContextResponse["product"]["product_type"]): PublicPostProduct {
   if (productType === "promo") return "PROMO_DEAL";
   if (productType === "giveaway") return "GIVEAWAY";
@@ -205,8 +219,15 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
     if (context.product.product_type === "ads") {
       const sourceWeekKey = reservationChoice.weekKey ?? selectedAdsWeek?.weekKey ?? "";
       setFieldValue("start_date", sourceWeekKey ? weekKeyToDate(sourceWeekKey) : "");
+      setFieldValue("end_date", "");
     }
-  }, [context, reservationChoice.weekKey, selectedAdsWeek?.weekKey]);
+    if (context.product.product_type === "sponsorship") {
+      const sourceMonthKey = reservationChoice.monthKey ?? selectedSponsorshipMonth?.monthKey ?? "";
+      const range = sourceMonthKey ? monthKeyToRange(sourceMonthKey) : null;
+      setFieldValue("start_date", range?.startDate ?? "");
+      setFieldValue("end_date", range?.endDate ?? "");
+    }
+  }, [context, reservationChoice.weekKey, reservationChoice.monthKey, selectedAdsWeek?.weekKey, selectedSponsorshipMonth?.monthKey]);
 
   if (loading) {
     return <div className="rounded-md border bg-white p-4 text-sm text-muted-foreground">Loading submission context...</div>;
@@ -421,6 +442,16 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
       );
     }
 
+    if ((field.key === "start_date" || field.key === "end_date") && currentContext.product.product_type === "sponsorship") {
+      return (
+        <div key={field.key} className="space-y-2">
+          <Label htmlFor={field.key}>{`${field.label} *`}</Label>
+          <Input id={field.key} name={field.key} type="date" value={values[field.key] ?? ""} readOnly disabled />
+          <p className="text-xs text-muted-foreground">Derived from reserved month. Manual date entry is disabled.</p>
+        </div>
+      );
+    }
+
     if (field.readonly) {
       const companyPrefilled = Boolean(currentContext.prefill?.company_name && currentContext.prefill.company_name.trim().length > 0);
       const contactPrefilled = Boolean(currentContext.prefill?.contact_email && currentContext.prefill.contact_email.trim().length > 0);
@@ -528,7 +559,9 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
           />
           {field.key === "banner_image_upload" ? (
             <p className="text-xs text-muted-foreground">
-              Upload a Medium Rectangle banner (680 × 680 px), JPG/JPEG only. Maximum file size: 200 KB.
+              {currentContext.product.product_type === "sponsorship"
+                ? "Upload your sponsorship banner, JPG/JPEG only. Maximum file size: 200 KB."
+                : "Upload a Medium Rectangle banner (680 × 680 px), JPG/JPEG only. Maximum file size: 200 KB."}
             </p>
           ) : null}
         </div>
@@ -555,10 +588,15 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
     reservationConfirmed &&
     Boolean(reservationChoice.weekKey || reservationChoice.monthKey || reservationChoice.startsAtUtc);
   const hasCandidateChange =
-    productType === "ads" &&
     hasConfirmedReservation &&
-    Boolean(selectedAdsWeek?.weekKey) &&
-    selectedAdsWeek?.weekKey !== reservationChoice.weekKey;
+    (
+      (productType === "ads" &&
+        Boolean(selectedAdsWeek?.weekKey) &&
+        selectedAdsWeek?.weekKey !== reservationChoice.weekKey) ||
+      (productType === "sponsorship" &&
+        Boolean(selectedSponsorshipMonth?.monthKey) &&
+        selectedSponsorshipMonth?.monthKey !== reservationChoice.monthKey)
+    );
 
   return (
     <div className="space-y-6">
