@@ -96,6 +96,9 @@ export async function POST(request: NextRequest) {
     const monthKey = typeof body.monthKey === "string" ? body.monthKey : undefined;
     const weekKey = typeof body.weekKey === "string" ? body.weekKey : undefined;
     const startsAtUtc = typeof body.startsAtUtc === "string" ? body.startsAtUtc : undefined;
+    const adsDurationWeeksRaw =
+      typeof context.reservation?.ads_duration_weeks === "number" ? context.reservation.ads_duration_weeks : 1;
+    const adsDurationWeeks = Math.max(1, Math.min(52, Math.trunc(adsDurationWeeksRaw || 1)));
 
     if (context.product.product_type === "sponsorship") {
       if (!monthKey) return badRequest("Missing monthKey");
@@ -117,16 +120,30 @@ export async function POST(request: NextRequest) {
       monthKey,
       weekKey,
       startsAtUtc,
+      adsDurationWeeks,
     });
 
     return NextResponse.json({
-      reservation: {
-        id: booking.id,
-        status: booking.status,
-        monthKey: booking.monthKey,
-        weekKey: booking.weekKey,
-        startsAtUtc: booking.startsAtUtc?.toISOString() ?? null,
-        expiresAt: booking.expiresAt?.toISOString() ?? null,
+      reservation: booking[0]
+        ? {
+            id: booking[0].id,
+            status: booking[0].status,
+            monthKey: booking[0].monthKey,
+            weekKey: booking[0].weekKey,
+            startsAtUtc: booking[0].startsAtUtc?.toISOString() ?? null,
+            expiresAt: booking[0].expiresAt?.toISOString() ?? null,
+          }
+        : null,
+      reservations: booking.map((entry) => ({
+        id: entry.id,
+        status: entry.status,
+        monthKey: entry.monthKey,
+        weekKey: entry.weekKey,
+        startsAtUtc: entry.startsAtUtc?.toISOString() ?? null,
+        expiresAt: entry.expiresAt?.toISOString() ?? null,
+      })),
+      meta: {
+        ads_duration_weeks: context.product.product_type === "ads" ? adsDurationWeeks : null,
       },
     });
   } catch (error) {
@@ -134,6 +151,7 @@ export async function POST(request: NextRequest) {
     const status =
       code === "MONTH_ALREADY_BOOKED" ||
       code === "ADS_CAPACITY_REACHED" ||
+      code === "WEEK_LOCKED" ||
       code === "HOUR_ALREADY_BOOKED" ||
       code === "POST_LEADTIME_LOCKED" ||
       code === "PROMO_DAILY_LIMIT" ||

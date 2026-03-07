@@ -33,6 +33,9 @@ type OrderContextResponse = {
     company_name?: string;
     contact_email?: string;
   };
+  reservation?: {
+    ads_duration_weeks?: number | null;
+  };
   options: Array<{
     option_key: string;
     business_type: string;
@@ -51,6 +54,7 @@ type OrderContextResponse = {
 type ReservationChoice = {
   monthKey?: string;
   weekKey?: string;
+  weekKeys?: string[];
   startsAtUtc?: string;
 };
 
@@ -103,6 +107,7 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
   const [reservationChoice, setReservationChoice] = useState<ReservationChoice>({});
 
   const [selectedAdsWeek, setSelectedAdsWeek] = useState<AdsWeek | null>(null);
+  const [reservedAdsWeekKeys, setReservedAdsWeekKeys] = useState<string[]>([]);
   const [selectedSponsorshipMonth, setSelectedSponsorshipMonth] = useState<SponsorshipMonth | null>(null);
   const [selectedPostDayKey, setSelectedPostDayKey] = useState<string | null>(null);
   const [selectedPostHour, setSelectedPostHour] = useState<number | null>(null);
@@ -163,6 +168,7 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
           setReservationConfirmed(false);
           setReservationChoice({});
           setSelectedAdsWeek(null);
+          setReservedAdsWeekKeys([]);
           setSelectedSponsorshipMonth(null);
           setSelectedPostDayKey(null);
           setSelectedPostHour(null);
@@ -197,6 +203,9 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
     setFieldValue("company_name", context.prefill?.company_name ?? "");
     setFieldValue("contact_email", context.prefill?.contact_email ?? "");
     setReservationConfirmed(false);
+    if (context.product.product_type !== "ads") {
+      setReservedAdsWeekKeys([]);
+    }
   }, [context, selectedAdsWeek?.weekKey, selectedSponsorshipMonth?.monthKey, selectedPostDayKey, selectedPostHour]);
 
   if (loading) {
@@ -275,17 +284,24 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
       const reservation = body?.reservation as
         | { monthKey?: string | null; weekKey?: string | null; startsAtUtc?: string | null }
         | undefined;
+      const reservations = Array.isArray(body?.reservations) ? body.reservations : [];
+      const reservedWeeks = reservations
+        .map((entry: { weekKey?: string | null }) => (typeof entry.weekKey === "string" ? entry.weekKey : null))
+        .filter((value: string | null): value is string => Boolean(value));
 
       setReservationChoice({
         monthKey: reservation?.monthKey ?? undefined,
         weekKey: reservation?.weekKey ?? undefined,
+        weekKeys: reservedWeeks.length ? reservedWeeks : undefined,
         startsAtUtc: reservation?.startsAtUtc ?? undefined,
       });
+      setReservedAdsWeekKeys(reservedWeeks);
       setReservationConfirmed(true);
       setValidationError(null);
     } catch (reserveError) {
       setReservationConfirmed(false);
       setReservationChoice({});
+      setReservedAdsWeekKeys([]);
       setReservationError(reserveError instanceof Error ? reserveError.message : "Reservation failed");
     } finally {
       setIsReserving(false);
@@ -409,10 +425,51 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
     }
 
     if (field.readonly) {
+      const companyPrefilled = Boolean(currentContext.prefill?.company_name && currentContext.prefill.company_name.trim().length > 0);
+      const contactPrefilled = Boolean(currentContext.prefill?.contact_email && currentContext.prefill.contact_email.trim().length > 0);
+
+      if (field.key === "company_name" && !companyPrefilled) {
+        // Editable fallback handled below.
+      } else if (field.key === "contact_email" && !contactPrefilled) {
+        // Editable fallback handled below.
+      } else {
+        return (
+          <div key={field.key} className="space-y-2">
+            <Label htmlFor={field.key}>{field.label}</Label>
+            <Input id={field.key} name={field.key} type="text" value={values[field.key] ?? ""} readOnly disabled />
+          </div>
+        );
+      }
+    }
+
+    if (field.key === "company_name" && !(currentContext.prefill?.company_name && currentContext.prefill.company_name.trim())) {
       return (
         <div key={field.key} className="space-y-2">
-          <Label htmlFor={field.key}>{field.label}</Label>
-          <Input id={field.key} name={field.key} type="text" value={values[field.key] ?? ""} readOnly disabled />
+          <Label htmlFor={field.key}>Company name *</Label>
+          <Input
+            id={field.key}
+            name={field.key}
+            type="text"
+            required
+            value={values[field.key] ?? ""}
+            onChange={(event) => setFieldValue(field.key, event.target.value)}
+          />
+        </div>
+      );
+    }
+
+    if (field.key === "contact_email" && !(currentContext.prefill?.contact_email && currentContext.prefill.contact_email.trim())) {
+      return (
+        <div key={field.key} className="space-y-2">
+          <Label htmlFor={field.key}>Contact email *</Label>
+          <Input
+            id={field.key}
+            name={field.key}
+            type="email"
+            required
+            value={values[field.key] ?? ""}
+            onChange={(event) => setFieldValue(field.key, event.target.value)}
+          />
         </div>
       );
     }
@@ -516,7 +573,29 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
         </div>
 
         {productType === "ads" ? (
-          <AdsCalendar selectedWeekKey={selectedAdsWeek?.weekKey ?? null} onSelectWeek={setSelectedAdsWeek} onlyAvailableSelection />
+          <div className="space-y-3">
+            <AdsCalendar
+              selectedWeekKey={selectedAdsWeek?.weekKey ?? null}
+              onSelectWeek={setSelectedAdsWeek}
+              onlyAvailableSelection
+              reservedWeekKeys={reservedAdsWeekKeys}
+            />
+            <div className="rounded-md border bg-white p-3 text-xs">
+              <p className="mb-2 font-medium">Legend</p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <div className="flex items-center gap-2"><span className="h-3 w-3 rounded bg-slate-300" /> Locked</div>
+                <div className="flex items-center gap-2"><span className="h-3 w-3 rounded bg-green-200" /> Available</div>
+                <div className="flex items-center gap-2"><span className="h-3 w-3 rounded bg-blue-300" /> My reservation</div>
+                <div className="flex items-center gap-2"><span className="h-3 w-3 rounded bg-red-200" /> Full</div>
+              </div>
+              {currentContext.reservation?.ads_duration_weeks ? (
+                <p className="mt-2 text-muted-foreground">
+                  Purchased duration: {currentContext.reservation.ads_duration_weeks} week{currentContext.reservation.ads_duration_weeks > 1 ? "s" : ""}.
+                  Selecting a start week reserves consecutive weeks automatically.
+                </p>
+              ) : null}
+            </div>
+          </div>
         ) : null}
 
         {productType === "sponsorship" ? (

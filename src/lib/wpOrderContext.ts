@@ -9,6 +9,9 @@ type WPOrderContext = {
     company_name?: string;
     contact_email?: string;
   };
+  reservation?: {
+    ads_duration_weeks?: number | null;
+  };
 };
 
 const WP_BASE_URL = (process.env.NEXT_PUBLIC_WP_BASE_URL || "https://boardgamegiveaways.com").replace(/\/$/, "");

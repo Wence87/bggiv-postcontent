@@ -26,6 +26,7 @@ type AdsCalendarProps = {
   selectedWeekKey?: string | null;
   onSelectWeek?: (week: AdsWeek | null) => void;
   onlyAvailableSelection?: boolean;
+  reservedWeekKeys?: string[];
 };
 
 function getIsoWeekKeyForDate(date: Date): string {
@@ -59,6 +60,7 @@ function getDateFromWeekKey(weekKey: string): Date | null {
 function statusLabel(status: PublicStatus): string {
   if (status === "available") return "Available";
   if (status === "taken") return "Taken";
+  if (status === "mine") return "My reservation";
   return "Locked";
 }
 
@@ -66,6 +68,7 @@ export function AdsCalendar({
   selectedWeekKey: controlledSelectedWeekKey,
   onSelectWeek,
   onlyAvailableSelection = false,
+  reservedWeekKeys = [],
 }: AdsCalendarProps = {}) {
   const [loading, setLoading] = useState(true);
   const [weeks, setWeeks] = useState<AdsWeek[]>([]);
@@ -121,11 +124,12 @@ export function AdsCalendar({
 
   const weekStatusMap = useMemo(() => {
     const map = new Map<string, PublicStatus>();
+    const reservedSet = new Set(reservedWeekKeys);
     for (const week of weeks) {
-      map.set(week.weekKey, week.status);
+      map.set(week.weekKey, reservedSet.has(week.weekKey) ? "mine" : week.status);
     }
     return map;
-  }, [weeks]);
+  }, [weeks, reservedWeekKeys]);
 
   const selectedDate = useMemo(() => {
     if (!selectedWeekKey) return undefined;
@@ -151,7 +155,8 @@ export function AdsCalendar({
             const weekKey = getIsoWeekKeyForDate(date);
             const week = weeks.find((entry) => entry.weekKey === weekKey);
             if (!week) return;
-            if (onlyAvailableSelection && week.status !== "available") return;
+            const displayStatus = weekStatusMap.get(weekKey) ?? week.status;
+            if (onlyAvailableSelection && displayStatus !== "available") return;
             if (weekStatusMap.has(weekKey)) {
               if (controlledSelectedWeekKey !== undefined) {
                 onSelectWeek?.(week);
@@ -167,6 +172,7 @@ export function AdsCalendar({
             weekAvailable: (date) => weekStatusMap.get(getIsoWeekKeyForDate(date)) === "available",
             weekTaken: (date) => weekStatusMap.get(getIsoWeekKeyForDate(date)) === "taken",
             weekLocked: (date) => weekStatusMap.get(getIsoWeekKeyForDate(date)) === "locked",
+            weekMine: (date) => weekStatusMap.get(getIsoWeekKeyForDate(date)) === "mine",
             weekStart: (date) => date.getDay() === 1,
             weekEnd: (date) => date.getDay() === 0,
           }}
@@ -174,6 +180,7 @@ export function AdsCalendar({
             weekAvailable: "bg-green-50",
             weekTaken: "bg-red-50",
             weekLocked: "bg-slate-100",
+            weekMine: "bg-blue-100",
             weekStart: "public-week-start",
             weekEnd: "public-week-end",
           }}
@@ -195,7 +202,7 @@ export function AdsCalendar({
           {weeks.map((week) => (
             <StatusTile
               key={week.weekKey}
-              status={week.status}
+              status={weekStatusMap.get(week.weekKey) ?? week.status}
               selected={week.weekKey === selectedWeekKey}
               onClick={() => {
                 if (controlledSelectedWeekKey !== undefined) {
@@ -204,10 +211,16 @@ export function AdsCalendar({
                   setSelectedWeekKey(week.weekKey);
                 }
               }}
-              disabled={onlyAvailableSelection && week.status !== "available"}
+              disabled={onlyAvailableSelection && (weekStatusMap.get(week.weekKey) ?? week.status) !== "available"}
               title={week.weekKey}
               subtitle={`${week.remainingSlots}/${week.totalSlots} remaining`}
-              rightBadge={<Badge variant={week.status === "taken" ? "destructive" : "secondary"}>{statusLabel(week.status)}</Badge>}
+              rightBadge={
+                <Badge
+                  variant={(weekStatusMap.get(week.weekKey) ?? week.status) === "taken" ? "destructive" : "secondary"}
+                >
+                  {statusLabel(weekStatusMap.get(week.weekKey) ?? week.status)}
+                </Badge>
+              }
             />
           ))}
         </div>
@@ -217,7 +230,7 @@ export function AdsCalendar({
             <p className="font-medium">Selected week</p>
             <p className="text-muted-foreground">{selectedWeek.weekKey}</p>
             <p className="mt-2 font-medium">Status</p>
-            <p className="text-muted-foreground">{statusLabel(selectedWeek.status)}</p>
+            <p className="text-muted-foreground">{statusLabel(weekStatusMap.get(selectedWeek.weekKey) ?? selectedWeek.status)}</p>
           </div>
         ) : null}
       </div>

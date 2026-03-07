@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 
-export type PublicStatus = "available" | "taken" | "locked";
+export type PublicStatus = "available" | "taken" | "locked" | "mine";
 
 type StatusTileProps = {
   status: PublicStatus;
@@ -37,6 +37,7 @@ export function StatusTile({
         status === "available" && "bg-green-50 text-slate-800",
         status === "taken" && "bg-red-50 text-slate-700",
         status === "locked" && "bg-slate-200 text-slate-700",
+        status === "mine" && "bg-blue-100 text-blue-900",
         clickable ? "cursor-pointer hover:brightness-[0.98]" : "cursor-default",
         disabled && "opacity-70 pointer-events-none",
         selected && "ring-2 ring-blue-500 ring-offset-1",

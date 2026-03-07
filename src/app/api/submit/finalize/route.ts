@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { allowRateLimited, getClientIp, isAllowedOrigin } from "@/lib/apiSecurity";
 import { fetchWPOrderContextByToken } from "@/lib/wpOrderContext";
 import { saveAdsSubmissionWithDb } from "@/lib/finalizeSubmissionService";
-import { getActiveReservationByToken, tokenReservationRef } from "@/lib/submitReservationService";
+import { getActiveReservationsByToken, tokenReservationRef } from "@/lib/submitReservationService";
 import { BookingStatus, Product } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
@@ -192,6 +192,9 @@ export async function POST(request: NextRequest) {
   const reservationMonthKey = normalizeString(reservationChoice.monthKey);
   const reservationWeekKey = normalizeString(reservationChoice.weekKey);
   const reservationStartsAt = normalizeString(reservationChoice.startsAtUtc);
+  const reservationWeekKeys = Array.isArray(reservationChoice.weekKeys)
+    ? reservationChoice.weekKeys.map((v) => normalizeString(v)).filter((v) => v.length > 0)
+    : [];
 
   const prefilledCompanyName = normalizeString((context as { prefill?: { company_name?: string } }).prefill?.company_name);
   const prefilledContactEmail = normalizeString((context as { prefill?: { contact_email?: string } }).prefill?.contact_email);
@@ -222,13 +225,14 @@ export async function POST(request: NextRequest) {
     return badRequest("Image too large. Maximum allowed size is 200 KB.");
   }
 
-  const activeReservation = await getActiveReservationByToken(token);
-  if (!activeReservation) {
+  const activeReservations = await getActiveReservationsByToken(token);
+  if (!activeReservations.length) {
     return apiError(409, "RESERVATION_REQUIRED", "No active reservation found");
   }
+  const activeReservation = activeReservations[0]!;
 
   const expectedProduct = mapProductType(context.product.product_type);
-  if (activeReservation.product !== expectedProduct) {
+  if (activeReservation.product !== expectedProduct || activeReservations.some((r) => r.product !== expectedProduct)) {
     return apiError(409, "RESERVATION_PRODUCT_MISMATCH", "Reservation does not match product");
   }
 
@@ -237,6 +241,15 @@ export async function POST(request: NextRequest) {
   }
   if (expectedProduct === Product.ADS && activeReservation.weekKey !== reservationWeekKey) {
     return apiError(409, "RESERVATION_MISMATCH", "Reserved week does not match");
+  }
+  if (expectedProduct === Product.ADS) {
+    const activeWeekKeys = activeReservations.map((entry) => entry.weekKey).filter((v): v is string => Boolean(v)).sort();
+    if (reservationWeekKeys.length > 0) {
+      const selectedSorted = [...reservationWeekKeys].sort();
+      if (JSON.stringify(selectedSorted) !== JSON.stringify(activeWeekKeys)) {
+        return apiError(409, "RESERVATION_MISMATCH", "Reserved weeks do not match");
+      }
+    }
   }
   if (
     (expectedProduct === Product.NEWS || expectedProduct === Product.PROMO || expectedProduct === Product.GIVEAWAY) &&
@@ -281,9 +294,9 @@ export async function POST(request: NextRequest) {
 
       const updated = await tx.booking.updateMany({
         where: {
-          id: activeReservation.id,
           reservedByOrderId: tokenReservationRef(token),
           status: BookingStatus.DRAFT_RESERVED,
+          product: expectedProduct,
         },
         data: {
           status: BookingStatus.SUBMITTED,
@@ -292,7 +305,7 @@ export async function POST(request: NextRequest) {
           customerEmail: effectiveContactEmail,
         },
       });
-      if (updated.count !== 1) {
+      if (updated.count < 1) {
         throw new Error("RESERVATION_STATE_CHANGED");
       }
 
