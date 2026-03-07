@@ -33,13 +33,14 @@ type PostsResponse = {
   };
 };
 
-type PostsCalendarProps = {
+export type PostsCalendarProps = {
   product: PublicPostProduct;
   selectedDayKey: string | null;
   onSelectDayKey: (dayKey: string | null) => void;
   selectedHour: number | null;
   onSelectHour: (hour: number | null) => void;
   onlyAvailableSelection?: boolean;
+  reservedStartsAtUtc?: string | null;
 };
 
 function mapProductParam(product: PublicPostProduct): string {
@@ -59,8 +60,34 @@ function dayKeyForDate(date: Date): string {
 
 function statusLabel(status: PublicStatus): string {
   if (status === "available") return "Available";
-  if (status === "taken") return "Taken";
+  if (status === "taken") return "Full";
+  if (status === "mine") return "My reservation";
   return "Locked";
+}
+
+function getReferenceSlotFromUtcIso(isoValue: string): { dayKey: string; hour: number } | null {
+  const parsed = new Date(isoValue);
+  if (Number.isNaN(parsed.getTime())) return null;
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: REFERENCE_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    hour12: false,
+  });
+  const parts: Record<string, string> = {};
+  for (const part of formatter.formatToParts(parsed)) {
+    if (part.type !== "literal") {
+      parts[part.type] = part.value;
+    }
+  }
+  const hour = Number(parts.hour);
+  if (!Number.isInteger(hour) || hour < 0 || hour > 23) return null;
+  return {
+    dayKey: `${parts.year}-${parts.month}-${parts.day}`,
+    hour,
+  };
 }
 
 export function PostsCalendar({
@@ -70,6 +97,7 @@ export function PostsCalendar({
   selectedHour,
   onSelectHour,
   onlyAvailableSelection = false,
+  reservedStartsAtUtc = null,
 }: PostsCalendarProps) {
   const { userTz, setUserTz } = useUserTimezone();
   const [loading, setLoading] = useState(true);
@@ -123,6 +151,10 @@ export function PostsCalendar({
 
   const inspectedHourStatus =
     selectedDay && selectedHour != null ? selectedDay.hours[selectedHour] ?? "locked" : null;
+  const reservedSlot = useMemo(
+    () => (reservedStartsAtUtc ? getReferenceSlotFromUtcIso(reservedStartsAtUtc) : null),
+    [reservedStartsAtUtc]
+  );
 
   const getSlotUtcDate = (dayKey: string, hour: number): Date | null => {
     const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dayKey);
@@ -205,7 +237,14 @@ export function PostsCalendar({
           ) : null}
           <div className="grid grid-cols-3 gap-2 bg-white">
             {Array.from({ length: 24 }, (_, hour) => {
-              const status = selectedDay ? selectedDay.hours[hour] ?? "locked" : "locked";
+              const baseStatus = selectedDay ? selectedDay.hours[hour] ?? "locked" : "locked";
+              const status: PublicStatus =
+                selectedDayKey &&
+                reservedSlot &&
+                reservedSlot.dayKey === selectedDayKey &&
+                reservedSlot.hour === hour
+                  ? "mine"
+                  : baseStatus;
               const slotUtcDate =
                 selectedDayKey && selectedDay ? getSlotUtcDate(selectedDayKey, hour) : null;
               const brusselsLabel = slotUtcDate
