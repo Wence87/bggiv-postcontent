@@ -99,6 +99,8 @@ const CONTINENT_COUNTRIES: Record<string, string[]> = {
   Oceania: ["Australia", "New Zealand"],
 };
 
+const ALL_COUNTRIES = Array.from(new Set(Object.values(CONTINENT_COUNTRIES).flat())).sort();
+
 type OrderContextResponse = {
   product: {
     product_type: "sponsorship" | "ads" | "news" | "promo" | "giveaway";
@@ -403,10 +405,7 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
   const availableHighlightOptions = (currentContext.options ?? [])
     .map((entry) => entry.option_key)
     .filter((key) => /featured|spotlight|sticky|social_boost|newsletter/i.test(key));
-  const allCountries = useMemo(
-    () => Array.from(new Set(Object.values(CONTINENT_COUNTRIES).flat())).sort(),
-    []
-  );
+  const allCountries = ALL_COUNTRIES;
   const formFields = isPostsProduct
     ? DEFAULT_POSTS_FORM_FIELDS
     : ((currentContext.product.form_fields && currentContext.product.form_fields.length > 0)
