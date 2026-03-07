@@ -1,0 +1,667 @@
+{
+  "version": 1,
+  "generated_at": "2026-03-07T11:37:21.933Z",
+  "products": [
+    {
+      "display_name": "Publish Promo Deal Post",
+      "product_key": "publish_promo_deal_post",
+      "sku": "BGGIV002",
+      "internal_slug": "publish-promo-deal-post",
+      "product_type": "promo",
+      "form_id": "promo-deal-post-form",
+      "base_fields": [
+        "Nom du produit"
+      ],
+      "notes": "Le type de promotion doit être explicitement défini (discount %, bundle, 1+1, etc.).\nCe post requiert une image de couverture, un titre (120 signes max.), un body text (1000 signes max. sauf si l’option Extended Text Limit est activée), un lien/URL vers la promo\nToute promotion doit avoir une date et heure de début. Il ne peut y avoir que deux Promo Deal post maximum par jour.\nLes promotions peuvent être limitées dans le temps, impliquant une date et heure de fin.\nCertaines promotions peuvent nécessiter un code coupon.\nDans le body, on ne peut pas insérer d’images, ni de video embedded.\nSi Embedded Video est activé, une vidéo peut être intégrée dans le texte.\nSi Additional Images est acheté, 3 images supplémentaires maximum peuvent être uploadées.\nLe contenu doit être validé avant publication.\nAjouter description courte (160 signes max.).\nAjouter un champ de commentaire pour l’admin.",
+      "options": [],
+      "form_fields": [
+        {
+          "key": "company_name",
+          "label": "Company name",
+          "type": "text",
+          "required": true,
+          "readonly": true
+        },
+        {
+          "key": "contact_email",
+          "label": "Contact email",
+          "type": "email",
+          "required": true,
+          "readonly": true
+        },
+        {
+          "key": "cover_image_upload",
+          "label": "Cover image",
+          "type": "file",
+          "required": true,
+          "accept": ".jpg,.jpeg,image/jpeg"
+        },
+        {
+          "key": "title",
+          "label": "Title",
+          "type": "text",
+          "required": true,
+          "max_length": 150
+        },
+        {
+          "key": "body",
+          "label": "Body",
+          "type": "textarea",
+          "required": true,
+          "max_length": 1000
+        },
+        {
+          "key": "notes",
+          "label": "Notes",
+          "type": "textarea",
+          "required": false
+        }
+      ],
+      "activated_blocks": [
+        {
+          "name": "promo_prefill_readonly",
+          "fields": "company_name,contact_email",
+          "validation": "read-only from order context when available"
+        },
+        {
+          "name": "promo_content_assets",
+          "fields": "cover_image_upload",
+          "validation": "required JPG/JPEG only, max 500KB"
+        },
+        {
+          "name": "promo_content_core",
+          "fields": "title,body,notes",
+          "validation": "title max 150, body max from derived values (default 1000)"
+        }
+      ]
+    },
+    {
+      "display_name": "Publish Ad - 1 Week",
+      "product_key": "ads_week_1",
+      "sku": "BGGIVADS01",
+      "internal_slug": "publish-advertising",
+      "product_type": "ads",
+      "form_id": "advertising-form",
+      "base_fields": [
+        "Nom du produit"
+      ],
+      "notes": "La publicité requiert en une image obligatoire.\nL’URL cible fournie doit être valide et accessible.\nL’image doit avoir un format en pixels précis.\nL’affichage de la publicité démarre le lundi à 0h00 et se poursuit de semaine en semaine selon la réservation/commande du client.\nIl y a un seul emplacement publicitaire dans le lequel peuvent «tourner»/s’afficher un maximum de 10 publicités.\nLe contenu doit être validé avant publication.\nAjouter description courte (160 signes max.).\nAjouter un champ de commentaire pour l’admin.",
+      "options": [],
+      "form_fields": [
+        {
+          "key": "company_name",
+          "label": "Company name",
+          "type": "text",
+          "required": true,
+          "readonly": true
+        },
+        {
+          "key": "contact_email",
+          "label": "Contact email",
+          "type": "email",
+          "required": true,
+          "readonly": true
+        },
+        {
+          "key": "banner_image_upload",
+          "label": "Banner image",
+          "type": "file",
+          "required": true,
+          "accept": ".jpg,.jpeg,image/jpeg"
+        },
+        {
+          "key": "target_url",
+          "label": "Target URL",
+          "type": "text",
+          "required": true
+        },
+        {
+          "key": "start_date",
+          "label": "Start date",
+          "type": "date",
+          "required": true,
+          "readonly": true
+        },
+        {
+          "key": "notes",
+          "label": "Notes",
+          "type": "textarea",
+          "required": false
+        }
+      ],
+      "activated_blocks": [
+        {
+          "name": "ads_prefill_readonly",
+          "fields": "company_name,contact_email",
+          "validation": "read-only from order context"
+        },
+        {
+          "name": "ads_assets",
+          "fields": "banner_image_upload",
+          "validation": "required JPG/JPEG only, max 200KB, 680x680px"
+        },
+        {
+          "name": "ads_targeting",
+          "fields": "target_url,start_date,notes",
+          "validation": "target_url free text, start_date read-only"
+        }
+      ]
+    },
+    {
+      "display_name": "Site Sponsorship",
+      "product_key": "site_sponsorship",
+      "sku": "BGGIV005",
+      "internal_slug": "publish-sponsorship",
+      "product_type": "sponsorship",
+      "form_id": "sponsorship-form",
+      "base_fields": [
+        "Nom du produit"
+      ],
+      "notes": "Le sponsoring requiert une image obligatoire utilisée pour une publicité en en-tête du site.\nL’URL cible fournie doit être valide et accessible.\nL’image doit avoir un format en pixels précis.\nLe sponsoring et l’affichage de la publicité démarre le premier jour du mois à 0h00 et se poursuit de mois en mois selon la réservation/commande du client.\nIl y a un seul emplacement de sponsoring dans le lequel ne s’affiche qu’un seul visuel.\nLe contenu doit être validé avant publication.\nLe sponsoring requiert aussi le logo du client, au format carré.\nLe logo doit avoir un format en pixels précis.\nLe contenu doit être validé avant publication.\nAjouter description courte (160 signes max.).\nAjouter un champ de commentaire pour l’admin.",
+      "options": [],
+      "form_fields": [
+        {
+          "key": "company_name",
+          "label": "Company name",
+          "type": "text",
+          "required": true,
+          "readonly": true
+        },
+        {
+          "key": "contact_email",
+          "label": "Contact email",
+          "type": "email",
+          "required": true,
+          "readonly": true
+        },
+        {
+          "key": "banner_image_upload",
+          "label": "Banner image",
+          "type": "file",
+          "required": true,
+          "accept": ".jpg,.jpeg,image/jpeg"
+        },
+        {
+          "key": "target_url",
+          "label": "Target URL",
+          "type": "text",
+          "required": true
+        },
+        {
+          "key": "start_date",
+          "label": "Start date",
+          "type": "date",
+          "required": true,
+          "readonly": true
+        },
+        {
+          "key": "end_date",
+          "label": "End date",
+          "type": "date",
+          "required": true,
+          "readonly": true
+        },
+        {
+          "key": "notes",
+          "label": "Notes",
+          "type": "textarea",
+          "required": false
+        }
+      ],
+      "activated_blocks": [
+        {
+          "name": "sponsorship_prefill_readonly",
+          "fields": "company_name,contact_email",
+          "validation": "read-only from order context when available"
+        },
+        {
+          "name": "sponsorship_assets",
+          "fields": "banner_image_upload",
+          "validation": "required JPG/JPEG only, max 200KB"
+        },
+        {
+          "name": "sponsorship_schedule",
+          "fields": "target_url,start_date,end_date,notes",
+          "validation": "target_url free text, start/end derived from reserved month"
+        }
+      ]
+    },
+    {
+      "display_name": "Publish Giveaway",
+      "product_key": "publish_giveaway",
+      "sku": "BGGIV001",
+      "internal_slug": "publish-giveaway-post",
+      "product_type": "giveaway",
+      "form_id": "giveaway-post-form",
+      "base_fields": [
+        "Nom du produit"
+      ],
+      "notes": "Le giveaway impose de poser une question à la laquelle les participants doivent répondre. C’est un QCM avec 5 proposition dont une seule est correcte.\nLe participant au concours ne sait pas s’il a bien répondu avant que la fin du concours soit arrivée.\nSi l’option a été achetée, une série d’action marketing s’affiche après que la réponse (correcte ou erronée) à la question a été donnée.\nPrincipe du concours: répondre à la question et toute action octroie des tickets. Au terme du concours, un tirage au sort a lieu: chaque ticket peut ainsi permettre de gagner. Pour chaque ticket tiré au sort, le système vérifie si la réponse à la question est correcte; si oui, le participant gagne; si non, un nouveau ticket est tiré au sort.\nSi Audience Amplifier est activé, des URLs d’actions supplémentaires doivent être fournies.\nCe post requiert une image de couverture, un titre (120 signes max.), un body text (1000 signes max. sauf si l’option Extended Text Limit est activée), un lien/URL vers le site de l’éditeur.\nToute givevaway doit avoir une date et heure de début. Il ne peut y avoir que deux concours maximum par jour.\nLes giveaways sont limités dans le temps. par défaut, un giveaway dure 1 semaine, mais le client peut acheter jusqu’à trois semaines supplémentaires de visibilité (option).\nDans le body, on ne peut pas insérer d’images ni de lien, ni de video embedded.\nSi Embedded Video est activé, une vidéo peut être intégrée dans le texte.\nSi Additional Images est acheté, 3 images supplémentaires maximum peuvent être uploadées.\nEntre le titre et le body, est insérer le bloc concours, composé de: le nom du produit, le nombre d’unités proposées (de 2 à 20), le prix public d’une unité, une featured image du produit, un court descriptif (200 signes max.) la catégorie du giveaway, la liste des pays élligibles, l’âge minimum pour participer.\nLe contenu doit être validé avant publication.\nAjouter description courte (160 signes max.).\nAjouter un champ de commentaire pour l’admin.",
+      "options": [],
+      "form_fields": [
+        {
+          "key": "company_name",
+          "label": "Company name",
+          "type": "text",
+          "required": true,
+          "readonly": true
+        },
+        {
+          "key": "contact_email",
+          "label": "Contact email",
+          "type": "email",
+          "required": true,
+          "readonly": true
+        },
+        {
+          "key": "cover_image_upload",
+          "label": "Cover image",
+          "type": "file",
+          "required": true,
+          "accept": ".jpg,.jpeg,image/jpeg"
+        },
+        {
+          "key": "title",
+          "label": "Title",
+          "type": "text",
+          "required": true,
+          "max_length": 150
+        },
+        {
+          "key": "body",
+          "label": "Body",
+          "type": "textarea",
+          "required": true,
+          "max_length": 1000
+        },
+        {
+          "key": "notes",
+          "label": "Notes",
+          "type": "textarea",
+          "required": false
+        }
+      ],
+      "activated_blocks": [
+        {
+          "name": "giveaway_prefill_readonly",
+          "fields": "company_name,contact_email",
+          "validation": "read-only from order context when available"
+        },
+        {
+          "name": "giveaway_content_assets",
+          "fields": "cover_image_upload",
+          "validation": "required JPG/JPEG only, max 500KB"
+        },
+        {
+          "name": "giveaway_content_core",
+          "fields": "title,body,notes",
+          "validation": "title max 150, body max from derived values (default 1000)"
+        }
+      ]
+    },
+    {
+      "display_name": "Publish News Post",
+      "product_key": "publish_news_post",
+      "sku": "BGGIV003",
+      "internal_slug": "publish-news-post",
+      "product_type": "news",
+      "form_id": "news-post-form",
+      "base_fields": [
+        "Nom du produit"
+      ],
+      "notes": "Ce post requiert une image de couverture, un titre (120 signes max.), un body text (1000 signes max. sauf si l’option Extended Text Limit est activée), un lien/URL.\nToute news doit avoir une date et heure de publication. Elles n’ont pas de date de fin.\nDans le body, on ne peut pas insérer d’images, ni de video embedded.\nSi Embedded Video est activé, une vidéo peut être intégrée dans le texte.\nSi Additional Images est acheté, 3 images supplémentaires maximum peuvent être uploadées.\nLe contenu doit être validé avant publication.\nAjouter description courte (160 signes max.).\nAjouter un champ de commentaire pour l’admin.",
+      "options": [
+        {
+          "option_key": "social_boost",
+          "option_name": "Social Boost",
+          "technical_slug": "lkf4u",
+          "business_type": "toggle",
+          "source": {
+            "purchased_raw": "Social Boost (+$ 9.00)",
+            "possible_values": "Do not boost my news post.\nSocial Boost.",
+            "wc_raw_example": "Social Boost (+$ 9.00)"
+          },
+          "rules": {
+            "derive_rule": "Aucune action formulaire",
+            "asks_additional_info": false,
+            "collect_info": "—",
+            "fields_count": "—",
+            "field_type": "—",
+            "required": "—",
+            "business_rule": "—",
+            "values": {
+              "base_included": "—",
+              "purchased": "1",
+              "paid_additional": "1",
+              "final": "1"
+            }
+          },
+          "activated_block": {
+            "name": "—",
+            "condition": "—",
+            "fields": "—",
+            "validation": "—"
+          },
+          "derived": null
+        },
+        {
+          "option_key": "featuredspot_herogrid",
+          "option_name": "Featured Spot in the Hero Grid",
+          "technical_slug": "ybsaw",
+          "business_type": "select",
+          "source": {
+            "purchased_raw": "1 Day (+$ 9.00)\n2 Days (+$ 18.00)\n3 Days (+$ 27.00)\n4 Days (+$ 36.00)\n5 Days (+$ 45.00)\n6 Days (+$ 54.00)\n7 Days (+$ 63.00)",
+            "possible_values": "Do not feature my news post in the hero grid.\n1 Day\n2 Days\n3 Days\n4 Days\n5 Days\n6 Days\n7 Days",
+            "wc_raw_example": "1 Day (+$ 9.00)\n2 Days (+$ 18.00)\n3 Days (+$ 27.00)\n4 Days (+$ 36.00)\n5 Days (+$ 45.00)\n6 Days (+$ 54.00)\n7 Days (+$ 63.00)"
+          },
+          "rules": {
+            "derive_rule": "Aucune action formulaire",
+            "asks_additional_info": false,
+            "collect_info": "—",
+            "fields_count": "—",
+            "field_type": "—",
+            "required": "—",
+            "business_rule": "—",
+            "values": {
+              "base_included": "—",
+              "purchased": "De 1 à 7 jours",
+              "paid_additional": "De 1 à 7 jours",
+              "final": "De 1 à 7 jours"
+            }
+          },
+          "activated_block": {
+            "name": "—",
+            "condition": "—",
+            "fields": "—",
+            "validation": "—"
+          },
+          "derived": null
+        },
+        {
+          "option_key": "sticky_post",
+          "option_name": "Sticky Post",
+          "technical_slug": "93j49",
+          "business_type": "select",
+          "source": {
+            "purchased_raw": "1 Day (+$ 9.00)\n2 Days (+$ 18.00)\n3 Days (+$ 27.00)\n4 Days (+$ 36.00)\n5 Days (+$ 45.00)\n6 Days (+$ 54.00)\n7 Days (+$ 63.00)",
+            "possible_values": "Do not pin my news post.\n1 Day\n2 Days\n3 Days\n4 Days\n5 Days\n6 Days\n7 Days",
+            "wc_raw_example": "1 Day (+$ 9.00)\n2 Days (+$ 18.00)\n3 Days (+$ 27.00)\n4 Days (+$ 36.00)\n5 Days (+$ 45.00)\n6 Days (+$ 54.00)\n7 Days (+$ 63.00)"
+          },
+          "rules": {
+            "derive_rule": "Aucune action formulaire",
+            "asks_additional_info": false,
+            "collect_info": "—",
+            "fields_count": "—",
+            "field_type": "—",
+            "required": "—",
+            "business_rule": "—",
+            "values": {
+              "base_included": "—",
+              "purchased": "De 1 à 7 jours",
+              "paid_additional": "De 1 à 7 jours",
+              "final": "De 1 à 7 jours"
+            }
+          },
+          "activated_block": {
+            "name": "—",
+            "condition": "—",
+            "fields": "—",
+            "validation": "—"
+          },
+          "derived": null
+        },
+        {
+          "option_key": "sidebar_spotlight",
+          "option_name": "Sidebar Spotlight",
+          "technical_slug": "grlhn",
+          "business_type": "select",
+          "source": {
+            "purchased_raw": "1 Day (+$ 9.00)\n2 Days (+$ 18.00)\n3 Days (+$ 27.00)\n4 Days (+$ 36.00)\n5 Days (+$ 45.00)\n6 Days (+$ 54.00)\n7 Days (+$ 63.00)",
+            "possible_values": "Do not highlight my news post.\n1 Day\n2 Days\n3 Days\n4 Days\n5 Days\n6 Days\n7 Days",
+            "wc_raw_example": "1 Day (+$ 9.00)\n2 Days (+$ 18.00)\n3 Days (+$ 27.00)\n4 Days (+$ 36.00)\n5 Days (+$ 45.00)\n6 Days (+$ 54.00)\n7 Days (+$ 63.00)"
+          },
+          "rules": {
+            "derive_rule": "Aucune action formulaire",
+            "asks_additional_info": false,
+            "collect_info": "—",
+            "fields_count": "—",
+            "field_type": "—",
+            "required": "—",
+            "business_rule": "—",
+            "values": {
+              "base_included": "—",
+              "purchased": "De 1 à 7 jours",
+              "paid_additional": "De 1 à 7 jours",
+              "final": "De 1 à 7 jours"
+            }
+          },
+          "activated_block": {
+            "name": "—",
+            "condition": "—",
+            "fields": "—",
+            "validation": "—"
+          },
+          "derived": null
+        },
+        {
+          "option_key": "extended_textlimit",
+          "option_name": "Extended Text Limit",
+          "technical_slug": "21tuu",
+          "business_type": "toggle",
+          "source": {
+            "purchased_raw": "No character limit. (+$ 9.00)",
+            "possible_values": "I limit my post to 1,000 characters.\nNo character limit.",
+            "wc_raw_example": "No character limit. (+$ 9.00)"
+          },
+          "rules": {
+            "derive_rule": "Retirer la limite de 1000 signes",
+            "asks_additional_info": false,
+            "collect_info": "—",
+            "fields_count": "—",
+            "field_type": "—",
+            "required": "—",
+            "business_rule": "Retire la limite de 1000 signes",
+            "values": {
+              "base_included": "1000 signes",
+              "purchased": "Illimité",
+              "paid_additional": "Tout ce qui est au-delà de 1000 signes",
+              "final": "Illimité"
+            }
+          },
+          "activated_block": {
+            "name": "—",
+            "condition": "—",
+            "fields": "—",
+            "validation": "—"
+          },
+          "derived": null
+        },
+        {
+          "option_key": "additional_images",
+          "option_name": "Additional Images",
+          "technical_slug": "h2vun",
+          "business_type": "toggle",
+          "source": {
+            "purchased_raw": "I enrich my post with up to three additional images. (+$ 9.00)",
+            "possible_values": "I use the cover image only.\nI enrich my post with up to three additional images.",
+            "wc_raw_example": "I enrich my post with up to three additional images. (+$ 9.00)"
+          },
+          "rules": {
+            "derive_rule": "Afficher trois champs d’upload d’image.",
+            "asks_additional_info": true,
+            "collect_info": "3 images à collecter",
+            "fields_count": "3",
+            "field_type": "upload d’image",
+            "required": "non",
+            "business_rule": "Maximum 3 images supplémentaires.",
+            "values": {
+              "base_included": "1 image (couverture du post)",
+              "purchased": "4",
+              "paid_additional": "3",
+              "final": "4"
+            }
+          },
+          "activated_block": {
+            "name": "additional_image_block",
+            "condition": "si option Additional Images activée",
+            "fields": "additional_image_1\nadditional_image_2\nadditional_image_3",
+            "validation": "Image size : 1200 × 675 px • Allowed File Extensions : webp, jpg, jpeg. Max File Size : 500 KB"
+          },
+          "derived": null
+        },
+        {
+          "option_key": "embedded_video",
+          "option_name": "Embedded Video",
+          "technical_slug": "cxm1l",
+          "business_type": "toggle",
+          "source": {
+            "purchased_raw": "I enhance my post with an embedded video. (+$ 9.00)",
+            "possible_values": "I do not include an embedded video.\nI enhance my post with an embedded video.",
+            "wc_raw_example": "I enhance my post with an embedded video. (+$ 9.00)"
+          },
+          "rules": {
+            "derive_rule": "Permet d’ajouter une seule video embedded dans le body du post",
+            "asks_additional_info": false,
+            "collect_info": "—",
+            "fields_count": "—",
+            "field_type": "—",
+            "required": "—",
+            "business_rule": "Permet d’ajouter une seule video embedded dans le body du post",
+            "values": {
+              "base_included": "—",
+              "purchased": "1",
+              "paid_additional": "1",
+              "final": "1"
+            }
+          },
+          "activated_block": {
+            "name": "—",
+            "condition": "—",
+            "fields": "—",
+            "validation": "—"
+          },
+          "derived": null
+        },
+        {
+          "option_key": "weekly_newsletter",
+          "option_name": "Weekly Newsletter Feature",
+          "technical_slug": "9x0he",
+          "business_type": "toggle",
+          "source": {
+            "purchased_raw": "I feature my post in the weekly newsletter. (+$ 9.00)",
+            "possible_values": "I do not feature my post in the weekly newsletter.\nI feature my post in the weekly newsletter.",
+            "wc_raw_example": "I feature my post in the weekly newsletter. (+$ 9.00)"
+          },
+          "rules": {
+            "derive_rule": "Aucune action formulaire",
+            "asks_additional_info": false,
+            "collect_info": "—",
+            "fields_count": "—",
+            "field_type": "—",
+            "required": "—",
+            "business_rule": "—",
+            "values": {
+              "base_included": "—",
+              "purchased": "1",
+              "paid_additional": "1",
+              "final": "1"
+            }
+          },
+          "activated_block": {
+            "name": "—",
+            "condition": "—",
+            "fields": "—",
+            "validation": "—"
+          },
+          "derived": null
+        }
+      ],
+      "form_fields": [
+        {
+          "key": "company_name",
+          "label": "Company name",
+          "type": "text",
+          "required": true,
+          "readonly": true
+        },
+        {
+          "key": "contact_email",
+          "label": "Contact email",
+          "type": "email",
+          "required": true,
+          "readonly": true
+        },
+        {
+          "key": "cover_image_upload",
+          "label": "Cover image",
+          "type": "file",
+          "required": true,
+          "accept": ".jpg,.jpeg,image/jpeg"
+        },
+        {
+          "key": "title",
+          "label": "Title",
+          "type": "text",
+          "required": true,
+          "max_length": 150
+        },
+        {
+          "key": "body",
+          "label": "Body",
+          "type": "textarea",
+          "required": true,
+          "max_length": 1000
+        },
+        {
+          "key": "notes",
+          "label": "Notes",
+          "type": "textarea",
+          "required": false
+        }
+      ],
+      "activated_blocks": [
+        {
+          "name": "news_prefill_readonly",
+          "fields": "company_name,contact_email",
+          "validation": "read-only from order context when available"
+        },
+        {
+          "name": "news_content_assets",
+          "fields": "cover_image_upload",
+          "validation": "required JPG/JPEG only, max 500KB"
+        },
+        {
+          "name": "news_content_core",
+          "fields": "title,body,notes",
+          "validation": "title max 150, body max from derived values (default 1000)"
+        }
+      ]
+    }
+  ],
+  "index": {
+    "by_sku": {
+      "BGGIV002": "publish_promo_deal_post",
+      "BGGIVADS01": "ads_week_1",
+      "BGGIV005": "site_sponsorship",
+      "BGGIV001": "publish_giveaway",
+      "BGGIV003": "publish_news_post"
+    },
+    "by_product_type": {
+      "promo": [
+        "publish_promo_deal_post"
+      ],
+      "ads": [
+        "ads_week_1"
+      ],
+      "sponsorship": [
+        "site_sponsorship"
+      ],
+      "giveaway": [
+        "publish_giveaway"
+      ],
+      "news": [
+        "publish_news_post"
+      ]
+    }
+  }
+}
