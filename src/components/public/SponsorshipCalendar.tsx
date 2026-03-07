@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import { Badge } from "@/components/ui/badge";
 import { StatusTile, type PublicStatus } from "@/components/public/StatusTile";
 
 export type SponsorshipMonth = {
@@ -19,6 +20,7 @@ type SponsorshipCalendarProps = {
   selectedMonthKey?: string | null;
   onSelectMonth?: (month: SponsorshipMonth | null) => void;
   onlyAvailableSelection?: boolean;
+  reservedMonthKeys?: string[];
 };
 
 function formatMonthLabel(monthKey: string): string {
@@ -32,7 +34,8 @@ function formatMonthLabel(monthKey: string): string {
 
 function statusLabel(status: PublicStatus): string {
   if (status === "available") return "Available";
-  if (status === "taken") return "Taken";
+  if (status === "taken") return "Full";
+  if (status === "mine") return "My reservation";
   return "Locked";
 }
 
@@ -40,6 +43,7 @@ export function SponsorshipCalendar({
   selectedMonthKey: controlledSelectedMonthKey,
   onSelectMonth,
   onlyAvailableSelection = false,
+  reservedMonthKeys = [],
 }: SponsorshipCalendarProps = {}) {
   const [loading, setLoading] = useState(true);
   const [months, setMonths] = useState<SponsorshipMonth[]>([]);
@@ -92,6 +96,15 @@ export function SponsorshipCalendar({
     onSelectMonth?.(selectedMonth);
   }, [onSelectMonth, selectedMonth]);
 
+  const monthStatusMap = useMemo(() => {
+    const map = new Map<string, PublicStatus>();
+    const reservedSet = new Set(reservedMonthKeys);
+    for (const month of months) {
+      map.set(month.monthKey, reservedSet.has(month.monthKey) ? "mine" : month.status);
+    }
+    return map;
+  }, [months, reservedMonthKeys]);
+
   if (loading) {
     return <div className="rounded-lg border bg-white p-4 text-sm text-muted-foreground">Loading sponsorship availability...</div>;
   }
@@ -106,7 +119,7 @@ export function SponsorshipCalendar({
         {months.map((month) => (
           <StatusTile
             key={month.monthKey}
-            status={month.status}
+            status={monthStatusMap.get(month.monthKey) ?? month.status}
             selected={selectedMonthKey === month.monthKey}
             onClick={() => {
               if (controlledSelectedMonthKey !== undefined) {
@@ -115,10 +128,16 @@ export function SponsorshipCalendar({
                 setSelectedMonthKey(month.monthKey);
               }
             }}
-            disabled={onlyAvailableSelection && month.status !== "available"}
+            disabled={onlyAvailableSelection && (monthStatusMap.get(month.monthKey) ?? month.status) !== "available"}
             title={formatMonthLabel(month.monthKey)}
-            subtitle={statusLabel(month.status)}
-            rightBadge={<span className="text-xs font-medium">{month.monthKey}</span>}
+            subtitle={month.monthKey}
+            rightBadge={
+              <Badge
+                variant={(monthStatusMap.get(month.monthKey) ?? month.status) === "taken" ? "destructive" : "secondary"}
+              >
+                {statusLabel(monthStatusMap.get(month.monthKey) ?? month.status)}
+              </Badge>
+            }
           />
         ))}
       </div>
@@ -128,7 +147,7 @@ export function SponsorshipCalendar({
           <p className="font-medium">Slot</p>
           <p className="text-muted-foreground">{selectedMonth.monthKey}</p>
           <p className="mt-2 font-medium">Status</p>
-          <p className="text-muted-foreground">{statusLabel(selectedMonth.status)}</p>
+          <p className="text-muted-foreground">{statusLabel(monthStatusMap.get(selectedMonth.monthKey) ?? selectedMonth.status)}</p>
         </div>
       ) : null}
     </div>

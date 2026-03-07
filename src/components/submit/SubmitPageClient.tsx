@@ -597,6 +597,17 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
         Boolean(selectedSponsorshipMonth?.monthKey) &&
         selectedSponsorshipMonth?.monthKey !== reservationChoice.monthKey)
     );
+  const reservationLegend = (
+    <div className="rounded-md border bg-white p-3 text-xs">
+      <p className="mb-2 font-medium">Legend</p>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <div className="flex items-center gap-2"><span className="h-3 w-3 rounded bg-slate-300" /> Locked</div>
+        <div className="flex items-center gap-2"><span className="h-3 w-3 rounded bg-green-200" /> Available</div>
+        <div className="flex items-center gap-2"><span className="h-3 w-3 rounded bg-blue-300" /> My reservation</div>
+        <div className="flex items-center gap-2"><span className="h-3 w-3 rounded bg-red-200" /> Full</div>
+      </div>
+    </div>
+  );
 
   return (
     <div className="space-y-6">
@@ -623,16 +634,10 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
               onlyAvailableSelection
               reservedWeekKeys={reservedAdsWeekKeys}
             />
+            {reservationLegend}
             <div className="rounded-md border bg-white p-3 text-xs">
-              <p className="mb-2 font-medium">Legend</p>
-              <div className="grid gap-2 sm:grid-cols-2">
-                <div className="flex items-center gap-2"><span className="h-3 w-3 rounded bg-slate-300" /> Locked</div>
-                <div className="flex items-center gap-2"><span className="h-3 w-3 rounded bg-green-200" /> Available</div>
-                <div className="flex items-center gap-2"><span className="h-3 w-3 rounded bg-blue-300" /> My reservation</div>
-                <div className="flex items-center gap-2"><span className="h-3 w-3 rounded bg-red-200" /> Full</div>
-              </div>
               {currentContext.reservation?.ads_duration_weeks ? (
-                <p className="mt-2 text-muted-foreground">
+                <p className="text-muted-foreground">
                   Purchased duration: {currentContext.reservation.ads_duration_weeks} week{currentContext.reservation.ads_duration_weeks > 1 ? "s" : ""}.
                   Selecting a start week reserves consecutive weeks automatically.
                 </p>
@@ -642,11 +647,15 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
         ) : null}
 
         {productType === "sponsorship" ? (
-          <SponsorshipCalendar
-            selectedMonthKey={selectedSponsorshipMonth?.monthKey ?? null}
-            onSelectMonth={setSelectedSponsorshipMonth}
-            onlyAvailableSelection
-          />
+          <div className="space-y-3">
+            <SponsorshipCalendar
+              selectedMonthKey={selectedSponsorshipMonth?.monthKey ?? null}
+              onSelectMonth={setSelectedSponsorshipMonth}
+              onlyAvailableSelection
+              reservedMonthKeys={reservationChoice.monthKey ? [reservationChoice.monthKey] : []}
+            />
+            {reservationLegend}
+          </div>
         ) : null}
 
         {(productType === "news" || productType === "promo" || productType === "giveaway") ? (
