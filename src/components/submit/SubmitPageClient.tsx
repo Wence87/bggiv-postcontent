@@ -21,6 +21,15 @@ type ProductFormField = {
   options?: string[];
 };
 
+const DEFAULT_POSTS_FORM_FIELDS: ProductFormField[] = [
+  { key: "company_name", label: "Company name", type: "text", required: true, readonly: true },
+  { key: "contact_email", label: "Contact email", type: "email", required: true, readonly: true },
+  { key: "cover_image_upload", label: "Cover image", type: "file", required: true, accept: ".jpg,.jpeg,image/jpeg" },
+  { key: "title", label: "Title", type: "text", required: true },
+  { key: "body", label: "Body", type: "textarea", required: true },
+  { key: "notes", label: "Notes", type: "textarea", required: false },
+];
+
 type OrderContextResponse = {
   product: {
     product_type: "sponsorship" | "ads" | "news" | "promo" | "giveaway";
@@ -243,7 +252,14 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
   }
 
   const currentContext = context;
-  const formFields = currentContext.product.form_fields ?? [];
+  const isPostsProduct =
+    currentContext.product.product_type === "news" ||
+    currentContext.product.product_type === "promo" ||
+    currentContext.product.product_type === "giveaway";
+  const formFields =
+    (currentContext.product.form_fields && currentContext.product.form_fields.length > 0)
+      ? currentContext.product.form_fields
+      : (isPostsProduct ? DEFAULT_POSTS_FORM_FIELDS : []);
 
   function setFieldValue(key: string, value: string) {
     setValues((previous) => ({ ...previous, [key]: value }));
@@ -386,6 +402,23 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
           return false;
         }
       }
+
+      if (field.type === "file" && field.key === "cover_image_upload") {
+        const file = fileValues.cover_image_upload;
+        if (!file) {
+          setValidationError("Missing required field: Cover image");
+          return false;
+        }
+        const lowerName = file.name.toLowerCase();
+        if (!lowerName.endsWith(".jpg") && !lowerName.endsWith(".jpeg")) {
+          setValidationError("Invalid image format. Only JPG/JPEG files are allowed.");
+          return false;
+        }
+        if (file.size > 500 * 1024) {
+          setValidationError("Image too large. Maximum allowed size is 500 KB.");
+          return false;
+        }
+      }
     }
 
     setValidationError(null);
@@ -408,6 +441,11 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
     if (bannerFile) {
       payload.append("banner_image_upload", bannerFile);
       payload.append("uploaded_files", bannerFile);
+    }
+    const coverFile = fileValues.cover_image_upload;
+    if (coverFile) {
+      payload.append("cover_image_upload", coverFile);
+      payload.append("uploaded_files", coverFile);
     }
 
     setIsSubmitting(true);
@@ -564,6 +602,11 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
                 : "Upload a Medium Rectangle banner (680 × 680 px), JPG/JPEG only. Maximum file size: 200 KB."}
             </p>
           ) : null}
+          {field.key === "cover_image_upload" ? (
+            <p className="text-xs text-muted-foreground">
+              Upload a cover image in JPG/JPEG format only. Maximum file size: 500 KB.
+            </p>
+          ) : null}
         </div>
       );
     }
@@ -587,6 +630,21 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
   const hasConfirmedReservation =
     reservationConfirmed &&
     Boolean(reservationChoice.weekKey || reservationChoice.monthKey || reservationChoice.startsAtUtc);
+  const candidatePostStartsAtUtc =
+    selectedPostDayKey && selectedPostHour != null
+      ? (() => {
+          const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(selectedPostDayKey);
+          if (!match) return null;
+          return resolveTimeZoneDateTimeToUtc(
+            Number(match[1]),
+            Number(match[2]),
+            Number(match[3]),
+            selectedPostHour,
+            0,
+            "Europe/Brussels"
+          ).toISOString();
+        })()
+      : null;
   const hasCandidateChange =
     hasConfirmedReservation &&
     (
@@ -595,7 +653,10 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
         selectedAdsWeek?.weekKey !== reservationChoice.weekKey) ||
       (productType === "sponsorship" &&
         Boolean(selectedSponsorshipMonth?.monthKey) &&
-        selectedSponsorshipMonth?.monthKey !== reservationChoice.monthKey)
+        selectedSponsorshipMonth?.monthKey !== reservationChoice.monthKey) ||
+      ((productType === "news" || productType === "promo" || productType === "giveaway") &&
+        Boolean(candidatePostStartsAtUtc) &&
+        candidatePostStartsAtUtc !== reservationChoice.startsAtUtc)
     );
   const reservationLegend = (
     <div className="rounded-md border bg-white p-3 text-xs">
@@ -659,15 +720,18 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
         ) : null}
 
         {(productType === "news" || productType === "promo" || productType === "giveaway") ? (
-          <PostsCalendar
-            product={productToPostsView(productType)}
-            selectedDayKey={selectedPostDayKey}
-            onSelectDayKey={setSelectedPostDayKey}
-            selectedHour={selectedPostHour}
-            onSelectHour={setSelectedPostHour}
-            onlyAvailableSelection
-            reservedStartsAtUtc={reservationChoice.startsAtUtc ?? null}
-          />
+          <div className="space-y-3">
+            <PostsCalendar
+              product={productToPostsView(productType)}
+              selectedDayKey={selectedPostDayKey}
+              onSelectDayKey={setSelectedPostDayKey}
+              selectedHour={selectedPostHour}
+              onSelectHour={setSelectedPostHour}
+              onlyAvailableSelection
+              reservedStartsAtUtc={reservationChoice.startsAtUtc ?? null}
+            />
+            {reservationLegend}
+          </div>
         ) : null}
 
         {reservationError ? <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{reservationError}</div> : null}
@@ -680,7 +744,7 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
         )}
         {hasCandidateChange ? (
           <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
-            You already have a confirmed reservation. Reserve again to change your reserved weeks.
+            You already have a confirmed reservation. Reserve again to change it.
           </div>
         ) : null}
         <Button type="button" onClick={() => void reserveSelection()} disabled={isReserving}>
