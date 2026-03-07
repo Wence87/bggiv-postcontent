@@ -816,7 +816,6 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
               selectedHour={selectedPostHour}
               onSelectHour={setSelectedPostHour}
               onlyAvailableSelection
-              reservedStartsAtUtc={reservationChoice.startsAtUtc ?? null}
             />
             {reservationLegend}
           </div>
