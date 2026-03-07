@@ -16,6 +16,7 @@ type ProductFormField = {
   label: string;
   type: "text" | "email" | "url" | "file" | "select" | "date" | "textarea";
   required?: boolean;
+  readonly?: boolean;
   accept?: string;
   options?: string[];
 };
@@ -27,6 +28,10 @@ type OrderContextResponse = {
     product_key: string;
     base_fields: string[];
     form_fields?: ProductFormField[];
+  };
+  prefill?: {
+    company_name?: string;
+    contact_email?: string;
   };
   options: Array<{
     option_key: string;
@@ -146,7 +151,11 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
 
         if (!cancelled) {
           setContext(parsed as OrderContextResponse);
-          setValues({});
+          const parsedContext = parsed as OrderContextResponse;
+          setValues({
+            company_name: parsedContext.prefill?.company_name ?? "",
+            contact_email: parsedContext.prefill?.contact_email ?? "",
+          });
           setFileValues({});
           setValidationError(null);
           setSubmitError(null);
@@ -185,6 +194,8 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
       const derivedStart = selectedAdsWeek?.weekKey ? weekKeyToDate(selectedAdsWeek.weekKey) : "";
       setFieldValue("start_date", derivedStart);
     }
+    setFieldValue("company_name", context.prefill?.company_name ?? "");
+    setFieldValue("contact_email", context.prefill?.contact_email ?? "");
     setReservationConfirmed(false);
   }, [context, selectedAdsWeek?.weekKey, selectedSponsorshipMonth?.monthKey, selectedPostDayKey, selectedPostHour]);
 
@@ -321,6 +332,26 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
           return false;
         }
       }
+
+      if (field.type === "file" && field.key === "banner_image_upload") {
+        const file = fileValues.banner_image_upload;
+        if (!file) {
+          setValidationError("Missing required field: Banner image");
+          return false;
+        }
+
+        const lowerName = file.name.toLowerCase();
+        const hasValidExtension = lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg");
+        if (!hasValidExtension) {
+          setValidationError("Invalid image format. Only JPG/JPEG files are allowed.");
+          return false;
+        }
+
+        if (file.size > 200 * 1024) {
+          setValidationError("Image too large. Maximum allowed size is 200 KB.");
+          return false;
+        }
+      }
     }
 
     setValidationError(null);
@@ -373,6 +404,15 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
           <Label htmlFor={field.key}>{`${field.label} *`}</Label>
           <Input id={field.key} name={field.key} type="date" value={values[field.key] ?? ""} readOnly disabled />
           <p className="text-xs text-muted-foreground">Derived from reserved week. Manual date entry is disabled.</p>
+        </div>
+      );
+    }
+
+    if (field.readonly) {
+      return (
+        <div key={field.key} className="space-y-2">
+          <Label htmlFor={field.key}>{field.label}</Label>
+          <Input id={field.key} name={field.key} type="text" value={values[field.key] ?? ""} readOnly disabled />
         </div>
       );
     }
@@ -432,6 +472,11 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
             accept={field.accept}
             onChange={(event) => setFieldFileValue(field.key, event.target.files?.[0] ?? null)}
           />
+          {field.key === "banner_image_upload" ? (
+            <p className="text-xs text-muted-foreground">
+              Upload a Medium Rectangle banner (680 × 680 px), JPG/JPEG only. Maximum file size: 200 KB.
+            </p>
+          ) : null}
         </div>
       );
     }

@@ -8,8 +8,8 @@ import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 
-const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
-const ALLOWED_IMAGE_MIMES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+const MAX_IMAGE_SIZE_BYTES = 200 * 1024;
+const ALLOWED_IMAGE_MIMES = new Set(["image/jpeg", "image/pjpeg"]);
 
 function apiError(status: number, code: string, message: string) {
   return NextResponse.json({ code, message }, { status });
@@ -27,13 +27,53 @@ function isValidEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
-function isValidHttpUrl(value: string): boolean {
-  try {
-    const parsed = new URL(value);
-    return parsed.protocol === "http:" || parsed.protocol === "https:";
-  } catch {
-    return false;
+function hasValidJpegExtension(name: string): boolean {
+  const lower = name.toLowerCase();
+  return lower.endsWith(".jpg") || lower.endsWith(".jpeg");
+}
+
+function getJpegDimensions(buffer: Uint8Array): { width: number; height: number } | null {
+  if (buffer.length < 4 || buffer[0] !== 0xff || buffer[1] !== 0xd8) {
+    return null;
   }
+
+  let offset = 2;
+  while (offset + 9 < buffer.length) {
+    if (buffer[offset] !== 0xff) {
+      offset += 1;
+      continue;
+    }
+    const marker = buffer[offset + 1];
+    const length = (buffer[offset + 2] << 8) | buffer[offset + 3];
+    if (length < 2 || offset + 2 + length > buffer.length) {
+      return null;
+    }
+
+    const isSof =
+      marker === 0xc0 ||
+      marker === 0xc1 ||
+      marker === 0xc2 ||
+      marker === 0xc3 ||
+      marker === 0xc5 ||
+      marker === 0xc6 ||
+      marker === 0xc7 ||
+      marker === 0xc9 ||
+      marker === 0xca ||
+      marker === 0xcb ||
+      marker === 0xcd ||
+      marker === 0xce ||
+      marker === 0xcf;
+
+    if (isSof) {
+      const height = (buffer[offset + 5] << 8) | buffer[offset + 6];
+      const width = (buffer[offset + 7] << 8) | buffer[offset + 8];
+      return { width, height };
+    }
+
+    offset += 2 + length;
+  }
+
+  return null;
 }
 
 async function parseRequestPayload(request: NextRequest): Promise<{
@@ -146,25 +186,24 @@ export async function POST(request: NextRequest) {
 
   const companyName = normalizeString(formData.company_name);
   const contactEmail = normalizeString(formData.contact_email);
-  const websiteUrl = normalizeString(formData.website_url);
   const targetUrl = normalizeString(formData.target_url);
-  const adFormat = normalizeString(formData.ad_format);
   const startDate = normalizeString(formData.start_date);
   const notes = normalizeString(formData.notes);
   const reservationMonthKey = normalizeString(reservationChoice.monthKey);
   const reservationWeekKey = normalizeString(reservationChoice.weekKey);
   const reservationStartsAt = normalizeString(reservationChoice.startsAtUtc);
 
-  if (!companyName || !contactEmail || !websiteUrl || !targetUrl || !adFormat || !startDate) {
+  const prefilledCompanyName = normalizeString((context as { prefill?: { company_name?: string } }).prefill?.company_name);
+  const prefilledContactEmail = normalizeString((context as { prefill?: { contact_email?: string } }).prefill?.contact_email);
+  const effectiveCompanyName = prefilledCompanyName || companyName;
+  const effectiveContactEmail = prefilledContactEmail || contactEmail;
+
+  if (!effectiveCompanyName || !effectiveContactEmail || !targetUrl || !startDate) {
     return badRequest("Missing required form fields");
   }
 
-  if (!isValidEmail(contactEmail)) {
+  if (!isValidEmail(effectiveContactEmail)) {
     return badRequest("Invalid contact_email");
-  }
-
-  if (!isValidHttpUrl(websiteUrl) || !isValidHttpUrl(targetUrl)) {
-    return badRequest("Invalid URL field");
   }
 
   if (!file) {
@@ -172,11 +211,15 @@ export async function POST(request: NextRequest) {
   }
 
   if (!ALLOWED_IMAGE_MIMES.has(file.type)) {
-    return badRequest("Unsupported image type");
+    return badRequest("Invalid image format. Only JPG/JPEG files are allowed.");
+  }
+
+  if (!hasValidJpegExtension(file.name || "")) {
+    return badRequest("Invalid image format. Only JPG/JPEG files are allowed.");
   }
 
   if (file.size <= 0 || file.size > MAX_IMAGE_SIZE_BYTES) {
-    return badRequest("Invalid image size");
+    return badRequest("Image too large. Maximum allowed size is 200 KB.");
   }
 
   const activeReservation = await getActiveReservationByToken(token);
@@ -203,6 +246,11 @@ export async function POST(request: NextRequest) {
   }
 
   const imageBuffer = await file.arrayBuffer();
+  const imageBytes = new Uint8Array(imageBuffer);
+  const dimensions = getJpegDimensions(imageBytes);
+  if (!dimensions || dimensions.width !== 680 || dimensions.height !== 680) {
+    return badRequest("Invalid image dimensions. Required size is 680 × 680 px.");
+  }
 
   try {
     const submission = await prisma.$transaction(async (tx) => {
@@ -210,11 +258,11 @@ export async function POST(request: NextRequest) {
         token,
         productKey,
         productType: context.product.product_type,
-        companyName,
-        contactEmail,
-        websiteUrl,
+        companyName: effectiveCompanyName,
+        contactEmail: effectiveContactEmail,
+        websiteUrl: "",
         targetUrl,
-        adFormat,
+        adFormat: "",
         startDate,
         notes,
         reservation: {
@@ -240,8 +288,8 @@ export async function POST(request: NextRequest) {
         data: {
           status: BookingStatus.SUBMITTED,
           expiresAt: null,
-          companyName,
-          customerEmail: contactEmail,
+          companyName: effectiveCompanyName,
+          customerEmail: effectiveContactEmail,
         },
       });
       if (updated.count !== 1) {

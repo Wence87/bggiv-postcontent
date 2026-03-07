@@ -5,6 +5,10 @@ type WPOrderContext = {
     form_id: string;
     form_fields?: Array<{ key: string; required?: boolean; type?: string }>;
   };
+  prefill?: {
+    company_name?: string;
+    contact_email?: string;
+  };
 };
 
 const WP_BASE_URL = (process.env.NEXT_PUBLIC_WP_BASE_URL || "https://boardgamegiveaways.com").replace(/\/$/, "");
