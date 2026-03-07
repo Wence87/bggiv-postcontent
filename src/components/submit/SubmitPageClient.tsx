@@ -196,17 +196,17 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
 
   useEffect(() => {
     if (!context) return;
-    if (context.product.product_type === "ads") {
-      const derivedStart = selectedAdsWeek?.weekKey ? weekKeyToDate(selectedAdsWeek.weekKey) : "";
-      setFieldValue("start_date", derivedStart);
-    }
     setFieldValue("company_name", context.prefill?.company_name ?? "");
     setFieldValue("contact_email", context.prefill?.contact_email ?? "");
-    setReservationConfirmed(false);
-    if (context.product.product_type !== "ads") {
-      setReservedAdsWeekKeys([]);
+  }, [context]);
+
+  useEffect(() => {
+    if (!context) return;
+    if (context.product.product_type === "ads") {
+      const sourceWeekKey = reservationChoice.weekKey ?? selectedAdsWeek?.weekKey ?? "";
+      setFieldValue("start_date", sourceWeekKey ? weekKeyToDate(sourceWeekKey) : "");
     }
-  }, [context, selectedAdsWeek?.weekKey, selectedSponsorshipMonth?.monthKey, selectedPostDayKey, selectedPostHour]);
+  }, [context, reservationChoice.weekKey, selectedAdsWeek?.weekKey]);
 
   if (loading) {
     return <div className="rounded-md border bg-white p-4 text-sm text-muted-foreground">Loading submission context...</div>;
@@ -299,9 +299,6 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
       setReservationConfirmed(true);
       setValidationError(null);
     } catch (reserveError) {
-      setReservationConfirmed(false);
-      setReservationChoice({});
-      setReservedAdsWeekKeys([]);
       setReservationError(reserveError instanceof Error ? reserveError.message : "Reservation failed");
     } finally {
       setIsReserving(false);
@@ -554,6 +551,14 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
   }
 
   const productType = currentContext.product.product_type;
+  const hasConfirmedReservation =
+    reservationConfirmed &&
+    Boolean(reservationChoice.weekKey || reservationChoice.monthKey || reservationChoice.startsAtUtc);
+  const hasCandidateChange =
+    productType === "ads" &&
+    hasConfirmedReservation &&
+    Boolean(selectedAdsWeek?.weekKey) &&
+    selectedAdsWeek?.weekKey !== reservationChoice.weekKey;
 
   return (
     <div className="space-y-6">
@@ -618,15 +623,20 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
         ) : null}
 
         {reservationError ? <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{reservationError}</div> : null}
-        {reservationConfirmed ? (
+        {hasConfirmedReservation ? (
           <div className="rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-700">Reservation confirmed.</div>
         ) : (
           <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">
             No reservation confirmed yet. Submission is blocked until you reserve a valid slot.
           </div>
         )}
+        {hasCandidateChange ? (
+          <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
+            You already have a confirmed reservation. Reserve again to change your reserved weeks.
+          </div>
+        ) : null}
         <Button type="button" onClick={() => void reserveSelection()} disabled={isReserving}>
-          {isReserving ? "Reserving..." : "Reserve selected slot"}
+          {isReserving ? "Reserving..." : hasConfirmedReservation ? "Change reservation" : "Reserve selected slot"}
         </Button>
       </section>
 
@@ -639,7 +649,7 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
             {formFields.map((field) => renderField(field))}
             {validationError ? <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{validationError}</div> : null}
             {submitError ? <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{submitError}</div> : null}
-            <Button type="submit" disabled={isSubmitting || !reservationConfirmed}>
+            <Button type="submit" disabled={isSubmitting || !hasConfirmedReservation}>
               {isSubmitting ? "Submitting..." : "Validate form"}
             </Button>
           </form>
