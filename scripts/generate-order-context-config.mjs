@@ -253,9 +253,54 @@ function buildConfig(products, options) {
   };
 }
 
+function loadOverrides(overridesPath) {
+  if (!overridesPath) return null;
+  if (!fs.existsSync(overridesPath)) return null;
+  const raw = fs.readFileSync(overridesPath, 'utf8');
+  const parsed = JSON.parse(raw);
+  if (!parsed || typeof parsed !== 'object') return null;
+  if (!Array.isArray(parsed.products)) return null;
+  return parsed;
+}
+
+function applyProductOverrides(config, overrides) {
+  if (!overrides || !Array.isArray(overrides.products)) return config;
+
+  for (const rule of overrides.products) {
+    if (!rule || typeof rule !== 'object') continue;
+    const match = rule.match && typeof rule.match === 'object' ? rule.match : {};
+    const set = rule.set && typeof rule.set === 'object' ? rule.set : {};
+
+    const product = config.products.find((p) => {
+      if (typeof match.sku === 'string' && p.sku === match.sku) return true;
+      if (typeof match.product_key === 'string' && p.product_key === match.product_key) return true;
+      if (typeof match.display_name === 'string' && p.display_name === match.display_name) return true;
+      return false;
+    });
+
+    if (!product) continue;
+    for (const [k, v] of Object.entries(set)) {
+      if (v != null) {
+        product[k] = v;
+      }
+    }
+  }
+
+  config.index.by_sku = Object.fromEntries(config.products.map((p) => [p.sku, p.product_key]));
+  const grouped = {};
+  for (const p of config.products) {
+    grouped[p.product_type] = grouped[p.product_type] || [];
+    grouped[p.product_type].push(p.product_key);
+  }
+  config.index.by_product_type = grouped;
+  return config;
+}
+
 const productsCsvPath = process.argv[2];
 const optionsCsvPath = process.argv[3];
 const outPath = process.argv[4] || path.join(process.cwd(), '../wordpress-plugin-package/config/order-context.config.json');
+const defaultOverridesPath = path.join(process.cwd(), 'scripts', 'product-mapping.overrides.json');
+const overridesPath = process.argv[5] || (fs.existsSync(defaultOverridesPath) ? defaultOverridesPath : null);
 
 if (!productsCsvPath || !optionsCsvPath) {
   console.error('Usage: node scripts/generate-order-context-config.mjs <products.csv> <options.csv> [output.json]');
@@ -264,7 +309,8 @@ if (!productsCsvPath || !optionsCsvPath) {
 
 const productsRows = parseSemicolonCsv(fs.readFileSync(productsCsvPath, 'utf8'));
 const optionsRows = parseSemicolonCsv(fs.readFileSync(optionsCsvPath, 'utf8'));
-const config = buildConfig(parseProducts(productsRows), parseOptions(optionsRows));
+let config = buildConfig(parseProducts(productsRows), parseOptions(optionsRows));
+config = applyProductOverrides(config, loadOverrides(overridesPath));
 
 fs.mkdirSync(path.dirname(outPath), { recursive: true });
 fs.writeFileSync(outPath, JSON.stringify(config, null, 2));

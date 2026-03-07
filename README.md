@@ -47,6 +47,7 @@ The Woo plugin now supports a normalized order-context API based on generated co
 
 - Config source artifact: `../wordpress-plugin-package/config/order-context.config.json`
 - Generator script: `scripts/generate-order-context-config.mjs`
+- Product SKU overrides source of truth: `scripts/product-mapping.overrides.json`
 - REST endpoint: `POST /wp-json/bgg/v1/order-context-token` then `GET /wp-json/bgg/v1/order-context?token=...`
 - Submit page diagnostic mode: `/submit?token=...&diag=1`
 

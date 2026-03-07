@@ -1,7 +1,19 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+
+type ProductFormField = {
+  key: string;
+  label: string;
+  type: "text" | "email" | "url" | "file" | "select" | "date" | "textarea";
+  required?: boolean;
+  accept?: string;
+  options?: string[];
+};
 
 type OrderContextResponse = {
   product: {
@@ -9,6 +21,7 @@ type OrderContextResponse = {
     form_id: string;
     product_key: string;
     base_fields: string[];
+    form_fields?: ProductFormField[];
   };
   options: Array<{
     option_key: string;
@@ -43,6 +56,10 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
   const [error, setError] = useState<string | null>(null);
   const [context, setContext] = useState<OrderContextResponse | null>(null);
   const [diagnostic, setDiagnostic] = useState<DiagnosticState>(null);
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [fileValues, setFileValues] = useState<Record<string, File | null>>({});
+  const [validationError, setValidationError] = useState<string | null>(null);
+  const [submitted, setSubmitted] = useState(false);
 
   const contextEndpoint = useMemo(
     () => `${WP_BASE_URL}/wp-json/bgg/v1/order-context?token=${encodeURIComponent(token)}`,
@@ -98,6 +115,10 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
 
         if (!cancelled) {
           setContext(parsed as OrderContextResponse);
+          setValues({});
+          setFileValues({});
+          setValidationError(null);
+          setSubmitted(false);
           setDiagnostic({
             endpoint: contextEndpoint,
             status: response.status,
@@ -149,6 +170,153 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
     );
   }
 
+  const formFields = context.product.form_fields ?? [];
+
+  function setFieldValue(key: string, value: string) {
+    setValues((previous) => ({
+      ...previous,
+      [key]: value,
+    }));
+  }
+
+  function setFieldFileValue(key: string, file: File | null) {
+    setFileValues((previous) => ({
+      ...previous,
+      [key]: file,
+    }));
+  }
+
+  function validateField(field: ProductFormField): boolean {
+    if (!field.required) {
+      return true;
+    }
+
+    if (field.type === "file") {
+      return Boolean(fileValues[field.key]);
+    }
+
+    const rawValue = values[field.key];
+    return typeof rawValue === "string" && rawValue.trim().length > 0;
+  }
+
+  function validateForm(): boolean {
+    for (const field of formFields) {
+      if (!validateField(field)) {
+        setValidationError(`Missing required field: ${field.label}`);
+        return false;
+      }
+
+      if (field.type === "email" && values[field.key]) {
+        const email = values[field.key].trim();
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+          setValidationError(`Invalid email: ${field.label}`);
+          return false;
+        }
+      }
+
+      if (field.type === "url" && values[field.key]) {
+        try {
+          const parsedUrl = new URL(values[field.key]);
+          if (!parsedUrl.protocol.startsWith("http")) {
+            throw new Error("Unsupported protocol");
+          }
+        } catch {
+          setValidationError(`Invalid URL: ${field.label}`);
+          return false;
+        }
+      }
+    }
+
+    setValidationError(null);
+    return true;
+  }
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSubmitted(false);
+
+    if (!validateForm()) {
+      return;
+    }
+
+    setSubmitted(true);
+  }
+
+  function renderField(field: ProductFormField) {
+    const requiredMark = field.required ? " *" : "";
+    const label = `${field.label}${requiredMark}`;
+
+    if (field.type === "textarea") {
+      return (
+        <div key={field.key} className="space-y-2">
+          <Label htmlFor={field.key}>{label}</Label>
+          <textarea
+            id={field.key}
+            name={field.key}
+            value={values[field.key] ?? ""}
+            onChange={(event) => setFieldValue(field.key, event.target.value)}
+            required={Boolean(field.required)}
+            rows={4}
+            className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          />
+        </div>
+      );
+    }
+
+    if (field.type === "select") {
+      return (
+        <div key={field.key} className="space-y-2">
+          <Label htmlFor={field.key}>{label}</Label>
+          <select
+            id={field.key}
+            name={field.key}
+            value={values[field.key] ?? ""}
+            onChange={(event) => setFieldValue(field.key, event.target.value)}
+            required={Boolean(field.required)}
+            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            <option value="">Select...</option>
+            {(field.options ?? []).map((optionValue) => (
+              <option key={optionValue} value={optionValue}>
+                {optionValue}
+              </option>
+            ))}
+          </select>
+        </div>
+      );
+    }
+
+    if (field.type === "file") {
+      return (
+        <div key={field.key} className="space-y-2">
+          <Label htmlFor={field.key}>{label}</Label>
+          <Input
+            id={field.key}
+            name={field.key}
+            type="file"
+            required={Boolean(field.required)}
+            accept={field.accept}
+            onChange={(event) => setFieldFileValue(field.key, event.target.files?.[0] ?? null)}
+          />
+        </div>
+      );
+    }
+
+    return (
+      <div key={field.key} className="space-y-2">
+        <Label htmlFor={field.key}>{label}</Label>
+        <Input
+          id={field.key}
+          name={field.key}
+          type={field.type}
+          required={Boolean(field.required)}
+          value={values[field.key] ?? ""}
+          onChange={(event) => setFieldValue(field.key, event.target.value)}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <section className="rounded-md border bg-white p-4">
@@ -179,6 +347,26 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
         <pre className="mt-2 overflow-auto rounded-md bg-slate-100 p-3 text-xs">
           {JSON.stringify(context.derived_values, null, 2)}
         </pre>
+      </section>
+
+      <section className="rounded-md border bg-white p-4">
+        <h3 className="text-base font-semibold">Submission form</h3>
+        {formFields.length === 0 ? (
+          <p className="mt-2 text-sm text-muted-foreground">No dynamic fields configured for this product yet.</p>
+        ) : (
+          <form className="mt-4 space-y-4" onSubmit={handleSubmit} noValidate>
+            {formFields.map((field) => renderField(field))}
+            {validationError ? (
+              <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{validationError}</div>
+            ) : null}
+            {submitted ? (
+              <div className="rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-700">
+                Form validation passed. Submission payload is ready.
+              </div>
+            ) : null}
+            <Button type="submit">Validate form</Button>
+          </form>
+        )}
       </section>
 
       {diag && diagnostic ? (
