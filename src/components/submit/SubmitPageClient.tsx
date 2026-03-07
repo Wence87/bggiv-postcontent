@@ -235,7 +235,7 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
     return true;
   }
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitError(null);
 
@@ -260,25 +260,25 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
     }
 
     setIsSubmitting(true);
-    void fetch("/api/submit/finalize", {
-      method: "POST",
-      body: payload,
-    })
-      .then(async (response) => {
-        const body = await response.json().catch(() => ({}));
-        if (!response.ok) {
-          const message =
-            typeof body?.message === "string" ? body.message : typeof body?.code === "string" ? body.code : "Submission failed";
-          throw new Error(message);
-        }
-        router.push("/submit/success");
-      })
-      .catch((submitRequestError) => {
-        setSubmitError(submitRequestError instanceof Error ? submitRequestError.message : "Submission failed");
-      })
-      .finally(() => {
-        setIsSubmitting(false);
+    try {
+      const response = await fetch("/api/submit/finalize", {
+        method: "POST",
+        body: payload,
       });
+
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const message =
+          typeof body?.message === "string" ? body.message : typeof body?.code === "string" ? body.code : "Submission failed";
+        throw new Error(message);
+      }
+
+      router.push("/submit/success");
+    } catch (submitRequestError) {
+      setSubmitError(submitRequestError instanceof Error ? submitRequestError.message : "Submission failed");
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   function renderField(field: ProductFormField) {
