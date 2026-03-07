@@ -808,14 +808,18 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
         ) : null}
 
         {(productType === "news" || productType === "promo" || productType === "giveaway") ? (
-          <PostsCalendar
-            product={productToPostsView(productType)}
-            selectedDayKey={selectedPostDayKey}
-            onSelectDayKey={setSelectedPostDayKey}
-            selectedHour={selectedPostHour}
-            onSelectHour={setSelectedPostHour}
-            onlyAvailableSelection
-          />
+          <div className="space-y-3">
+            <PostsCalendar
+              product={productToPostsView(productType)}
+              selectedDayKey={selectedPostDayKey}
+              onSelectDayKey={setSelectedPostDayKey}
+              selectedHour={selectedPostHour}
+              onSelectHour={setSelectedPostHour}
+              onlyAvailableSelection
+              reservedStartsAtUtc={reservationChoice.startsAtUtc ?? null}
+            />
+            {reservationLegend}
+          </div>
         ) : null}
 
         {reservationError ? <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{reservationError}</div> : null}
