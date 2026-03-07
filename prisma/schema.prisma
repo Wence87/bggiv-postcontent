@@ -75,3 +75,28 @@ model SubmissionDraft {
   @@index([status])
   @@index([product])
 }
+
+model SubmitFormSubmission {
+  id                  String   @id @default(cuid())
+  tokenHash           String   @unique
+  productKey          String
+  productType         String
+  companyName         String
+  contactEmail        String
+  websiteUrl          String
+  targetUrl           String
+  adFormat            String
+  startDate           DateTime
+  notes               String?
+  bannerImageName     String
+  bannerImageMimeType String
+  bannerImageSize     Int
+  bannerImageData     Bytes
+  formDataJson        Json
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([productKey])
+  @@index([productType])
+  @@index([createdAt])
+}

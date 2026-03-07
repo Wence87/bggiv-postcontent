@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -52,6 +53,7 @@ type SubmitPageClientProps = {
 const WP_BASE_URL = (process.env.NEXT_PUBLIC_WP_BASE_URL || "https://boardgamegiveaways.com").replace(/\/$/, "");
 
 export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps) {
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [context, setContext] = useState<OrderContextResponse | null>(null);
@@ -59,7 +61,8 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
   const [values, setValues] = useState<Record<string, string>>({});
   const [fileValues, setFileValues] = useState<Record<string, File | null>>({});
   const [validationError, setValidationError] = useState<string | null>(null);
-  const [submitted, setSubmitted] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const contextEndpoint = useMemo(
     () => `${WP_BASE_URL}/wp-json/bgg/v1/order-context?token=${encodeURIComponent(token)}`,
@@ -118,7 +121,8 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
           setValues({});
           setFileValues({});
           setValidationError(null);
-          setSubmitted(false);
+          setSubmitError(null);
+          setIsSubmitting(false);
           setDiagnostic({
             endpoint: contextEndpoint,
             status: response.status,
@@ -233,13 +237,48 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setSubmitted(false);
+    setSubmitError(null);
+
+    if (!context) {
+      setSubmitError("Missing context");
+      return;
+    }
 
     if (!validateForm()) {
       return;
     }
 
-    setSubmitted(true);
+    const payload = new FormData();
+    payload.append("token", token);
+    payload.append("product_key", context.product.product_key);
+    payload.append("form_data", JSON.stringify(values));
+
+    const bannerFile = fileValues.banner_image_upload;
+    if (bannerFile) {
+      payload.append("banner_image_upload", bannerFile);
+      payload.append("uploaded_files", bannerFile);
+    }
+
+    setIsSubmitting(true);
+    void fetch("/api/submit/finalize", {
+      method: "POST",
+      body: payload,
+    })
+      .then(async (response) => {
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          const message =
+            typeof body?.message === "string" ? body.message : typeof body?.code === "string" ? body.code : "Submission failed";
+          throw new Error(message);
+        }
+        router.push("/submit/success");
+      })
+      .catch((submitRequestError) => {
+        setSubmitError(submitRequestError instanceof Error ? submitRequestError.message : "Submission failed");
+      })
+      .finally(() => {
+        setIsSubmitting(false);
+      });
   }
 
   function renderField(field: ProductFormField) {
@@ -359,12 +398,12 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
             {validationError ? (
               <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{validationError}</div>
             ) : null}
-            {submitted ? (
-              <div className="rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-700">
-                Form validation passed. Submission payload is ready.
-              </div>
+            {submitError ? (
+              <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{submitError}</div>
             ) : null}
-            <Button type="submit">Validate form</Button>
+            <Button type="submit" disabled={isSubmitting}>
+              {isSubmitting ? "Submitting..." : "Validate form"}
+            </Button>
           </form>
         )}
       </section>
