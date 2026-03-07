@@ -6,6 +6,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { AdsCalendar, type AdsWeek } from "@/components/public/AdsCalendar";
+import { SponsorshipCalendar, type SponsorshipMonth } from "@/components/public/SponsorshipCalendar";
+import { PostsCalendar, type PublicPostProduct } from "@/components/public/PostsCalendar";
+import { resolveTimeZoneDateTimeToUtc } from "@/lib/timezone";
 
 type ProductFormField = {
   key: string;
@@ -18,7 +22,7 @@ type ProductFormField = {
 
 type OrderContextResponse = {
   product: {
-    product_type: string;
+    product_type: "sponsorship" | "ads" | "news" | "promo" | "giveaway";
     form_id: string;
     product_key: string;
     base_fields: string[];
@@ -39,6 +43,12 @@ type OrderContextResponse = {
   config_version: number | null;
 };
 
+type ReservationChoice = {
+  monthKey?: string;
+  weekKey?: string;
+  startsAtUtc?: string;
+};
+
 type DiagnosticState = {
   endpoint: string;
   status: number;
@@ -52,17 +62,45 @@ type SubmitPageClientProps = {
 
 const WP_BASE_URL = (process.env.NEXT_PUBLIC_WP_BASE_URL || "https://boardgamegiveaways.com").replace(/\/$/, "");
 
+function weekKeyToDate(weekKey: string): string {
+  const match = /^(\d{4})-W(\d{2})$/.exec(weekKey);
+  if (!match) return "";
+  const year = Number(match[1]);
+  const week = Number(match[2]);
+  const jan4 = new Date(Date.UTC(year, 0, 4));
+  const jan4Day = (jan4.getUTCDay() + 6) % 7;
+  const monday = new Date(jan4);
+  monday.setUTCDate(jan4.getUTCDate() - jan4Day + (week - 1) * 7);
+  return `${monday.getUTCFullYear()}-${String(monday.getUTCMonth() + 1).padStart(2, "0")}-${String(monday.getUTCDate()).padStart(2, "0")}`;
+}
+
+function productToPostsView(productType: OrderContextResponse["product"]["product_type"]): PublicPostProduct {
+  if (productType === "promo") return "PROMO_DEAL";
+  if (productType === "giveaway") return "GIVEAWAY";
+  return "NEWS";
+}
+
 export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [context, setContext] = useState<OrderContextResponse | null>(null);
   const [diagnostic, setDiagnostic] = useState<DiagnosticState>(null);
+
   const [values, setValues] = useState<Record<string, string>>({});
   const [fileValues, setFileValues] = useState<Record<string, File | null>>({});
   const [validationError, setValidationError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [reservationError, setReservationError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isReserving, setIsReserving] = useState(false);
+  const [reservationConfirmed, setReservationConfirmed] = useState(false);
+  const [reservationChoice, setReservationChoice] = useState<ReservationChoice>({});
+
+  const [selectedAdsWeek, setSelectedAdsWeek] = useState<AdsWeek | null>(null);
+  const [selectedSponsorshipMonth, setSelectedSponsorshipMonth] = useState<SponsorshipMonth | null>(null);
+  const [selectedPostDayKey, setSelectedPostDayKey] = useState<string | null>(null);
+  const [selectedPostHour, setSelectedPostHour] = useState<number | null>(null);
 
   const contextEndpoint = useMemo(
     () => `${WP_BASE_URL}/wp-json/bgg/v1/order-context?token=${encodeURIComponent(token)}`,
@@ -79,9 +117,7 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
       try {
         const response = await fetch(contextEndpoint, {
           method: "GET",
-          headers: {
-            Accept: "application/json",
-          },
+          headers: { Accept: "application/json" },
         });
 
         const responseText = await response.text();
@@ -94,11 +130,7 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
 
         if (!response.ok) {
           if (!cancelled) {
-            setDiagnostic({
-              endpoint: contextEndpoint,
-              status: response.status,
-              responseBody: parsed,
-            });
+            setDiagnostic({ endpoint: contextEndpoint, status: response.status, responseBody: parsed });
             setError("Invalid or expired token");
           }
           return;
@@ -106,11 +138,7 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
 
         if (!parsed || typeof parsed !== "object" || !("product" in parsed)) {
           if (!cancelled) {
-            setDiagnostic({
-              endpoint: contextEndpoint,
-              status: response.status,
-              responseBody: parsed,
-            });
+            setDiagnostic({ endpoint: contextEndpoint, status: response.status, responseBody: parsed });
             setError("Invalid order context payload");
           }
           return;
@@ -122,37 +150,43 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
           setFileValues({});
           setValidationError(null);
           setSubmitError(null);
-          setIsSubmitting(false);
-          setDiagnostic({
-            endpoint: contextEndpoint,
-            status: response.status,
-            responseBody: diag ? parsed : { ok: true },
-          });
+          setReservationError(null);
+          setReservationConfirmed(false);
+          setReservationChoice({});
+          setSelectedAdsWeek(null);
+          setSelectedSponsorshipMonth(null);
+          setSelectedPostDayKey(null);
+          setSelectedPostHour(null);
+          setDiagnostic({ endpoint: contextEndpoint, status: response.status, responseBody: diag ? parsed : { ok: true } });
         }
       } catch (fetchError) {
         if (!cancelled) {
           setDiagnostic({
             endpoint: contextEndpoint,
             status: 0,
-            responseBody: {
-              error: fetchError instanceof Error ? fetchError.message : "Network error",
-            },
+            responseBody: { error: fetchError instanceof Error ? fetchError.message : "Network error" },
           });
           setError("Unable to load order context");
         }
       } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
+        if (!cancelled) setLoading(false);
       }
     }
 
     void loadContext();
-
     return () => {
       cancelled = true;
     };
   }, [contextEndpoint, diag]);
+
+  useEffect(() => {
+    if (!context) return;
+    if (context.product.product_type === "ads") {
+      const derivedStart = selectedAdsWeek?.weekKey ? weekKeyToDate(selectedAdsWeek.weekKey) : "";
+      setFieldValue("start_date", derivedStart);
+    }
+    setReservationConfirmed(false);
+  }, [context, selectedAdsWeek?.weekKey, selectedSponsorshipMonth?.monthKey, selectedPostDayKey, selectedPostHour]);
 
   if (loading) {
     return <div className="rounded-md border bg-white p-4 text-sm text-muted-foreground">Loading submission context...</div>;
@@ -161,49 +195,109 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
   if (error || !context) {
     return (
       <div className="space-y-4">
-        <div className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-          {error ?? "Invalid submission link"}
-        </div>
-
-        {diag && diagnostic ? (
-          <pre className="overflow-auto rounded-md border bg-slate-950 p-4 text-xs text-slate-100">
-            {JSON.stringify(diagnostic, null, 2)}
-          </pre>
-        ) : null}
+        <div className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error ?? "Invalid submission link"}</div>
+        {diag && diagnostic ? <pre className="overflow-auto rounded-md border bg-slate-950 p-4 text-xs text-slate-100">{JSON.stringify(diagnostic, null, 2)}</pre> : null}
       </div>
     );
   }
 
-  const formFields = context.product.form_fields ?? [];
+  const currentContext = context;
+  const formFields = currentContext.product.form_fields ?? [];
 
   function setFieldValue(key: string, value: string) {
-    setValues((previous) => ({
-      ...previous,
-      [key]: value,
-    }));
+    setValues((previous) => ({ ...previous, [key]: value }));
   }
 
   function setFieldFileValue(key: string, file: File | null) {
-    setFileValues((previous) => ({
-      ...previous,
-      [key]: file,
-    }));
+    setFileValues((previous) => ({ ...previous, [key]: file }));
+  }
+
+  function buildReservationPayload(): ReservationChoice | null {
+    if (currentContext.product.product_type === "ads") {
+      if (!selectedAdsWeek || selectedAdsWeek.status !== "available") return null;
+      return { weekKey: selectedAdsWeek.weekKey };
+    }
+
+    if (currentContext.product.product_type === "sponsorship") {
+      if (!selectedSponsorshipMonth || selectedSponsorshipMonth.status !== "available") return null;
+      return { monthKey: selectedSponsorshipMonth.monthKey };
+    }
+
+    if (!selectedPostDayKey || selectedPostHour == null) return null;
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(selectedPostDayKey);
+    if (!match) return null;
+
+    const startsAt = resolveTimeZoneDateTimeToUtc(
+      Number(match[1]),
+      Number(match[2]),
+      Number(match[3]),
+      selectedPostHour,
+      0,
+      "Europe/Brussels"
+    );
+
+    return { startsAtUtc: startsAt.toISOString() };
+  }
+
+  async function reserveSelection() {
+    setReservationError(null);
+    const payload = buildReservationPayload();
+    if (!payload) {
+      setReservationError("Please select an available slot before reserving.");
+      return;
+    }
+
+    setIsReserving(true);
+    try {
+      const response = await fetch("/api/submit/reserve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, ...payload }),
+      });
+
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const message = typeof body?.code === "string" ? body.code : "Reservation failed";
+        throw new Error(message);
+      }
+
+      const reservation = body?.reservation as
+        | { monthKey?: string | null; weekKey?: string | null; startsAtUtc?: string | null }
+        | undefined;
+
+      setReservationChoice({
+        monthKey: reservation?.monthKey ?? undefined,
+        weekKey: reservation?.weekKey ?? undefined,
+        startsAtUtc: reservation?.startsAtUtc ?? undefined,
+      });
+      setReservationConfirmed(true);
+      setValidationError(null);
+    } catch (reserveError) {
+      setReservationConfirmed(false);
+      setReservationChoice({});
+      setReservationError(reserveError instanceof Error ? reserveError.message : "Reservation failed");
+    } finally {
+      setIsReserving(false);
+    }
   }
 
   function validateField(field: ProductFormField): boolean {
-    if (!field.required) {
-      return true;
+    if (field.key === "start_date" && currentContext.product.product_type === "ads") {
+      return Boolean(values.start_date);
     }
 
-    if (field.type === "file") {
-      return Boolean(fileValues[field.key]);
-    }
-
+    if (!field.required) return true;
+    if (field.type === "file") return Boolean(fileValues[field.key]);
     const rawValue = values[field.key];
     return typeof rawValue === "string" && rawValue.trim().length > 0;
   }
 
   function validateForm(): boolean {
+    if (!reservationConfirmed) {
+      setValidationError("You must reserve an available slot before submitting the form.");
+      return false;
+    }
+
     for (const field of formFields) {
       if (!validateField(field)) {
         setValidationError(`Missing required field: ${field.label}`);
@@ -221,9 +315,7 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
       if (field.type === "url" && values[field.key]) {
         try {
           const parsedUrl = new URL(values[field.key]);
-          if (!parsedUrl.protocol.startsWith("http")) {
-            throw new Error("Unsupported protocol");
-          }
+          if (!parsedUrl.protocol.startsWith("http")) throw new Error("Unsupported protocol");
         } catch {
           setValidationError(`Invalid URL: ${field.label}`);
           return false;
@@ -239,19 +331,13 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
     event.preventDefault();
     setSubmitError(null);
 
-    if (!context) {
-      setSubmitError("Missing context");
-      return;
-    }
-
-    if (!validateForm()) {
-      return;
-    }
+    if (!validateForm()) return;
 
     const payload = new FormData();
     payload.append("token", token);
-    payload.append("product_key", context.product.product_key);
+    payload.append("product_key", currentContext.product.product_key);
     payload.append("form_data", JSON.stringify(values));
+    payload.append("reservation_choice", JSON.stringify(reservationChoice));
 
     const bannerFile = fileValues.banner_image_upload;
     if (bannerFile) {
@@ -268,8 +354,7 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
 
       const body = await response.json().catch(() => ({}));
       if (!response.ok) {
-        const message =
-          typeof body?.message === "string" ? body.message : typeof body?.code === "string" ? body.code : "Submission failed";
+        const message = typeof body?.message === "string" ? body.message : typeof body?.code === "string" ? body.code : "Submission failed";
         throw new Error(message);
       }
 
@@ -282,6 +367,16 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
   }
 
   function renderField(field: ProductFormField) {
+    if (field.key === "start_date" && currentContext.product.product_type === "ads") {
+      return (
+        <div key={field.key} className="space-y-2">
+          <Label htmlFor={field.key}>{`${field.label} *`}</Label>
+          <Input id={field.key} name={field.key} type="date" value={values[field.key] ?? ""} readOnly disabled />
+          <p className="text-xs text-muted-foreground">Derived from reserved week. Manual date entry is disabled.</p>
+        </div>
+      );
+    }
+
     const requiredMark = field.required ? " *" : "";
     const label = `${field.label}${requiredMark}`;
 
@@ -356,36 +451,59 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
     );
   }
 
+  const productType = currentContext.product.product_type;
+
   return (
     <div className="space-y-6">
       <section className="rounded-md border bg-white p-4">
         <div className="flex items-center justify-between">
           <h2 className="text-base font-semibold">Submission Context</h2>
-          <Badge variant="secondary">{context.product.product_type.toUpperCase()}</Badge>
+          <Badge variant="secondary">{productType.toUpperCase()}</Badge>
         </div>
-        <p className="mt-2 text-sm text-muted-foreground">Form: {context.product.form_id}</p>
-        <p className="text-sm text-muted-foreground">Product key: {context.product.product_key}</p>
+        <p className="mt-2 text-sm text-muted-foreground">Form: {currentContext.product.form_id}</p>
+        <p className="text-sm text-muted-foreground">Product key: {currentContext.product.product_key}</p>
       </section>
 
-      <section className="rounded-md border bg-white p-4">
-        <h3 className="text-base font-semibold">Enabled options</h3>
-        <p className="mt-2 text-sm text-muted-foreground">
-          {context.enabled_options.length ? context.enabled_options.join(", ") : "No enabled options"}
-        </p>
-      </section>
+      <section className="rounded-md border bg-white p-4 space-y-4">
+        <div>
+          <h3 className="text-base font-semibold">Reservation</h3>
+          <p className="text-sm text-muted-foreground">Select an available slot from the real booking engine, then reserve it.</p>
+        </div>
 
-      <section className="rounded-md border bg-white p-4">
-        <h3 className="text-base font-semibold">Activated blocks</h3>
-        <pre className="mt-2 overflow-auto rounded-md bg-slate-100 p-3 text-xs">
-          {JSON.stringify(context.activated_blocks, null, 2)}
-        </pre>
-      </section>
+        {productType === "ads" ? (
+          <AdsCalendar selectedWeekKey={selectedAdsWeek?.weekKey ?? null} onSelectWeek={setSelectedAdsWeek} onlyAvailableSelection />
+        ) : null}
 
-      <section className="rounded-md border bg-white p-4">
-        <h3 className="text-base font-semibold">Derived values</h3>
-        <pre className="mt-2 overflow-auto rounded-md bg-slate-100 p-3 text-xs">
-          {JSON.stringify(context.derived_values, null, 2)}
-        </pre>
+        {productType === "sponsorship" ? (
+          <SponsorshipCalendar
+            selectedMonthKey={selectedSponsorshipMonth?.monthKey ?? null}
+            onSelectMonth={setSelectedSponsorshipMonth}
+            onlyAvailableSelection
+          />
+        ) : null}
+
+        {(productType === "news" || productType === "promo" || productType === "giveaway") ? (
+          <PostsCalendar
+            product={productToPostsView(productType)}
+            selectedDayKey={selectedPostDayKey}
+            onSelectDayKey={setSelectedPostDayKey}
+            selectedHour={selectedPostHour}
+            onSelectHour={setSelectedPostHour}
+            onlyAvailableSelection
+          />
+        ) : null}
+
+        {reservationError ? <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{reservationError}</div> : null}
+        {reservationConfirmed ? (
+          <div className="rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-700">Reservation confirmed.</div>
+        ) : (
+          <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">
+            No reservation confirmed yet. Submission is blocked until you reserve a valid slot.
+          </div>
+        )}
+        <Button type="button" onClick={() => void reserveSelection()} disabled={isReserving}>
+          {isReserving ? "Reserving..." : "Reserve selected slot"}
+        </Button>
       </section>
 
       <section className="rounded-md border bg-white p-4">
@@ -395,13 +513,9 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
         ) : (
           <form className="mt-4 space-y-4" onSubmit={handleSubmit} noValidate>
             {formFields.map((field) => renderField(field))}
-            {validationError ? (
-              <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{validationError}</div>
-            ) : null}
-            {submitError ? (
-              <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{submitError}</div>
-            ) : null}
-            <Button type="submit" disabled={isSubmitting}>
+            {validationError ? <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{validationError}</div> : null}
+            {submitError ? <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{submitError}</div> : null}
+            <Button type="submit" disabled={isSubmitting || !reservationConfirmed}>
               {isSubmitting ? "Submitting..." : "Validate form"}
             </Button>
           </form>
@@ -411,9 +525,7 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
       {diag && diagnostic ? (
         <section className="rounded-md border bg-white p-4">
           <h3 className="text-base font-semibold">Diagnostic</h3>
-          <pre className="mt-2 overflow-auto rounded-md bg-slate-950 p-3 text-xs text-slate-100">
-            {JSON.stringify(diagnostic, null, 2)}
-          </pre>
+          <pre className="mt-2 overflow-auto rounded-md bg-slate-950 p-3 text-xs text-slate-100">{JSON.stringify(diagnostic, null, 2)}</pre>
         </section>
       ) : null}
     </div>

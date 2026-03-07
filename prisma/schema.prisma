@@ -92,6 +92,9 @@ model SubmitFormSubmission {
   bannerImageMimeType String
   bannerImageSize     Int
   bannerImageData     Bytes
+  reservationMonthKey String?
+  reservationWeekKey  String?
+  reservationStartsAt DateTime?
   formDataJson        Json
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt

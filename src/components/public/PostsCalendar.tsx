@@ -39,6 +39,7 @@ type PostsCalendarProps = {
   onSelectDayKey: (dayKey: string | null) => void;
   selectedHour: number | null;
   onSelectHour: (hour: number | null) => void;
+  onlyAvailableSelection?: boolean;
 };
 
 function mapProductParam(product: PublicPostProduct): string {
@@ -68,6 +69,7 @@ export function PostsCalendar({
   onSelectDayKey,
   selectedHour,
   onSelectHour,
+  onlyAvailableSelection = false,
 }: PostsCalendarProps) {
   const { userTz, setUserTz } = useUserTimezone();
   const [loading, setLoading] = useState(true);
@@ -154,7 +156,12 @@ export function PostsCalendar({
             selected={selectedDate}
             onSelect={(date) => {
               if (!date) return;
-              onSelectDayKey(dayKeyForDate(new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()))));
+              const dayKey = dayKeyForDate(new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate())));
+              const day = days[dayKey];
+              if (onlyAvailableSelection && day?.dayStatus !== "available") {
+                return;
+              }
+              onSelectDayKey(dayKey);
               onSelectHour(null);
             }}
             showOutsideDays
@@ -215,6 +222,7 @@ export function PostsCalendar({
                   status={status}
                   selected={selectedHour === hour}
                   onClick={() => onSelectHour(hour)}
+                  disabled={onlyAvailableSelection && status !== "available"}
                   title={
                     <div className="flex flex-col items-center gap-0.5 leading-tight">
                       <span className="text-sm font-semibold text-foreground">{brusselsLabel}</span>

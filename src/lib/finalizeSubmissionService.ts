@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
+import type { PrismaClient } from "@prisma/client";
 
 export type AdsSubmissionInput = {
   token: string;
@@ -13,6 +14,11 @@ export type AdsSubmissionInput = {
   adFormat: string;
   startDate: string;
   notes?: string;
+  reservation?: {
+    monthKey?: string;
+    weekKey?: string;
+    startsAtUtc?: string;
+  };
   bannerImage: {
     name: string;
     mimeType: string;
@@ -27,16 +33,30 @@ function tokenHash(token: string): string {
 }
 
 export async function saveAdsSubmission(input: AdsSubmissionInput) {
+  return saveAdsSubmissionWithDb(prisma, input);
+}
+
+export async function saveAdsSubmissionWithDb(
+  db: PrismaClient | Prisma.TransactionClient,
+  input: AdsSubmissionInput
+) {
   const parsedStartDate = new Date(input.startDate);
   if (Number.isNaN(parsedStartDate.getTime())) {
     throw new Error("INVALID_START_DATE");
+  }
+  const parsedReservationStartsAt =
+    input.reservation?.startsAtUtc && input.reservation.startsAtUtc.trim()
+      ? new Date(input.reservation.startsAtUtc)
+      : null;
+  if (parsedReservationStartsAt && Number.isNaN(parsedReservationStartsAt.getTime())) {
+    throw new Error("INVALID_RESERVATION_START");
   }
 
   const hashedToken = tokenHash(input.token);
   const imageBuffer = Buffer.from(input.bannerImage.data);
   const formDataJson = JSON.parse(JSON.stringify(input.formData)) as Prisma.InputJsonValue;
 
-  return prisma.submitFormSubmission.upsert({
+  return db.submitFormSubmission.upsert({
     where: {
       tokenHash: hashedToken,
     },
@@ -55,6 +75,9 @@ export async function saveAdsSubmission(input: AdsSubmissionInput) {
       bannerImageMimeType: input.bannerImage.mimeType,
       bannerImageSize: input.bannerImage.size,
       bannerImageData: imageBuffer,
+      reservationMonthKey: input.reservation?.monthKey || null,
+      reservationWeekKey: input.reservation?.weekKey || null,
+      reservationStartsAt: parsedReservationStartsAt,
       formDataJson,
     },
     update: {
@@ -71,6 +94,9 @@ export async function saveAdsSubmission(input: AdsSubmissionInput) {
       bannerImageMimeType: input.bannerImage.mimeType,
       bannerImageSize: input.bannerImage.size,
       bannerImageData: imageBuffer,
+      reservationMonthKey: input.reservation?.monthKey || null,
+      reservationWeekKey: input.reservation?.weekKey || null,
+      reservationStartsAt: parsedReservationStartsAt,
       formDataJson,
     },
   });

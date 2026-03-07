@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { allowRateLimited, getClientIp, isAllowedOrigin } from "@/lib/apiSecurity";
 import { fetchWPOrderContextByToken } from "@/lib/wpOrderContext";
-import { saveAdsSubmission } from "@/lib/finalizeSubmissionService";
+import { saveAdsSubmissionWithDb } from "@/lib/finalizeSubmissionService";
+import { getActiveReservationByToken, tokenReservationRef } from "@/lib/submitReservationService";
+import { BookingStatus, Product } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 
@@ -37,6 +40,7 @@ async function parseRequestPayload(request: NextRequest): Promise<{
   token: string;
   productKey: string;
   formData: Record<string, unknown>;
+  reservationChoice: Record<string, unknown>;
   file: File | null;
 }> {
   const contentType = request.headers.get("content-type") || "";
@@ -46,7 +50,9 @@ async function parseRequestPayload(request: NextRequest): Promise<{
     const token = normalizeString(form.get("token"));
     const productKey = normalizeString(form.get("product_key"));
     const formDataRaw = normalizeString(form.get("form_data"));
+    const reservationRaw = normalizeString(form.get("reservation_choice"));
     let parsedFormData: Record<string, unknown> = {};
+    let parsedReservation: Record<string, unknown> = {};
     if (formDataRaw) {
       try {
         const parsed = JSON.parse(formDataRaw) as unknown;
@@ -57,21 +63,43 @@ async function parseRequestPayload(request: NextRequest): Promise<{
         throw new Error("INVALID_FORM_DATA_JSON");
       }
     }
+    if (reservationRaw) {
+      try {
+        const parsed = JSON.parse(reservationRaw) as unknown;
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          parsedReservation = parsed as Record<string, unknown>;
+        }
+      } catch {
+        throw new Error("INVALID_RESERVATION_JSON");
+      }
+    }
 
     const maybeFile = form.get("banner_image_upload") ?? form.get("uploaded_files");
     const file = maybeFile instanceof File ? maybeFile : null;
 
-    return { token, productKey, formData: parsedFormData, file };
+    return { token, productKey, formData: parsedFormData, reservationChoice: parsedReservation, file };
   }
 
   const body = (await request.json()) as Record<string, unknown>;
   const token = normalizeString(body.token);
   const productKey = normalizeString(body.product_key);
   const formData = body.form_data && typeof body.form_data === "object" ? (body.form_data as Record<string, unknown>) : {};
+  const reservationChoice =
+    body.reservation_choice && typeof body.reservation_choice === "object"
+      ? (body.reservation_choice as Record<string, unknown>)
+      : {};
   const uploaded = body.uploaded_files as Record<string, unknown> | undefined;
   const file = uploaded && uploaded.banner_image_upload instanceof File ? uploaded.banner_image_upload : null;
 
-  return { token, productKey, formData, file };
+  return { token, productKey, formData, reservationChoice, file };
+}
+
+function mapProductType(productType: string): Product {
+  if (productType === "sponsorship") return Product.SPONSORSHIP;
+  if (productType === "ads") return Product.ADS;
+  if (productType === "promo") return Product.PROMO;
+  if (productType === "giveaway") return Product.GIVEAWAY;
+  return Product.NEWS;
 }
 
 export async function POST(request: NextRequest) {
@@ -93,7 +121,7 @@ export async function POST(request: NextRequest) {
     return badRequest(code);
   }
 
-  const { token, productKey, formData, file } = parsed;
+  const { token, productKey, formData, reservationChoice, file } = parsed;
   if (!token) {
     return badRequest("Missing token");
   }
@@ -123,6 +151,9 @@ export async function POST(request: NextRequest) {
   const adFormat = normalizeString(formData.ad_format);
   const startDate = normalizeString(formData.start_date);
   const notes = normalizeString(formData.notes);
+  const reservationMonthKey = normalizeString(reservationChoice.monthKey);
+  const reservationWeekKey = normalizeString(reservationChoice.weekKey);
+  const reservationStartsAt = normalizeString(reservationChoice.startsAtUtc);
 
   if (!companyName || !contactEmail || !websiteUrl || !targetUrl || !adFormat || !startDate) {
     return badRequest("Missing required form fields");
@@ -148,27 +179,76 @@ export async function POST(request: NextRequest) {
     return badRequest("Invalid image size");
   }
 
+  const activeReservation = await getActiveReservationByToken(token);
+  if (!activeReservation) {
+    return apiError(409, "RESERVATION_REQUIRED", "No active reservation found");
+  }
+
+  const expectedProduct = mapProductType(context.product.product_type);
+  if (activeReservation.product !== expectedProduct) {
+    return apiError(409, "RESERVATION_PRODUCT_MISMATCH", "Reservation does not match product");
+  }
+
+  if (expectedProduct === Product.SPONSORSHIP && activeReservation.monthKey !== reservationMonthKey) {
+    return apiError(409, "RESERVATION_MISMATCH", "Reserved month does not match");
+  }
+  if (expectedProduct === Product.ADS && activeReservation.weekKey !== reservationWeekKey) {
+    return apiError(409, "RESERVATION_MISMATCH", "Reserved week does not match");
+  }
+  if (
+    (expectedProduct === Product.NEWS || expectedProduct === Product.PROMO || expectedProduct === Product.GIVEAWAY) &&
+    activeReservation.startsAtUtc?.toISOString() !== reservationStartsAt
+  ) {
+    return apiError(409, "RESERVATION_MISMATCH", "Reserved slot does not match");
+  }
+
   const imageBuffer = await file.arrayBuffer();
 
   try {
-    const submission = await saveAdsSubmission({
-      token,
-      productKey,
-      productType: context.product.product_type,
-      companyName,
-      contactEmail,
-      websiteUrl,
-      targetUrl,
-      adFormat,
-      startDate,
-      notes,
-      bannerImage: {
-        name: file.name || "banner-image",
-        mimeType: file.type,
-        size: file.size,
-        data: imageBuffer,
-      },
-      formData,
+    const submission = await prisma.$transaction(async (tx) => {
+      const saved = await saveAdsSubmissionWithDb(tx, {
+        token,
+        productKey,
+        productType: context.product.product_type,
+        companyName,
+        contactEmail,
+        websiteUrl,
+        targetUrl,
+        adFormat,
+        startDate,
+        notes,
+        reservation: {
+          monthKey: reservationMonthKey || undefined,
+          weekKey: reservationWeekKey || undefined,
+          startsAtUtc: reservationStartsAt || undefined,
+        },
+        bannerImage: {
+          name: file.name || "banner-image",
+          mimeType: file.type,
+          size: file.size,
+          data: imageBuffer,
+        },
+        formData,
+      });
+
+      const updated = await tx.booking.updateMany({
+        where: {
+          id: activeReservation.id,
+          reservedByOrderId: tokenReservationRef(token),
+          status: BookingStatus.DRAFT_RESERVED,
+        },
+        data: {
+          status: BookingStatus.SUBMITTED,
+          expiresAt: null,
+          companyName,
+          customerEmail: contactEmail,
+        },
+      });
+      if (updated.count !== 1) {
+        throw new Error("RESERVATION_STATE_CHANGED");
+      }
+
+      return saved;
     });
 
     return NextResponse.json({

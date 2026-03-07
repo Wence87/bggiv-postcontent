@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { StatusTile, type PublicStatus } from "@/components/public/StatusTile";
 
-type SponsorshipMonth = {
+export type SponsorshipMonth = {
   monthKey: string;
   status: PublicStatus;
 };
@@ -13,6 +13,12 @@ type SponsorshipResponse = {
   product: "sponsorship";
   tz: string;
   months: SponsorshipMonth[];
+};
+
+type SponsorshipCalendarProps = {
+  selectedMonthKey?: string | null;
+  onSelectMonth?: (month: SponsorshipMonth | null) => void;
+  onlyAvailableSelection?: boolean;
 };
 
 function formatMonthLabel(monthKey: string): string {
@@ -30,10 +36,20 @@ function statusLabel(status: PublicStatus): string {
   return "Locked";
 }
 
-export function SponsorshipCalendar() {
+export function SponsorshipCalendar({
+  selectedMonthKey: controlledSelectedMonthKey,
+  onSelectMonth,
+  onlyAvailableSelection = false,
+}: SponsorshipCalendarProps = {}) {
   const [loading, setLoading] = useState(true);
   const [months, setMonths] = useState<SponsorshipMonth[]>([]);
-  const [selectedMonthKey, setSelectedMonthKey] = useState<string | null>(null);
+  const [selectedMonthKeyInternal, setSelectedMonthKeyInternal] = useState<string | null>(null);
+  const selectedMonthKey = controlledSelectedMonthKey ?? selectedMonthKeyInternal;
+  const setSelectedMonthKey = (value: string | null) => {
+    if (controlledSelectedMonthKey === undefined) {
+      setSelectedMonthKeyInternal(value);
+    }
+  };
 
   useEffect(() => {
     const controller = new AbortController();
@@ -72,6 +88,10 @@ export function SponsorshipCalendar() {
     [months, selectedMonthKey]
   );
 
+  useEffect(() => {
+    onSelectMonth?.(selectedMonth);
+  }, [onSelectMonth, selectedMonth]);
+
   if (loading) {
     return <div className="rounded-lg border bg-white p-4 text-sm text-muted-foreground">Loading sponsorship availability...</div>;
   }
@@ -88,7 +108,14 @@ export function SponsorshipCalendar() {
             key={month.monthKey}
             status={month.status}
             selected={selectedMonthKey === month.monthKey}
-            onClick={() => setSelectedMonthKey(month.monthKey)}
+            onClick={() => {
+              if (controlledSelectedMonthKey !== undefined) {
+                onSelectMonth?.(month);
+              } else {
+                setSelectedMonthKey(month.monthKey);
+              }
+            }}
+            disabled={onlyAvailableSelection && month.status !== "available"}
             title={formatMonthLabel(month.monthKey)}
             subtitle={statusLabel(month.status)}
             rightBadge={<span className="text-xs font-medium">{month.monthKey}</span>}

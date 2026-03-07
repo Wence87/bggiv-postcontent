@@ -7,7 +7,7 @@ import "react-day-picker/dist/style.css";
 import { Badge } from "@/components/ui/badge";
 import { StatusTile, type PublicStatus } from "@/components/public/StatusTile";
 
-type AdsWeek = {
+export type AdsWeek = {
   weekKey: string;
   status: PublicStatus;
   bookedCount: number;
@@ -20,6 +20,12 @@ type AdsResponse = {
   tz: string;
   currentWeekKey: string;
   weeks: AdsWeek[];
+};
+
+type AdsCalendarProps = {
+  selectedWeekKey?: string | null;
+  onSelectWeek?: (week: AdsWeek | null) => void;
+  onlyAvailableSelection?: boolean;
 };
 
 function getIsoWeekKeyForDate(date: Date): string {
@@ -56,10 +62,20 @@ function statusLabel(status: PublicStatus): string {
   return "Locked";
 }
 
-export function AdsCalendar() {
+export function AdsCalendar({
+  selectedWeekKey: controlledSelectedWeekKey,
+  onSelectWeek,
+  onlyAvailableSelection = false,
+}: AdsCalendarProps = {}) {
   const [loading, setLoading] = useState(true);
   const [weeks, setWeeks] = useState<AdsWeek[]>([]);
-  const [selectedWeekKey, setSelectedWeekKey] = useState<string | null>(null);
+  const [selectedWeekKeyInternal, setSelectedWeekKeyInternal] = useState<string | null>(null);
+  const selectedWeekKey = controlledSelectedWeekKey ?? selectedWeekKeyInternal;
+  const setSelectedWeekKey = (value: string | null) => {
+    if (controlledSelectedWeekKey === undefined) {
+      setSelectedWeekKeyInternal(value);
+    }
+  };
 
   useEffect(() => {
     const controller = new AbortController();
@@ -99,6 +115,10 @@ export function AdsCalendar() {
     [weeks, selectedWeekKey]
   );
 
+  useEffect(() => {
+    onSelectWeek?.(selectedWeek);
+  }, [onSelectWeek, selectedWeek]);
+
   const weekStatusMap = useMemo(() => {
     const map = new Map<string, PublicStatus>();
     for (const week of weeks) {
@@ -129,8 +149,15 @@ export function AdsCalendar() {
           onSelect={(date) => {
             if (!date) return;
             const weekKey = getIsoWeekKeyForDate(date);
+            const week = weeks.find((entry) => entry.weekKey === weekKey);
+            if (!week) return;
+            if (onlyAvailableSelection && week.status !== "available") return;
             if (weekStatusMap.has(weekKey)) {
-              setSelectedWeekKey(weekKey);
+              if (controlledSelectedWeekKey !== undefined) {
+                onSelectWeek?.(week);
+              } else {
+                setSelectedWeekKey(weekKey);
+              }
             }
           }}
           showWeekNumber
@@ -170,7 +197,14 @@ export function AdsCalendar() {
               key={week.weekKey}
               status={week.status}
               selected={week.weekKey === selectedWeekKey}
-              onClick={() => setSelectedWeekKey(week.weekKey)}
+              onClick={() => {
+                if (controlledSelectedWeekKey !== undefined) {
+                  onSelectWeek?.(week);
+                } else {
+                  setSelectedWeekKey(week.weekKey);
+                }
+              }}
+              disabled={onlyAvailableSelection && week.status !== "available"}
               title={week.weekKey}
               subtitle={`${week.remainingSlots}/${week.totalSlots} remaining`}
               rightBadge={<Badge variant={week.status === "taken" ? "destructive" : "secondary"}>{statusLabel(week.status)}</Badge>}
