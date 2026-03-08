@@ -238,6 +238,8 @@ export async function getPostsAvailability(
   });
 
   const globalTakenHoursByDay = new Map<string, Set<number>>();
+  const promoCountByDay = new Map<string, number>();
+  const giveawayCountByDay = new Map<string, number>();
   for (const booking of bookings) {
     if (!booking.startsAtUtc) continue;
 
@@ -249,13 +251,19 @@ export async function getPostsAvailability(
       globalTakenHoursByDay.set(dayKey, new Set<number>());
     }
     globalTakenHoursByDay.get(dayKey)!.add(hourInt);
+    if (booking.product === Product.PROMO) {
+      promoCountByDay.set(dayKey, (promoCountByDay.get(dayKey) ?? 0) + 1);
+    } else if (booking.product === Product.GIVEAWAY) {
+      giveawayCountByDay.set(dayKey, (giveawayCountByDay.get(dayKey) ?? 0) + 1);
+    }
   }
 
   const days: Record<string, PostsAvailabilityDay> = {};
 
   for (const dayKey of dateKeys) {
     const takenHours = globalTakenHoursByDay.get(dayKey) ?? new Set<number>();
-    const hasAnyBookingToday = takenHours.size > 0;
+    const promoCount = promoCountByDay.get(dayKey) ?? 0;
+    const giveawayCount = giveawayCountByDay.get(dayKey) ?? 0;
     const locked = isLockedDay(dayKey);
     const hours: Record<number, PostAvailabilityStatus> = {};
 
@@ -264,7 +272,9 @@ export async function getPostsAvailability(
         hours[hour] = takenHours.has(hour) ? "taken" : "locked";
       } else if (takenHours.has(hour)) {
         hours[hour] = "taken";
-      } else if ((product === Product.PROMO || product === Product.GIVEAWAY) && hasAnyBookingToday) {
+      } else if (product === Product.PROMO && promoCount >= 2) {
+        hours[hour] = "taken";
+      } else if (product === Product.GIVEAWAY && giveawayCount >= 2) {
         hours[hour] = "taken";
       } else {
         hours[hour] = "available";
@@ -273,9 +283,7 @@ export async function getPostsAvailability(
 
     let dayStatus: PostAvailabilityStatus = "available";
     if (locked) {
-      dayStatus = hasAnyBookingToday ? "taken" : "locked";
-    } else if (hasAnyBookingToday) {
-      dayStatus = "taken";
+      dayStatus = takenHours.size > 0 ? "taken" : "locked";
     } else {
       const hasAvailableHour = Object.values(hours).some((status) => status === "available");
       dayStatus = hasAvailableHour ? "available" : "taken";
@@ -419,10 +427,10 @@ export async function createBooking(input: CreateBookingInput): Promise<Booking>
 
         if (input.product === Product.PROMO || input.product === Product.GIVEAWAY) {
           const { start, end } = getBrusselsDayRangeUtc(startsAtUtc);
-          const sameDayCount = await tx.booking.count({
+          const sameProductDayCount = await tx.booking.count({
             where: {
               AND: [getActiveBookingWhere()],
-              product: { in: POSTS_PRODUCTS },
+              product: input.product,
               startsAtUtc: {
                 gte: start,
                 lt: end,
@@ -430,7 +438,7 @@ export async function createBooking(input: CreateBookingInput): Promise<Booking>
             },
           });
 
-          if (sameDayCount >= 1) {
+          if (sameProductDayCount >= 2) {
             if (input.product === Product.PROMO) {
               throwBookingError("PROMO_DAILY_LIMIT");
             }

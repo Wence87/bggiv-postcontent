@@ -33,14 +33,13 @@ type PostsResponse = {
   };
 };
 
-type PostsCalendarProps = {
+export type PostsCalendarProps = {
   product: PublicPostProduct;
   selectedDayKey: string | null;
   onSelectDayKey: (dayKey: string | null) => void;
   selectedHour: number | null;
   onSelectHour: (hour: number | null) => void;
   onlyAvailableSelection?: boolean;
-  // Confirmed reservation slot (UTC ISO) for "mine" visual state.
   reservedStartsAtUtc?: string | null;
 };
 
@@ -152,7 +151,6 @@ export function PostsCalendar({
 
   const inspectedHourStatus =
     selectedDay && selectedHour != null ? selectedDay.hours[selectedHour] ?? "locked" : null;
-
   const reservedSlot = useMemo(
     () => (reservedStartsAtUtc ? getReferenceSlotFromUtcIso(reservedStartsAtUtc) : null),
     [reservedStartsAtUtc]
@@ -299,9 +297,9 @@ export function PostsCalendar({
       {selectedDayKey && selectedDay ? (
         <div className="rounded-lg border bg-white p-4 text-sm">
           <p className="font-medium">Selected day</p>
-          <p className="text-muted-foreground">{selectedDayKey}</p>
-          <p className="mt-2 font-medium">Day status</p>
-          <p className="text-muted-foreground">{statusLabel(selectedDay.dayStatus)}</p>
+          <p className="text-muted-foreground">
+            {selectedDayKey} ({statusLabel(selectedDay.dayStatus)})
+          </p>
           {selectedHour != null && inspectedHourStatus ? (
             <>
               <p className="mt-2 font-medium">Selected hour</p>

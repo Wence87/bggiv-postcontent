@@ -10,6 +10,7 @@ import { AdsCalendar, type AdsWeek } from "@/components/public/AdsCalendar";
 import { SponsorshipCalendar, type SponsorshipMonth } from "@/components/public/SponsorshipCalendar";
 import { PostsCalendar, type PublicPostProduct } from "@/components/public/PostsCalendar";
 import { resolveTimeZoneDateTimeToUtc } from "@/lib/timezone";
+import { COUNTRY_GROUPS } from "@/lib/country-groups";
 
 type ProductFormField = {
   key: string;
@@ -70,7 +71,10 @@ const DEFAULT_POSTS_FORM_FIELDS: ProductFormField[] = [
 ];
 
 const SHORT_PRODUCT_DESCRIPTION_HELPER =
-  "Short text describing the product’s key features.  ✨ All submissions are reviewed by our editorial team before publication and must follow our contributor guidelines.  ✨ 100 to 300 characters maximum.";
+  "Short text describing the product’s key features.";
+
+const EDITORIAL_REVIEW_HELPER =
+  "All submissions are reviewed by our editorial team before publication and must follow our contributor guidelines.";
 
 const COVER_IMAGE_HELPER =
   "Image size : 1200 × 675 px. Allowed File Extensions : webp, jpg, jpeg. Max File Size : 500 KB. A best practice is to present the game in its best light, placing it in the most appropriate setting to make people visually want to discover it.";
@@ -90,16 +94,18 @@ const GIVEAWAY_UNITS_HELPER =
 const GIVEAWAY_QA_HELPER =
   "Ask a closed-ended question with one single correct answer. Ensure the difficulty is well balanced: the question should encourage players to browse the rules or the campaign (for example) without being frustrating or trivial. The correct answer must be unambiguous, and the wrong answers must be clearly and unquestionably false.";
 
-const CONTINENT_COUNTRIES: Record<string, string[]> = {
-  Europe: ["Belgium", "France", "Germany", "Italy", "Spain", "Netherlands", "Portugal", "Sweden", "Poland", "Switzerland", "Austria", "Ireland", "Denmark", "Norway", "Finland"],
-  "North America": ["United States", "Canada", "Mexico"],
-  "South America": ["Brazil", "Argentina", "Chile", "Colombia", "Peru", "Uruguay"],
-  Asia: ["Japan", "South Korea", "China", "Taiwan", "Singapore", "India", "Malaysia", "Thailand", "Philippines", "Indonesia", "Vietnam", "United Arab Emirates", "Saudi Arabia"],
-  Africa: ["South Africa", "Morocco", "Tunisia", "Egypt", "Kenya", "Nigeria", "Ghana"],
-  Oceania: ["Australia", "New Zealand"],
-};
-
-const ALL_COUNTRIES = Array.from(new Set(Object.values(CONTINENT_COUNTRIES).flat())).sort();
+const CONTINENT_LABELS: Array<{
+  key: keyof typeof COUNTRY_GROUPS.continents;
+  label: string;
+  sectionKey: string;
+}> = [
+  { key: "northAmerica", label: "North America", sectionKey: "north_america" },
+  { key: "southAmerica", label: "South America", sectionKey: "south_america" },
+  { key: "asia", label: "Asia", sectionKey: "asia" },
+  { key: "africa", label: "Africa", sectionKey: "africa" },
+  { key: "oceania", label: "Oceania", sectionKey: "oceania" },
+  { key: "antarctica", label: "Antarctica", sectionKey: "antarctica" },
+];
 
 type OrderContextResponse = {
   product: {
@@ -108,6 +114,10 @@ type OrderContextResponse = {
     product_key: string;
     base_fields: string[];
     form_fields?: ProductFormField[];
+  };
+  order?: {
+    number?: string;
+    id?: number;
   };
   prefill?: {
     company_name?: string;
@@ -241,6 +251,17 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
   const [selectedPostHour, setSelectedPostHour] = useState<number | null>(null);
   const [selectedShippingCountries, setSelectedShippingCountries] = useState<string[]>([]);
   const [selectedHighlightOptions, setSelectedHighlightOptions] = useState<string[]>([]);
+  const [expandedGeoSections, setExpandedGeoSections] = useState<Record<string, boolean>>({
+    europe: false,
+    europe_eu: false,
+    europe_other: false,
+    north_america: false,
+    south_america: false,
+    asia: false,
+    africa: false,
+    oceania: false,
+    antarctica: false,
+  });
 
   const contextEndpoint = useMemo(
     () => `${WP_BASE_URL}/wp-json/bgg/v1/order-context?token=${encodeURIComponent(token)}`,
@@ -399,13 +420,12 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
     : null;
   const hasEmbeddedVideo = isPostsProduct && hasOption(currentContext.enabled_options ?? [], "embedded_video");
   const hasAdditionalImages = isPostsProduct && hasOption(currentContext.enabled_options ?? [], "additional_images");
-  const giveawayDurationDays = isGiveaway ? resolveGiveawayDurationDays(currentContext.derived_values ?? {}) : 0;
   const giveawayUnitsCount = Number(values.prize_units_count || 0);
   const unlockedHighlightCount = isGiveaway ? computeUnlockedHighlights(giveawayUnitsCount) : 0;
   const availableHighlightOptions = (currentContext.options ?? [])
     .map((entry) => entry.option_key)
     .filter((key) => /featured|spotlight|sticky|social_boost|newsletter/i.test(key));
-  const allCountries = ALL_COUNTRIES;
+  const allCountries = COUNTRY_GROUPS.world;
   const formFields = isPostsProduct
     ? DEFAULT_POSTS_FORM_FIELDS
     : ((currentContext.product.form_fields && currentContext.product.form_fields.length > 0)
@@ -730,7 +750,6 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
         <div key={field.key} className="space-y-2">
           <Label htmlFor={field.key}>{`${field.label} *`}</Label>
           <Input id={field.key} name={field.key} type="date" value={values[field.key] ?? ""} readOnly disabled />
-          <p className="text-xs text-muted-foreground">{GIVEAWAY_DATES_HELPER}</p>
         </div>
       );
     }
@@ -786,7 +805,8 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
     }
 
     const requiredMark = field.required ? " *" : "";
-    const label = `${field.label}${requiredMark}`;
+    const normalizedLabel = field.key === "notes" ? "Note to admin" : field.label;
+    const label = `${normalizedLabel}${requiredMark}`;
 
     if (field.type === "textarea") {
       const showBodyCounter = field.key === "body";
@@ -811,9 +831,10 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
             </p>
           ) : null}
           {showShortDescCounter ? (
-            <p className="text-xs text-muted-foreground">
-              {SHORT_PRODUCT_DESCRIPTION_HELPER} ({shortLength}/300)
-            </p>
+            <>
+              <p className="text-xs text-muted-foreground">{shortLength}/300 characters</p>
+              <p className="text-xs text-muted-foreground">{SHORT_PRODUCT_DESCRIPTION_HELPER}</p>
+            </>
           ) : null}
           {field.key === "giveaway_question" ? (
             <p className="text-xs text-muted-foreground">{GIVEAWAY_QA_HELPER}</p>
@@ -970,7 +991,9 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
     </div>
   );
   const fieldsToRender = isPostsProduct ? effectivePostsFields : formFields;
-  const fieldMap = new Map(fieldsToRender.map((field) => [field.key, field] as const));
+  const safeFieldsToRender =
+    isPostsProduct && fieldsToRender.length === 0 ? DEFAULT_POSTS_FORM_FIELDS : fieldsToRender;
+  const fieldMap = new Map(safeFieldsToRender.map((field) => [field.key, field] as const));
   const renderFieldsByKeys = (keys: string[]) =>
     keys
       .map((key) => fieldMap.get(key))
@@ -993,10 +1016,16 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
 
   const selectAllWorld = () => setSelectedShippingCountries(allCountries);
   const deselectAllWorld = () => setSelectedShippingCountries([]);
-  const selectAllContinent = (continent: string) =>
-    setSelectedShippingCountries((prev) => Array.from(new Set([...prev, ...(CONTINENT_COUNTRIES[continent] ?? [])])));
-  const deselectAllContinent = (continent: string) =>
-    setSelectedShippingCountries((prev) => prev.filter((country) => !(CONTINENT_COUNTRIES[continent] ?? []).includes(country)));
+  const toggleGeoSection = (section: string) => {
+    setExpandedGeoSections((prev) => ({ ...prev, [section]: !prev[section] }));
+  };
+  const addCountries = (countries: string[]) => {
+    setSelectedShippingCountries((prev) => Array.from(new Set([...prev, ...countries])));
+  };
+  const removeCountries = (countries: string[]) => {
+    const blocked = new Set(countries);
+    setSelectedShippingCountries((prev) => prev.filter((country) => !blocked.has(country)));
+  };
 
   return (
     <div className="space-y-6">
@@ -1007,6 +1036,9 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
         </div>
         <p className="mt-2 text-sm text-muted-foreground">Form: {currentContext.product.form_id}</p>
         <p className="text-sm text-muted-foreground">Product key: {currentContext.product.product_key}</p>
+        {currentContext.order?.number ? (
+          <p className="text-sm text-muted-foreground">Order number: {currentContext.order.number}</p>
+        ) : null}
       </section>
 
       <section className="rounded-md border bg-white p-4 space-y-4">
@@ -1082,7 +1114,7 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
 
       <section className="rounded-md border bg-white p-4">
         <h3 className="text-base font-semibold">Submission form</h3>
-        {fieldsToRender.length === 0 ? (
+        {safeFieldsToRender.length === 0 ? (
           <p className="mt-2 text-sm text-muted-foreground">No dynamic fields configured for this product yet.</p>
         ) : (
           <form className="mt-4 space-y-4" onSubmit={handleSubmit} noValidate>
@@ -1098,82 +1130,25 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
                   <h4 className="text-sm font-semibold">B. Visual assets</h4>
                   <p className="text-xs text-muted-foreground">Upload premium visuals for publication.</p>
                   {renderFieldsByKeys(["cover_image_upload"])}
+                  {hasAdditionalImages ? renderFieldsByKeys(["additional_image_1", "additional_image_2", "additional_image_3"]) : null}
                 </div>
 
                 <div className="rounded-md border bg-slate-50 p-4 space-y-3">
                   <h4 className="text-sm font-semibold">C. Main content</h4>
                   <p className="text-xs text-muted-foreground">Craft a clear editorial message for your audience.</p>
-                  {renderFieldsByKeys(["title", "body", "short_product_description", "notes"])}
+                  <p className="text-xs text-muted-foreground">{EDITORIAL_REVIEW_HELPER}</p>
+                  {renderFieldsByKeys(isGiveaway && hasEmbeddedVideo ? ["title", "body", "short_product_description", "embedded_video_link"] : ["title", "body", "short_product_description"])}
                 </div>
 
-                {(hasEmbeddedVideo || hasAdditionalImages) ? (
-                  <div className="rounded-md border bg-slate-50 p-4 space-y-3">
-                    <h4 className="text-sm font-semibold">D. Conditional premium options</h4>
-                    <p className="text-xs text-muted-foreground">These fields are available only when corresponding WooCommerce options were purchased.</p>
-                    {hasEmbeddedVideo ? renderFieldsByKeys(["embedded_video_link"]) : null}
-                    {hasAdditionalImages ? renderFieldsByKeys(["additional_image_1", "additional_image_2", "additional_image_3"]) : null}
-                  </div>
-                ) : null}
-
                 {isGiveaway ? (
-                  <>
-                    <div className="rounded-md border bg-slate-50 p-4 space-y-3">
-                      <h4 className="text-sm font-semibold">E. Giveaway details</h4>
-                      <p className="text-xs text-muted-foreground">Define prize details and audience requirements.</p>
-                      {renderFieldsByKeys(["prize_name", "giveaway_category", "prize_unit_value_usd", "prize_units_count"])}
-                    </div>
-
-                    <div className="rounded-md border bg-slate-50 p-4 space-y-3">
-                      <h4 className="text-sm font-semibold">F. Publication / timing</h4>
-                      <p className="text-xs text-muted-foreground">Dates are derived from your reservation and purchased duration.</p>
-                      {renderFieldsByKeys(["start_date", "end_date"])}
-                    </div>
-
-                    <div className="rounded-md border bg-slate-50 p-4 space-y-3">
-                      <h4 className="text-sm font-semibold">G. Distribution / eligibility</h4>
-                      <p className="text-xs text-muted-foreground">Select where you can ship the giveaway prize.</p>
-                      <div className="flex gap-2">
-                        <Button type="button" variant="outline" onClick={selectAllWorld}>Select all world</Button>
-                        <Button type="button" variant="outline" onClick={deselectAllWorld}>Deselect all world</Button>
-                      </div>
-                      <div className="space-y-3">
-                        {Object.entries(CONTINENT_COUNTRIES).map(([continent, countries]) => (
-                          <div key={continent} className="rounded border bg-white p-3 space-y-2">
-                            <div className="flex items-center justify-between gap-2">
-                              <p className="text-sm font-medium">{continent}</p>
-                              <div className="flex gap-2">
-                                <Button type="button" variant="outline" size="sm" onClick={() => selectAllContinent(continent)}>Select all</Button>
-                                <Button type="button" variant="outline" size="sm" onClick={() => deselectAllContinent(continent)}>Deselect all</Button>
-                              </div>
-                            </div>
-                            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                              {countries.map((country) => (
-                                <label key={country} className="flex items-center gap-2 text-xs">
-                                  <input
-                                    type="checkbox"
-                                    checked={selectedShippingCountries.includes(country)}
-                                    onChange={() => toggleCountry(country)}
-                                  />
-                                  <span>{country}</span>
-                                </label>
-                              ))}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                      {renderFieldsByKeys(["minimum_age"])}
-                    </div>
-
-                    <div className="rounded-md border bg-slate-50 p-4 space-y-3">
-                      <h4 className="text-sm font-semibold">H. Quiz question and answers</h4>
-                      <p className="text-xs text-muted-foreground">{GIVEAWAY_QA_HELPER}</p>
-                      {renderFieldsByKeys(["giveaway_question", "answer_correct", "answer_wrong_1", "answer_wrong_2", "answer_wrong_3", "answer_wrong_4"])}
-                    </div>
-
-                    <div className="rounded-md border bg-slate-50 p-4 space-y-3">
-                      <h4 className="text-sm font-semibold">D. Conditional premium options</h4>
+                  <div className="rounded-md border bg-slate-50 p-4 space-y-3">
+                    <h4 className="text-sm font-semibold">D. Giveaway details</h4>
+                    <p className="text-xs text-muted-foreground">Define prize details and audience requirements.</p>
+                    {renderFieldsByKeys(["prize_name", "giveaway_category", "prize_unit_value_usd", "prize_units_count", "minimum_age"])}
+                    <div className="rounded-md border bg-white p-3 space-y-2">
+                      <p className="text-sm font-semibold">Unlocked free highlight options</p>
                       <p className="text-xs text-muted-foreground">
-                        Free highlight slots unlocked: {unlockedHighlightCount}
+                        Based on your prize quantity, you can select up to {unlockedHighlightCount} free highlight option(s).
                       </p>
                       {unlockedHighlightCount > 0 && availableHighlightOptions.length > 0 ? (
                         <div className="grid gap-2 sm:grid-cols-2">
@@ -1193,11 +1168,145 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
                         <p className="text-xs text-muted-foreground">No free highlight option unlocked yet.</p>
                       )}
                     </div>
+                  </div>
+                ) : null}
+
+                {!isGiveaway && hasEmbeddedVideo ? (
+                  <div className="rounded-md border bg-slate-50 p-4 space-y-3">
+                    <h4 className="text-sm font-semibold">D. Conditional premium options</h4>
+                    <p className="text-xs text-muted-foreground">This field is available only when the corresponding WooCommerce option was purchased.</p>
+                    {renderFieldsByKeys(["embedded_video_link"])}
+                  </div>
+                ) : null}
+
+                {isGiveaway ? (
+                  <>
+                    <div className="rounded-md border bg-slate-50 p-4 space-y-3">
+                      <h4 className="text-sm font-semibold">E. Publication / timing</h4>
+                      <p className="text-xs text-muted-foreground">Dates are derived from your reservation and purchased duration.</p>
+                      <p className="text-xs text-muted-foreground">{GIVEAWAY_DATES_HELPER}</p>
+                      {renderFieldsByKeys(["start_date", "end_date"])}
+                    </div>
+
+                    <div className="rounded-md border bg-slate-50 p-4 space-y-3">
+                      <h4 className="text-sm font-semibold">F. Distribution / eligibility</h4>
+                      <p className="text-xs text-muted-foreground">Select where you can ship the giveaway prize.</p>
+                      <div className="flex flex-wrap gap-2">
+                        <Button type="button" variant="outline" onClick={selectAllWorld}>Select all world</Button>
+                        <Button type="button" variant="outline" onClick={deselectAllWorld}>Deselect all world</Button>
+                      </div>
+                      <div className="space-y-3">
+                        <div className="rounded border bg-white p-3 space-y-2">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <Button type="button" variant="outline" className="h-auto p-0 text-sm font-medium" onClick={() => toggleGeoSection("europe")}>
+                              {expandedGeoSections.europe ? "▾" : "▸"} Europe
+                            </Button>
+                            <div className="flex gap-2">
+                              <Button type="button" variant="outline" size="sm" onClick={() => addCountries([...COUNTRY_GROUPS.europe.eu, ...COUNTRY_GROUPS.europe.other])}>Select all</Button>
+                              <Button type="button" variant="outline" size="sm" onClick={() => removeCountries([...COUNTRY_GROUPS.europe.eu, ...COUNTRY_GROUPS.europe.other])}>Deselect all</Button>
+                            </div>
+                          </div>
+                          {expandedGeoSections.europe ? (
+                            <div className="space-y-3">
+                              <div className="rounded border bg-slate-50 p-3 space-y-2">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <Button type="button" variant="outline" className="h-auto p-0 text-xs font-semibold" onClick={() => toggleGeoSection("europe_eu")}>
+                                    {expandedGeoSections.europe_eu ? "▾" : "▸"} European Union
+                                  </Button>
+                                  <div className="flex gap-2">
+                                    <Button type="button" variant="outline" size="sm" onClick={() => addCountries(COUNTRY_GROUPS.europe.eu)}>Select all</Button>
+                                    <Button type="button" variant="outline" size="sm" onClick={() => removeCountries(COUNTRY_GROUPS.europe.eu)}>Deselect all</Button>
+                                  </div>
+                                </div>
+                                {expandedGeoSections.europe_eu ? (
+                                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                                    {COUNTRY_GROUPS.europe.eu.map((country) => (
+                                      <label key={country} className="flex items-center gap-2 text-xs">
+                                        <input type="checkbox" checked={selectedShippingCountries.includes(country)} onChange={() => toggleCountry(country)} />
+                                        <span>{country}</span>
+                                      </label>
+                                    ))}
+                                  </div>
+                                ) : null}
+                              </div>
+                              <div className="rounded border bg-slate-50 p-3 space-y-2">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <Button type="button" variant="outline" className="h-auto p-0 text-xs font-semibold" onClick={() => toggleGeoSection("europe_other")}>
+                                    {expandedGeoSections.europe_other ? "▾" : "▸"} Other European countries
+                                  </Button>
+                                  <div className="flex gap-2">
+                                    <Button type="button" variant="outline" size="sm" onClick={() => addCountries(COUNTRY_GROUPS.europe.other)}>Select all</Button>
+                                    <Button type="button" variant="outline" size="sm" onClick={() => removeCountries(COUNTRY_GROUPS.europe.other)}>Deselect all</Button>
+                                  </div>
+                                </div>
+                                {expandedGeoSections.europe_other ? (
+                                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                                    {COUNTRY_GROUPS.europe.other.map((country) => (
+                                      <label key={country} className="flex items-center gap-2 text-xs">
+                                        <input type="checkbox" checked={selectedShippingCountries.includes(country)} onChange={() => toggleCountry(country)} />
+                                        <span>{country}</span>
+                                      </label>
+                                    ))}
+                                  </div>
+                                ) : null}
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
+
+                        {CONTINENT_LABELS.map((continent) => {
+                          const countries = COUNTRY_GROUPS.continents[continent.key];
+                          return (
+                            <div key={continent.sectionKey} className="rounded border bg-white p-3 space-y-2">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  className="h-auto p-0 text-sm font-medium"
+                                  onClick={() => toggleGeoSection(continent.sectionKey)}
+                                >
+                                  {expandedGeoSections[continent.sectionKey] ? "▾" : "▸"} {continent.label}
+                                </Button>
+                                <div className="flex gap-2">
+                                  <Button type="button" variant="outline" size="sm" onClick={() => addCountries(countries)}>Select all</Button>
+                                  <Button type="button" variant="outline" size="sm" onClick={() => removeCountries(countries)}>Deselect all</Button>
+                                </div>
+                              </div>
+                              {expandedGeoSections[continent.sectionKey] ? (
+                                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                                  {countries.map((country) => (
+                                    <label key={country} className="flex items-center gap-2 text-xs">
+                                      <input
+                                        type="checkbox"
+                                        checked={selectedShippingCountries.includes(country)}
+                                        onChange={() => toggleCountry(country)}
+                                      />
+                                      <span>{country}</span>
+                                    </label>
+                                  ))}
+                                </div>
+                              ) : null}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="rounded-md border bg-slate-50 p-4 space-y-3">
+                      <h4 className="text-sm font-semibold">G. Quiz question and answers</h4>
+                      {renderFieldsByKeys(["giveaway_question", "answer_correct", "answer_wrong_1", "answer_wrong_2", "answer_wrong_3", "answer_wrong_4"])}
+                    </div>
                   </>
                 ) : null}
+
+                <div className="rounded-md border bg-slate-50 p-4 space-y-3">
+                  <h4 className="text-sm font-semibold">{isGiveaway ? "H. Note to admin" : "Note to admin"}</h4>
+                  <p className="text-xs text-muted-foreground">Optional message for the admin review team.</p>
+                  {renderFieldsByKeys(["notes"])}
+                </div>
               </div>
             ) : (
-              fieldsToRender.map((field) => renderField(field))
+              safeFieldsToRender.map((field) => renderField(field))
             )}
             {validationError ? <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{validationError}</div> : null}
             {submitError ? <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{submitError}</div> : null}

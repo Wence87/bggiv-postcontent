@@ -10,31 +10,101 @@ import { AdsCalendar, type AdsWeek } from "@/components/public/AdsCalendar";
 import { SponsorshipCalendar, type SponsorshipMonth } from "@/components/public/SponsorshipCalendar";
 import { PostsCalendar, type PublicPostProduct } from "@/components/public/PostsCalendar";
 import { resolveTimeZoneDateTimeToUtc } from "@/lib/timezone";
+import { COUNTRY_GROUPS } from "@/lib/country-groups";
 
 type ProductFormField = {
   key: string;
   label: string;
-  type: "text" | "email" | "url" | "file" | "select" | "date" | "textarea";
+  type: "text" | "email" | "url" | "file" | "select" | "date" | "textarea" | "number";
   required?: boolean;
   readonly?: boolean;
   accept?: string;
   options?: string[];
-  max_length?: number;
+  min?: number;
+  max?: number;
+  helperText?: string;
 };
 
 const DEFAULT_POSTS_FORM_FIELDS: ProductFormField[] = [
   { key: "company_name", label: "Company name", type: "text", required: true, readonly: true },
   { key: "contact_email", label: "Contact email", type: "email", required: true, readonly: true },
+  { key: "cover_image_upload", label: "Cover image", type: "file", required: true, accept: ".webp,.jpg,.jpeg,image/webp,image/jpeg" },
+  { key: "title", label: "Title", type: "text", required: true, max: 150 },
+  { key: "body", label: "Body", type: "textarea", required: true },
+  { key: "short_product_description", label: "Short product description", type: "textarea", required: true },
+  { key: "embedded_video_link", label: "Embedded video link", type: "url", required: false },
+  { key: "additional_image_1", label: "Additional image 1", type: "file", required: false, accept: ".webp,.jpg,.jpeg,image/webp,image/jpeg" },
+  { key: "additional_image_2", label: "Additional image 2", type: "file", required: false, accept: ".webp,.jpg,.jpeg,image/webp,image/jpeg" },
+  { key: "additional_image_3", label: "Additional image 3", type: "file", required: false, accept: ".webp,.jpg,.jpeg,image/webp,image/jpeg" },
+  { key: "prize_name", label: "Prize name", type: "text", required: true },
   {
-    key: "cover_image_upload",
-    label: "Cover image",
-    type: "file",
+    key: "giveaway_category",
+    label: "Giveaway category",
+    type: "select",
     required: true,
-    accept: ".jpg,.jpeg,image/jpeg",
+    options: [
+      "Board Games",
+      "Collectible Card Games",
+      "Miniatures Games",
+      "Role Playing Games",
+      "Wargames",
+      "Accessories",
+      "Jigsaw Puzzles",
+      "Puzzles",
+      "Lifestyle Products",
+      "Books",
+      "Events",
+    ],
   },
-  { key: "title", label: "Title", type: "text", required: true, max_length: 150 },
-  { key: "body", label: "Body", type: "textarea", required: true, max_length: 1000 },
+  { key: "prize_unit_value_usd", label: "Prize value (USD)", type: "number", required: true, min: 10, max: 700 },
+  { key: "prize_units_count", label: "Number of units offered", type: "number", required: true, min: 2, max: 20 },
+  { key: "minimum_age", label: "Minimum age", type: "number", required: true, min: 1, max: 120 },
+  { key: "giveaway_question", label: "Giveaway question", type: "textarea", required: true },
+  { key: "answer_correct", label: "✅ Correct answer", type: "text", required: true },
+  { key: "answer_wrong_1", label: "❌ Wrong answer 1", type: "text", required: true },
+  { key: "answer_wrong_2", label: "❌ Wrong answer 2", type: "text", required: true },
+  { key: "answer_wrong_3", label: "❌ Wrong answer 3", type: "text", required: true },
+  { key: "answer_wrong_4", label: "❌ Wrong answer 4", type: "text", required: true },
+  { key: "start_date", label: "Start date", type: "date", required: true, readonly: true },
+  { key: "end_date", label: "End date", type: "date", required: true, readonly: true },
   { key: "notes", label: "Notes", type: "textarea", required: false },
+];
+
+const SHORT_PRODUCT_DESCRIPTION_HELPER =
+  "Short text describing the product’s key features.";
+
+const EDITORIAL_REVIEW_HELPER =
+  "All submissions are reviewed by our editorial team before publication and must follow our contributor guidelines.";
+
+const COVER_IMAGE_HELPER =
+  "Image size : 1200 × 675 px. Allowed File Extensions : webp, jpg, jpeg. Max File Size : 500 KB. A best practice is to present the game in its best light, placing it in the most appropriate setting to make people visually want to discover it.";
+
+const ADDITIONAL_IMAGES_HELPER =
+  "⚠️ By default, your post is illustrated with the cover image only. If the appropriate paid option was selected in the previous step, you can add up to three additional images. To help us place the images correctly in your post item, simply insert the image file names between the relevant paragraphs of your text. Image size : 1200 × 675 px • Allowed File Extensions : webp, jpg, jpeg. Max File Size : 500 KB";
+
+const GIVEAWAY_DATES_HELPER =
+  "All dates and times are in Brussels time (Europe/Brussels, UTC+1 / UTC+2 DST). Please note that the duration of the giveaway is determined by the option selected in the previous step. Once your giveaway is approved, it will be displayed in three stages: announced with its upcoming start date, shown as active, and finally presented with the results once it has ended.";
+
+const GIVEAWAY_PRIZE_NAME_HELPER =
+  "A giveaway can feature only one type of prize, even if multiple units are offered. If you want to award different kinds of prizes, you must create separate giveaways—one for each prize type.";
+
+const GIVEAWAY_UNITS_HELPER =
+  "Each unit corresponds to one winner. Each winner receives exactly one unit. From 5 games, you get 🎁 1 free highlight option at its maximum level. From 10 games, you get 🎁🎁 2 free highlight options at their maximum level. With 20 games, you get 🎁🎁🎁 3 free highlight options at their maximum level.";
+
+const GIVEAWAY_QA_HELPER =
+  "Ask a closed-ended question with one single correct answer. Ensure the difficulty is well balanced: the question should encourage players to browse the rules or the campaign (for example) without being frustrating or trivial. The correct answer must be unambiguous, and the wrong answers must be clearly and unquestionably false.";
+
+const CONTINENT_LABELS: Array<{
+  key: keyof typeof COUNTRY_GROUPS.continents;
+  label: string;
+  sectionKey: string;
+}> = [
+  { key: "northAmerica", label: "North America", sectionKey: "north_america" },
+  { key: "southAmerica", label: "South America", sectionKey: "south_america" },
+  { key: "asia", label: "Asia", sectionKey: "asia" },
+  { key: "africa", label: "Africa", sectionKey: "africa" },
+  { key: "oceania", label: "Oceania", sectionKey: "oceania" },
+  { key: "antarctica", label: "Antarctica", sectionKey: "antarctica" },
 ];
 
 type OrderContextResponse = {
@@ -44,6 +114,10 @@ type OrderContextResponse = {
     product_key: string;
     base_fields: string[];
     form_fields?: ProductFormField[];
+  };
+  order?: {
+    number?: string;
+    id?: number;
   };
   prefill?: {
     company_name?: string;
@@ -113,84 +187,44 @@ function monthKeyToRange(monthKey: string): { startDate: string; endDate: string
   };
 }
 
-function parsePostBodyMaxLength(context: OrderContextResponse): number | null {
-  const defaults = 1000;
-  const derived = context.derived_values ?? {};
-
-  const direct = (derived as Record<string, unknown>).post_body_max_length;
-  if (typeof direct === "number" && Number.isFinite(direct) && direct > 0) {
-    return Math.trunc(direct);
-  }
-
-  const isUnlimitedString = (value: string) => {
-    const normalized = value.toLowerCase();
-    return normalized.includes("illimit") || normalized.includes("unlimit") || normalized.includes("no character limit");
-  };
-
-  for (const [key, value] of Object.entries(derived)) {
-    const keyLc = key.toLowerCase();
-    if (!keyLc.includes("text") && !keyLc.includes("body") && !keyLc.includes("limit")) {
-      continue;
-    }
-
-    if (typeof value === "number" && Number.isFinite(value) && value > 0) {
-      return Math.trunc(value);
-    }
-
-    if (typeof value === "string") {
-      if (isUnlimitedString(value)) return null;
-      const numericMatch = /(\d{2,6})/.exec(value);
-      if (numericMatch) return Number(numericMatch[1]);
-    }
-
-    if (value && typeof value === "object") {
-      const final = (value as Record<string, unknown>).final;
-      if (typeof final === "number" && Number.isFinite(final) && final > 0) {
-        return Math.trunc(final);
-      }
-      if (typeof final === "string") {
-        if (isUnlimitedString(final)) return null;
-        const numericMatch = /(\d{2,6})/.exec(final);
-        if (numericMatch) return Number(numericMatch[1]);
-      }
-    }
-  }
-
-  if (context.enabled_options.some((option) => option.toLowerCase() === "extended_textlimit")) {
-    return null;
-  }
-
-  return defaults;
-}
-
-function mapReservationErrorCode(code: string): string {
-  switch (code) {
-    case "POST_LEADTIME_LOCKED":
-      return "This slot is locked (less than 72h). Please choose another slot.";
-    case "HOUR_ALREADY_BOOKED":
-      return "This slot is already taken. Please choose another hour.";
-    case "PROMO_DAILY_LIMIT":
-      return "Promo daily limit reached (2 per day). Please choose another day.";
-    case "GIVEAWAY_DAILY_LIMIT":
-      return "Giveaway daily limit reached (2 per day). Please choose another day.";
-    case "ADS_CAPACITY_REACHED":
-      return "Selected week is full. Please choose another week.";
-    case "MONTH_ALREADY_BOOKED":
-      return "Selected month is already booked. Please choose another month.";
-    case "WEEK_LOCKED":
-    case "MONTH_LOCKED":
-      return "Selected period is locked. Please choose another one.";
-    case "RESERVATION_FAILED":
-      return "Reservation failed. Please try again.";
-    default:
-      return code;
-  }
-}
-
 function productToPostsView(productType: OrderContextResponse["product"]["product_type"]): PublicPostProduct {
   if (productType === "promo") return "PROMO_DEAL";
   if (productType === "giveaway") return "GIVEAWAY";
   return "NEWS";
+}
+
+function hasOption(enabledOptions: string[], optionKey: string): boolean {
+  return enabledOptions.some((value) => value.toLowerCase() === optionKey.toLowerCase());
+}
+
+function resolvePostBodyMaxLength(derivedValues: Record<string, unknown>, enabledOptions: string[]): number | null {
+  const direct = derivedValues.post_body_max_length;
+  if (typeof direct === "number" && Number.isFinite(direct) && direct > 0) return Math.trunc(direct);
+  if (direct === null) return null;
+  return hasOption(enabledOptions, "extended_textlimit") ? null : 1000;
+}
+
+function resolveGiveawayDurationDays(derivedValues: Record<string, unknown>): number {
+  const directDays = derivedValues.giveaway_duration_days;
+  if (typeof directDays === "number" && [7, 14, 21, 28].includes(directDays)) return directDays;
+
+  for (const [key, value] of Object.entries(derivedValues)) {
+    if (!key.toLowerCase().includes("duration")) continue;
+    if (typeof value === "number" && value >= 1 && value <= 4) return value * 7;
+    if (value && typeof value === "object") {
+      const finalValue = (value as Record<string, unknown>).duration_weeks_final;
+      if (typeof finalValue === "number" && finalValue >= 1 && finalValue <= 4) return finalValue * 7;
+    }
+  }
+
+  return 7;
+}
+
+function computeUnlockedHighlights(units: number): number {
+  if (units >= 20) return 3;
+  if (units >= 10) return 2;
+  if (units >= 5) return 1;
+  return 0;
 }
 
 export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps) {
@@ -215,6 +249,19 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
   const [selectedSponsorshipMonth, setSelectedSponsorshipMonth] = useState<SponsorshipMonth | null>(null);
   const [selectedPostDayKey, setSelectedPostDayKey] = useState<string | null>(null);
   const [selectedPostHour, setSelectedPostHour] = useState<number | null>(null);
+  const [selectedShippingCountries, setSelectedShippingCountries] = useState<string[]>([]);
+  const [selectedHighlightOptions, setSelectedHighlightOptions] = useState<string[]>([]);
+  const [expandedGeoSections, setExpandedGeoSections] = useState<Record<string, boolean>>({
+    europe: false,
+    europe_eu: false,
+    europe_other: false,
+    north_america: false,
+    south_america: false,
+    asia: false,
+    africa: false,
+    oceania: false,
+    antarctica: false,
+  });
 
   const contextEndpoint = useMemo(
     () => `${WP_BASE_URL}/wp-json/bgg/v1/order-context?token=${encodeURIComponent(token)}`,
@@ -317,7 +364,37 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
       setFieldValue("start_date", range?.startDate ?? "");
       setFieldValue("end_date", range?.endDate ?? "");
     }
-  }, [context, reservationChoice.weekKey, reservationChoice.monthKey, selectedAdsWeek?.weekKey, selectedSponsorshipMonth?.monthKey]);
+    if (context.product.product_type === "giveaway") {
+      const startsAtIso = reservationChoice.startsAtUtc;
+      if (!startsAtIso) {
+        setFieldValue("start_date", "");
+        setFieldValue("end_date", "");
+        return;
+      }
+      const startsAt = new Date(startsAtIso);
+      if (Number.isNaN(startsAt.getTime())) {
+        setFieldValue("start_date", "");
+        setFieldValue("end_date", "");
+        return;
+      }
+      const startDate = new Date(startsAt);
+      const endDate = new Date(startsAt);
+      const durationDays = resolveGiveawayDurationDays(context.derived_values ?? {});
+      endDate.setUTCDate(endDate.getUTCDate() + Math.max(1, durationDays));
+      const dateToKey = (date: Date) =>
+        `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
+      setFieldValue("start_date", dateToKey(startDate));
+      setFieldValue("end_date", dateToKey(endDate));
+    }
+  }, [context, reservationChoice.weekKey, reservationChoice.monthKey, reservationChoice.startsAtUtc, selectedAdsWeek?.weekKey, selectedSponsorshipMonth?.monthKey]);
+
+  useEffect(() => {
+    setFieldValue("shipping_countries", JSON.stringify(selectedShippingCountries));
+  }, [selectedShippingCountries]);
+
+  useEffect(() => {
+    setFieldValue("selected_highlight_options", JSON.stringify(selectedHighlightOptions));
+  }, [selectedHighlightOptions]);
 
   if (loading) {
     return <div className="rounded-md border bg-white p-4 text-sm text-muted-foreground">Loading submission context...</div>;
@@ -337,14 +414,46 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
     currentContext.product.product_type === "news" ||
     currentContext.product.product_type === "promo" ||
     currentContext.product.product_type === "giveaway";
-  const contextFormFields = currentContext.product.form_fields ?? [];
-  const formFields =
-    contextFormFields.length > 0
-      ? contextFormFields
-      : isPostsProduct
-        ? DEFAULT_POSTS_FORM_FIELDS
-        : [];
-  const postBodyMaxLength = isPostsProduct ? parsePostBodyMaxLength(currentContext) : null;
+  const isGiveaway = currentContext.product.product_type === "giveaway";
+  const postBodyMaxLength = isPostsProduct
+    ? resolvePostBodyMaxLength(currentContext.derived_values ?? {}, currentContext.enabled_options ?? [])
+    : null;
+  const hasEmbeddedVideo = isPostsProduct && hasOption(currentContext.enabled_options ?? [], "embedded_video");
+  const hasAdditionalImages = isPostsProduct && hasOption(currentContext.enabled_options ?? [], "additional_images");
+  const giveawayUnitsCount = Number(values.prize_units_count || 0);
+  const unlockedHighlightCount = isGiveaway ? computeUnlockedHighlights(giveawayUnitsCount) : 0;
+  const availableHighlightOptions = (currentContext.options ?? [])
+    .map((entry) => entry.option_key)
+    .filter((key) => /featured|spotlight|sticky|social_boost|newsletter/i.test(key));
+  const allCountries = COUNTRY_GROUPS.world;
+  const formFields = isPostsProduct
+    ? DEFAULT_POSTS_FORM_FIELDS
+    : ((currentContext.product.form_fields && currentContext.product.form_fields.length > 0)
+      ? currentContext.product.form_fields
+      : []);
+  const effectivePostsFields = isPostsProduct
+    ? formFields.filter((field) => {
+        if (field.key === "embedded_video_link") return hasEmbeddedVideo;
+        if (field.key.startsWith("additional_image_")) return hasAdditionalImages;
+        if (!isGiveaway) {
+          if (
+            field.key === "prize_name" ||
+            field.key === "giveaway_category" ||
+            field.key === "prize_unit_value_usd" ||
+            field.key === "prize_units_count" ||
+            field.key === "minimum_age" ||
+            field.key === "giveaway_question" ||
+            field.key === "answer_correct" ||
+            field.key.startsWith("answer_wrong_") ||
+            field.key === "start_date" ||
+            field.key === "end_date"
+          ) {
+            return false;
+          }
+        }
+        return true;
+      })
+    : formFields;
 
   function setFieldValue(key: string, value: string) {
     setValues((previous) => ({ ...previous, [key]: value }));
@@ -421,8 +530,7 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
       setReservationConfirmed(true);
       setValidationError(null);
     } catch (reserveError) {
-      const rawMessage = reserveError instanceof Error ? reserveError.message : "RESERVATION_FAILED";
-      setReservationError(mapReservationErrorCode(rawMessage));
+      setReservationError(reserveError instanceof Error ? reserveError.message : "Reservation failed");
     } finally {
       setIsReserving(false);
     }
@@ -445,7 +553,8 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
       return false;
     }
 
-    for (const field of formFields) {
+    const fieldsToValidate = isPostsProduct ? effectivePostsFields : formFields;
+    for (const field of fieldsToValidate) {
       if (!validateField(field)) {
         setValidationError(`Missing required field: ${field.label}`);
         return false;
@@ -460,6 +569,9 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
       }
 
       if (field.type === "url" && values[field.key]) {
+        if (field.key === "embedded_video_link" && !values[field.key].trim()) {
+          continue;
+        }
         try {
           const parsedUrl = new URL(values[field.key]);
           if (!parsedUrl.protocol.startsWith("http")) throw new Error("Unsupported protocol");
@@ -495,30 +607,77 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
           setValidationError("Missing required field: Cover image");
           return false;
         }
-
         const lowerName = file.name.toLowerCase();
-        const hasValidExtension = lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg");
-        if (!hasValidExtension) {
-          setValidationError("Invalid image format. Only JPG/JPEG files are allowed.");
+        if (!lowerName.endsWith(".jpg") && !lowerName.endsWith(".jpeg") && !lowerName.endsWith(".webp")) {
+          setValidationError("Invalid image format. Only WEBP/JPG/JPEG files are allowed.");
           return false;
         }
-
         if (file.size > 500 * 1024) {
           setValidationError("Image too large. Maximum allowed size is 500 KB.");
           return false;
         }
       }
 
-      if (field.key === "title" && values.title && values.title.length > 150) {
+      if (field.type === "file" && field.key.startsWith("additional_image_")) {
+        const file = fileValues[field.key];
+        if (!file) continue;
+        const lowerName = file.name.toLowerCase();
+        if (!lowerName.endsWith(".jpg") && !lowerName.endsWith(".jpeg") && !lowerName.endsWith(".webp")) {
+          setValidationError("Invalid image format. Only WEBP/JPG/JPEG files are allowed.");
+          return false;
+        }
+        if (file.size > 500 * 1024) {
+          setValidationError("Image too large. Maximum allowed size is 500 KB.");
+          return false;
+        }
+      }
+
+      if (field.key === "title" && values.title && values.title.trim().length > 150) {
         setValidationError("Title is too long. Maximum allowed length is 150 characters.");
         return false;
       }
 
       if (field.key === "body" && values.body) {
-        if (postBodyMaxLength != null && values.body.length > postBodyMaxLength) {
+        const bodyLength = values.body.trim().length;
+        if (postBodyMaxLength != null && bodyLength > postBodyMaxLength) {
           setValidationError(`Body is too long. Maximum allowed length is ${postBodyMaxLength} characters.`);
           return false;
         }
+      }
+
+      if (field.key === "short_product_description" && values.short_product_description) {
+        const len = values.short_product_description.trim().length;
+        if (len < 100 || len > 300) {
+          setValidationError("Short product description must be between 100 and 300 characters.");
+          return false;
+        }
+      }
+
+      if (field.type === "number" && values[field.key]) {
+        const numeric = Number(values[field.key]);
+        if (!Number.isFinite(numeric)) {
+          setValidationError(`Invalid number: ${field.label}`);
+          return false;
+        }
+        if (typeof field.min === "number" && numeric < field.min) {
+          setValidationError(`${field.label} must be at least ${field.min}.`);
+          return false;
+        }
+        if (typeof field.max === "number" && numeric > field.max) {
+          setValidationError(`${field.label} must be at most ${field.max}.`);
+          return false;
+        }
+      }
+    }
+
+    if (isGiveaway) {
+      if (selectedShippingCountries.length < 1) {
+        setValidationError("Please select at least one eligible country for shipping.");
+        return false;
+      }
+      if (selectedHighlightOptions.length > unlockedHighlightCount) {
+        setValidationError(`You can select at most ${unlockedHighlightCount} free highlight option(s).`);
+        return false;
       }
     }
 
@@ -586,6 +745,15 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
       );
     }
 
+    if ((field.key === "start_date" || field.key === "end_date") && currentContext.product.product_type === "giveaway") {
+      return (
+        <div key={field.key} className="space-y-2">
+          <Label htmlFor={field.key}>{`${field.label} *`}</Label>
+          <Input id={field.key} name={field.key} type="date" value={values[field.key] ?? ""} readOnly disabled />
+        </div>
+      );
+    }
+
     if (field.readonly) {
       const companyPrefilled = Boolean(currentContext.prefill?.company_name && currentContext.prefill.company_name.trim().length > 0);
       const contactPrefilled = Boolean(currentContext.prefill?.contact_email && currentContext.prefill.contact_email.trim().length > 0);
@@ -637,12 +805,14 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
     }
 
     const requiredMark = field.required ? " *" : "";
-    const label = `${field.label}${requiredMark}`;
+    const normalizedLabel = field.key === "notes" ? "Note to admin" : field.label;
+    const label = `${normalizedLabel}${requiredMark}`;
 
     if (field.type === "textarea") {
-      const isBody = field.key === "body";
-      const bodyCount = isBody ? (values.body?.length ?? 0) : null;
-      const bodyMax = isBody ? postBodyMaxLength : null;
+      const showBodyCounter = field.key === "body";
+      const showShortDescCounter = field.key === "short_product_description";
+      const bodyLength = values.body?.length ?? 0;
+      const shortLength = values.short_product_description?.length ?? 0;
       return (
         <div key={field.key} className="space-y-2">
           <Label htmlFor={field.key}>{label}</Label>
@@ -652,14 +822,22 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
             value={values[field.key] ?? ""}
             onChange={(event) => setFieldValue(field.key, event.target.value)}
             required={Boolean(field.required)}
-            maxLength={isBody && bodyMax != null ? bodyMax : undefined}
             rows={4}
             className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           />
-          {isBody ? (
+          {showBodyCounter ? (
             <p className="text-xs text-muted-foreground">
-              {bodyCount}/{bodyMax ?? "unlimited"} characters
+              {bodyLength}/{postBodyMaxLength ?? "unlimited"} characters
             </p>
+          ) : null}
+          {showShortDescCounter ? (
+            <>
+              <p className="text-xs text-muted-foreground">{shortLength}/300 characters</p>
+              <p className="text-xs text-muted-foreground">{SHORT_PRODUCT_DESCRIPTION_HELPER}</p>
+            </>
+          ) : null}
+          {field.key === "giveaway_question" ? (
+            <p className="text-xs text-muted-foreground">{GIVEAWAY_QA_HELPER}</p>
           ) : null}
         </div>
       );
@@ -709,8 +887,39 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
           ) : null}
           {field.key === "cover_image_upload" ? (
             <p className="text-xs text-muted-foreground">
-              Upload a cover image in JPG/JPEG format only. Maximum file size: 500 KB.
+              {COVER_IMAGE_HELPER}
             </p>
+          ) : null}
+          {field.key === "additional_image_3" ? (
+            <p className="text-xs text-muted-foreground">{ADDITIONAL_IMAGES_HELPER}</p>
+          ) : null}
+        </div>
+      );
+    }
+
+    if (field.type === "number") {
+      return (
+        <div key={field.key} className="space-y-2">
+          <Label htmlFor={field.key}>{label}</Label>
+          <Input
+            id={field.key}
+            name={field.key}
+            type="number"
+            min={field.min}
+            max={field.max}
+            step={1}
+            required={Boolean(field.required)}
+            value={values[field.key] ?? ""}
+            onChange={(event) => setFieldValue(field.key, event.target.value)}
+          />
+          {field.key === "prize_unit_value_usd" ? (
+            <p className="text-xs text-muted-foreground">Per unit. Shipping not included.</p>
+          ) : null}
+          {field.key === "prize_units_count" ? (
+            <p className="text-xs text-muted-foreground">{GIVEAWAY_UNITS_HELPER}</p>
+          ) : null}
+          {field.key === "minimum_age" ? (
+            <p className="text-xs text-muted-foreground">Depending of the laws in your country.</p>
           ) : null}
         </div>
       );
@@ -730,6 +939,9 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
         />
         {field.key === "title" ? (
           <p className="text-xs text-muted-foreground">{(values.title?.length ?? 0)}/150 characters</p>
+        ) : null}
+        {field.key === "prize_name" ? (
+          <p className="text-xs text-muted-foreground">{GIVEAWAY_PRIZE_NAME_HELPER}</p>
         ) : null}
       </div>
     );
@@ -778,6 +990,42 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
       </div>
     </div>
   );
+  const fieldsToRender = isPostsProduct ? effectivePostsFields : formFields;
+  const safeFieldsToRender =
+    isPostsProduct && fieldsToRender.length === 0 ? DEFAULT_POSTS_FORM_FIELDS : fieldsToRender;
+  const fieldMap = new Map(safeFieldsToRender.map((field) => [field.key, field] as const));
+  const renderFieldsByKeys = (keys: string[]) =>
+    keys
+      .map((key) => fieldMap.get(key))
+      .filter((field): field is ProductFormField => Boolean(field))
+      .map((field) => renderField(field));
+
+  const toggleHighlightOption = (optionKey: string) => {
+    setSelectedHighlightOptions((prev) => {
+      if (prev.includes(optionKey)) return prev.filter((item) => item !== optionKey);
+      if (prev.length >= unlockedHighlightCount) return prev;
+      return [...prev, optionKey];
+    });
+  };
+
+  const toggleCountry = (country: string) => {
+    setSelectedShippingCountries((prev) =>
+      prev.includes(country) ? prev.filter((value) => value !== country) : [...prev, country]
+    );
+  };
+
+  const selectAllWorld = () => setSelectedShippingCountries(allCountries);
+  const deselectAllWorld = () => setSelectedShippingCountries([]);
+  const toggleGeoSection = (section: string) => {
+    setExpandedGeoSections((prev) => ({ ...prev, [section]: !prev[section] }));
+  };
+  const addCountries = (countries: string[]) => {
+    setSelectedShippingCountries((prev) => Array.from(new Set([...prev, ...countries])));
+  };
+  const removeCountries = (countries: string[]) => {
+    const blocked = new Set(countries);
+    setSelectedShippingCountries((prev) => prev.filter((country) => !blocked.has(country)));
+  };
 
   return (
     <div className="space-y-6">
@@ -788,6 +1036,9 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
         </div>
         <p className="mt-2 text-sm text-muted-foreground">Form: {currentContext.product.form_id}</p>
         <p className="text-sm text-muted-foreground">Product key: {currentContext.product.product_key}</p>
+        {currentContext.order?.number ? (
+          <p className="text-sm text-muted-foreground">Order number: {currentContext.order.number}</p>
+        ) : null}
       </section>
 
       <section className="rounded-md border bg-white p-4 space-y-4">
@@ -863,11 +1114,200 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
 
       <section className="rounded-md border bg-white p-4">
         <h3 className="text-base font-semibold">Submission form</h3>
-        {formFields.length === 0 ? (
+        {safeFieldsToRender.length === 0 ? (
           <p className="mt-2 text-sm text-muted-foreground">No dynamic fields configured for this product yet.</p>
         ) : (
           <form className="mt-4 space-y-4" onSubmit={handleSubmit} noValidate>
-            {formFields.map((field) => renderField(field))}
+            {isPostsProduct ? (
+              <div className="space-y-4">
+                <div className="rounded-md border bg-slate-50 p-4 space-y-3">
+                  <h4 className="text-sm font-semibold">A. Basic product information</h4>
+                  <p className="text-xs text-muted-foreground">Provide your company and contact details for editorial follow-up.</p>
+                  {renderFieldsByKeys(["company_name", "contact_email"])}
+                </div>
+
+                <div className="rounded-md border bg-slate-50 p-4 space-y-3">
+                  <h4 className="text-sm font-semibold">B. Visual assets</h4>
+                  <p className="text-xs text-muted-foreground">Upload premium visuals for publication.</p>
+                  {renderFieldsByKeys(["cover_image_upload"])}
+                  {hasAdditionalImages ? renderFieldsByKeys(["additional_image_1", "additional_image_2", "additional_image_3"]) : null}
+                </div>
+
+                <div className="rounded-md border bg-slate-50 p-4 space-y-3">
+                  <h4 className="text-sm font-semibold">C. Main content</h4>
+                  <p className="text-xs text-muted-foreground">Craft a clear editorial message for your audience.</p>
+                  <p className="text-xs text-muted-foreground">{EDITORIAL_REVIEW_HELPER}</p>
+                  {renderFieldsByKeys(isGiveaway && hasEmbeddedVideo ? ["title", "body", "short_product_description", "embedded_video_link"] : ["title", "body", "short_product_description"])}
+                </div>
+
+                {isGiveaway ? (
+                  <div className="rounded-md border bg-slate-50 p-4 space-y-3">
+                    <h4 className="text-sm font-semibold">D. Giveaway details</h4>
+                    <p className="text-xs text-muted-foreground">Define prize details and audience requirements.</p>
+                    {renderFieldsByKeys(["prize_name", "giveaway_category", "prize_unit_value_usd", "prize_units_count", "minimum_age"])}
+                    <div className="rounded-md border bg-white p-3 space-y-2">
+                      <p className="text-sm font-semibold">Unlocked free highlight options</p>
+                      <p className="text-xs text-muted-foreground">
+                        Based on your prize quantity, you can select up to {unlockedHighlightCount} free highlight option(s).
+                      </p>
+                      {unlockedHighlightCount > 0 && availableHighlightOptions.length > 0 ? (
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          {availableHighlightOptions.map((optionKey) => (
+                            <label key={optionKey} className="flex items-center gap-2 text-sm">
+                              <input
+                                type="checkbox"
+                                checked={selectedHighlightOptions.includes(optionKey)}
+                                onChange={() => toggleHighlightOption(optionKey)}
+                                disabled={!selectedHighlightOptions.includes(optionKey) && selectedHighlightOptions.length >= unlockedHighlightCount}
+                              />
+                              <span>{optionKey.replace(/_/g, " ")}</span>
+                            </label>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">No free highlight option unlocked yet.</p>
+                      )}
+                    </div>
+                  </div>
+                ) : null}
+
+                {!isGiveaway && hasEmbeddedVideo ? (
+                  <div className="rounded-md border bg-slate-50 p-4 space-y-3">
+                    <h4 className="text-sm font-semibold">D. Conditional premium options</h4>
+                    <p className="text-xs text-muted-foreground">This field is available only when the corresponding WooCommerce option was purchased.</p>
+                    {renderFieldsByKeys(["embedded_video_link"])}
+                  </div>
+                ) : null}
+
+                {isGiveaway ? (
+                  <>
+                    <div className="rounded-md border bg-slate-50 p-4 space-y-3">
+                      <h4 className="text-sm font-semibold">E. Publication / timing</h4>
+                      <p className="text-xs text-muted-foreground">Dates are derived from your reservation and purchased duration.</p>
+                      <p className="text-xs text-muted-foreground">{GIVEAWAY_DATES_HELPER}</p>
+                      {renderFieldsByKeys(["start_date", "end_date"])}
+                    </div>
+
+                    <div className="rounded-md border bg-slate-50 p-4 space-y-3">
+                      <h4 className="text-sm font-semibold">F. Distribution / eligibility</h4>
+                      <p className="text-xs text-muted-foreground">Select where you can ship the giveaway prize.</p>
+                      <div className="flex flex-wrap gap-2">
+                        <Button type="button" variant="outline" onClick={selectAllWorld}>Select all world</Button>
+                        <Button type="button" variant="outline" onClick={deselectAllWorld}>Deselect all world</Button>
+                      </div>
+                      <div className="space-y-3">
+                        <div className="rounded border bg-white p-3 space-y-2">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <Button type="button" variant="outline" className="h-auto p-0 text-sm font-medium" onClick={() => toggleGeoSection("europe")}>
+                              {expandedGeoSections.europe ? "▾" : "▸"} Europe
+                            </Button>
+                            <div className="flex gap-2">
+                              <Button type="button" variant="outline" size="sm" onClick={() => addCountries([...COUNTRY_GROUPS.europe.eu, ...COUNTRY_GROUPS.europe.other])}>Select all</Button>
+                              <Button type="button" variant="outline" size="sm" onClick={() => removeCountries([...COUNTRY_GROUPS.europe.eu, ...COUNTRY_GROUPS.europe.other])}>Deselect all</Button>
+                            </div>
+                          </div>
+                          {expandedGeoSections.europe ? (
+                            <div className="space-y-3">
+                              <div className="rounded border bg-slate-50 p-3 space-y-2">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <Button type="button" variant="outline" className="h-auto p-0 text-xs font-semibold" onClick={() => toggleGeoSection("europe_eu")}>
+                                    {expandedGeoSections.europe_eu ? "▾" : "▸"} European Union
+                                  </Button>
+                                  <div className="flex gap-2">
+                                    <Button type="button" variant="outline" size="sm" onClick={() => addCountries(COUNTRY_GROUPS.europe.eu)}>Select all</Button>
+                                    <Button type="button" variant="outline" size="sm" onClick={() => removeCountries(COUNTRY_GROUPS.europe.eu)}>Deselect all</Button>
+                                  </div>
+                                </div>
+                                {expandedGeoSections.europe_eu ? (
+                                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                                    {COUNTRY_GROUPS.europe.eu.map((country) => (
+                                      <label key={country} className="flex items-center gap-2 text-xs">
+                                        <input type="checkbox" checked={selectedShippingCountries.includes(country)} onChange={() => toggleCountry(country)} />
+                                        <span>{country}</span>
+                                      </label>
+                                    ))}
+                                  </div>
+                                ) : null}
+                              </div>
+                              <div className="rounded border bg-slate-50 p-3 space-y-2">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <Button type="button" variant="outline" className="h-auto p-0 text-xs font-semibold" onClick={() => toggleGeoSection("europe_other")}>
+                                    {expandedGeoSections.europe_other ? "▾" : "▸"} Other European countries
+                                  </Button>
+                                  <div className="flex gap-2">
+                                    <Button type="button" variant="outline" size="sm" onClick={() => addCountries(COUNTRY_GROUPS.europe.other)}>Select all</Button>
+                                    <Button type="button" variant="outline" size="sm" onClick={() => removeCountries(COUNTRY_GROUPS.europe.other)}>Deselect all</Button>
+                                  </div>
+                                </div>
+                                {expandedGeoSections.europe_other ? (
+                                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                                    {COUNTRY_GROUPS.europe.other.map((country) => (
+                                      <label key={country} className="flex items-center gap-2 text-xs">
+                                        <input type="checkbox" checked={selectedShippingCountries.includes(country)} onChange={() => toggleCountry(country)} />
+                                        <span>{country}</span>
+                                      </label>
+                                    ))}
+                                  </div>
+                                ) : null}
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
+
+                        {CONTINENT_LABELS.map((continent) => {
+                          const countries = COUNTRY_GROUPS.continents[continent.key];
+                          return (
+                            <div key={continent.sectionKey} className="rounded border bg-white p-3 space-y-2">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  className="h-auto p-0 text-sm font-medium"
+                                  onClick={() => toggleGeoSection(continent.sectionKey)}
+                                >
+                                  {expandedGeoSections[continent.sectionKey] ? "▾" : "▸"} {continent.label}
+                                </Button>
+                                <div className="flex gap-2">
+                                  <Button type="button" variant="outline" size="sm" onClick={() => addCountries(countries)}>Select all</Button>
+                                  <Button type="button" variant="outline" size="sm" onClick={() => removeCountries(countries)}>Deselect all</Button>
+                                </div>
+                              </div>
+                              {expandedGeoSections[continent.sectionKey] ? (
+                                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                                  {countries.map((country) => (
+                                    <label key={country} className="flex items-center gap-2 text-xs">
+                                      <input
+                                        type="checkbox"
+                                        checked={selectedShippingCountries.includes(country)}
+                                        onChange={() => toggleCountry(country)}
+                                      />
+                                      <span>{country}</span>
+                                    </label>
+                                  ))}
+                                </div>
+                              ) : null}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="rounded-md border bg-slate-50 p-4 space-y-3">
+                      <h4 className="text-sm font-semibold">G. Quiz question and answers</h4>
+                      {renderFieldsByKeys(["giveaway_question", "answer_correct", "answer_wrong_1", "answer_wrong_2", "answer_wrong_3", "answer_wrong_4"])}
+                    </div>
+                  </>
+                ) : null}
+
+                <div className="rounded-md border bg-slate-50 p-4 space-y-3">
+                  <h4 className="text-sm font-semibold">{isGiveaway ? "H. Note to admin" : "Note to admin"}</h4>
+                  <p className="text-xs text-muted-foreground">Optional message for the admin review team.</p>
+                  {renderFieldsByKeys(["notes"])}
+                </div>
+              </div>
+            ) : (
+              safeFieldsToRender.map((field) => renderField(field))
+            )}
             {validationError ? <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{validationError}</div> : null}
             {submitError ? <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{submitError}</div> : null}
             <Button type="submit" disabled={isSubmitting || !hasConfirmedReservation}>

@@ -5,6 +5,10 @@ type WPOrderContext = {
     form_id: string;
     form_fields?: Array<{ key: string; required?: boolean; type?: string }>;
   };
+  order?: {
+    number?: string;
+    id?: number;
+  };
   prefill?: {
     company_name?: string;
     contact_email?: string;

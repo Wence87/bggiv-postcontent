@@ -163,6 +163,10 @@ final class BGG_Order_Context_REST {
                 'form_fields' => $product_context['form_fields'] ?? [],
                 'resolution_status' => $product_context['resolution_status'] ?? null,
             ],
+            'order' => [
+                'number' => (string) $order->get_order_number(),
+                'id' => (int) $order->get_id(),
+            ],
             'prefill' => [
                 'company_name' => self::resolve_company_prefill($order),
                 'contact_email' => (string) $order->get_billing_email(),
