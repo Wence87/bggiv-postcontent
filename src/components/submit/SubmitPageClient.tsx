@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -110,6 +110,7 @@ const CONTINENT_LABELS: Array<{
 ];
 
 type OrderContextResponse = {
+  order_number?: string;
   product: {
     product_type: "sponsorship" | "ads" | "news" | "promo" | "giveaway";
     form_id: string;
@@ -120,6 +121,7 @@ type OrderContextResponse = {
   order?: {
     number?: string;
     id?: number;
+    order_id?: string;
   };
   prefill?: {
     company_name?: string;
@@ -552,6 +554,11 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
           : resolveGiveawayDurationDaysFromContext(currentContext.derived_values ?? {}, currentContext.enabled_options ?? [])
       )
     : null;
+  const resolvedOrderNumber =
+    currentContext.order?.number ??
+    currentContext.order_number ??
+    currentContext.order?.order_id ??
+    (typeof currentContext.order?.id === "number" ? String(currentContext.order.id) : null);
   const getGroupSelectionState = (countries: string[]) => {
     if (!countries.length) return "none" as const;
     const selectedCount = countries.reduce((count, country) => count + (selectedShippingCountries.includes(country) ? 1 : 0), 0);
@@ -624,10 +631,23 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
     const editor = bodyEditorRef.current;
     if (!editor) return;
     editor.focus();
+    const before = editor.innerHTML;
     document.execCommand(command, false);
+    if (command === "insertUnorderedList" && editor.innerHTML === before) {
+      const current = editor.innerHTML.trim();
+      editor.innerHTML = current ? `<ul><li>${current}</li></ul>` : "<ul><li>Item</li></ul>";
+    }
     const sanitized = sanitizeBodyHtml(editor.innerHTML);
     if (sanitized !== editor.innerHTML) editor.innerHTML = sanitized;
     setFieldValue("body", sanitized);
+  }
+
+  function onToolbarCommandMouseDown(
+    event: MouseEvent<HTMLButtonElement>,
+    command: "bold" | "italic" | "underline" | "insertUnorderedList"
+  ) {
+    event.preventDefault();
+    execBodyCommand(command);
   }
 
   function handleBodyInput() {
@@ -1013,16 +1033,16 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
           <Label htmlFor={field.key}>{label}</Label>
           {showBodyCounter ? (
             <div className="flex flex-wrap gap-2">
-              <Button type="button" size="sm" variant="outline" onClick={() => execBodyCommand("bold")}>
+              <Button type="button" size="sm" variant="outline" onMouseDown={(event) => onToolbarCommandMouseDown(event, "bold")}>
                 Bold
               </Button>
-              <Button type="button" size="sm" variant="outline" onClick={() => execBodyCommand("italic")}>
+              <Button type="button" size="sm" variant="outline" onMouseDown={(event) => onToolbarCommandMouseDown(event, "italic")}>
                 Italic
               </Button>
-              <Button type="button" size="sm" variant="outline" onClick={() => execBodyCommand("underline")}>
+              <Button type="button" size="sm" variant="outline" onMouseDown={(event) => onToolbarCommandMouseDown(event, "underline")}>
                 Underline
               </Button>
-              <Button type="button" size="sm" variant="outline" onClick={() => execBodyCommand("insertUnorderedList")}>
+              <Button type="button" size="sm" variant="outline" onMouseDown={(event) => onToolbarCommandMouseDown(event, "insertUnorderedList")}>
                 Bulleted list
               </Button>
             </div>
@@ -1281,7 +1301,7 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
     frontend_tree: FRONTEND_TREE_MARKER,
     product_key: currentContext.product.product_key,
     product_type: currentContext.product.product_type,
-    order_number_seen: currentContext.order?.number ?? null,
+    order_number_seen: resolvedOrderNumber,
     enabled_options_raw: currentContext.enabled_options ?? [],
     enabled_options_normalized: normalizedEnabledOptions,
     additional_images_active: hasAdditionalImages,
@@ -1308,8 +1328,8 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
         </div>
         <p className="mt-2 text-sm text-muted-foreground">Form: {currentContext.product.form_id}</p>
         <p className="text-sm text-muted-foreground">Product key: {currentContext.product.product_key}</p>
-        {currentContext.order?.number ? (
-          <p className="text-sm text-muted-foreground">Order number: {currentContext.order.number}</p>
+        {resolvedOrderNumber ? (
+          <p className="text-sm text-muted-foreground">Order number: {resolvedOrderNumber}</p>
         ) : null}
       </section>
 
@@ -1395,8 +1415,8 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
                 <div className="rounded-md border bg-slate-50 p-4 space-y-3">
                   <h4 className="text-sm font-semibold">A. Basic product information</h4>
                   <p className="text-xs text-muted-foreground">Provide your company and contact details for editorial follow-up.</p>
-                  {currentContext.order?.number ? (
-                    <p className="text-xs text-muted-foreground">Order number: {currentContext.order.number}</p>
+                  {resolvedOrderNumber ? (
+                    <p className="text-xs text-muted-foreground">Order number: {resolvedOrderNumber}</p>
                   ) : null}
                   {renderFieldsByKeys(["company_name", "contact_email"])}
                 </div>

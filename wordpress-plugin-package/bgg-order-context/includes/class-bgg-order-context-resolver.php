@@ -122,6 +122,13 @@ final class BGG_Order_Context_Resolver {
             ? $product_context['options']
             : [];
 
+        if (empty($configured_options)) {
+            $product_type = strtolower((string) ($product_context['product_type'] ?? ''));
+            if (in_array($product_type, ['news', 'promo', 'giveaway'], true)) {
+                $configured_options = self::get_default_posts_options();
+            }
+        }
+
         foreach ($configured_options as $option) {
             if (!is_array($option)) {
                 continue;
@@ -195,6 +202,33 @@ final class BGG_Order_Context_Resolver {
         }
 
         return null;
+    }
+
+    private static function get_default_posts_options(): array {
+        $config = BGG_Order_Context_Config::load();
+        if (!is_array($config) || !isset($config['products']) || !is_array($config['products'])) {
+            return [];
+        }
+
+        foreach ($config['products'] as $product) {
+            if (!is_array($product)) continue;
+            $product_type = strtolower((string) ($product['product_type'] ?? ''));
+            if ($product_type !== 'news') continue;
+            if (isset($product['options']) && is_array($product['options']) && !empty($product['options'])) {
+                return $product['options'];
+            }
+        }
+
+        foreach ($config['products'] as $product) {
+            if (!is_array($product)) continue;
+            $product_type = strtolower((string) ($product['product_type'] ?? ''));
+            if (!in_array($product_type, ['news', 'promo', 'giveaway'], true)) continue;
+            if (isset($product['options']) && is_array($product['options']) && !empty($product['options'])) {
+                return $product['options'];
+            }
+        }
+
+        return [];
     }
 
     private static function collect_order_product_signals(WC_Order_Item_Product $item): array {

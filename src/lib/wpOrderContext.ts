@@ -1,4 +1,5 @@
 type WPOrderContext = {
+  order_number?: string;
   product: {
     product_type: string;
     product_key: string;
@@ -8,6 +9,7 @@ type WPOrderContext = {
   order?: {
     number?: string;
     id?: number;
+    order_id?: string;
   };
   prefill?: {
     company_name?: string;

@@ -168,6 +168,7 @@ final class BGG_Order_Context_REST {
         }
 
         $response = [
+            'order_number' => (string) $order->get_order_number(),
             'product' => [
                 'product_type' => $product_context['product_type'],
                 'form_id' => $product_context['form_id'],
