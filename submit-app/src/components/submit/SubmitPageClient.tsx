@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -37,6 +37,7 @@ const DEFAULT_POSTS_FORM_FIELDS: ProductFormField[] = [
   { key: "additional_image_2", label: "Additional image 2", type: "file", required: false, accept: ".webp,.jpg,.jpeg,image/webp,image/jpeg" },
   { key: "additional_image_3", label: "Additional image 3", type: "file", required: false, accept: ".webp,.jpg,.jpeg,image/webp,image/jpeg" },
   { key: "prize_name", label: "Prize name", type: "text", required: true, max: 150 },
+  { key: "prize_short_description", label: "Prize short description", type: "textarea", required: true },
   {
     key: "giveaway_category",
     label: "Giveaway category",
@@ -73,16 +74,14 @@ const DEFAULT_POSTS_FORM_FIELDS: ProductFormField[] = [
 const SHORT_PRODUCT_DESCRIPTION_HELPER =
   "Short text describing the product’s key features.";
 
-const EDITORIAL_REVIEW_HELPER =
-  "All submissions are reviewed by our editorial team before publication and must follow our contributor guidelines.";
 const BODY_HELPER_TEXT =
   "This is the main content of the post. Use it to describe the product, explain the giveaway, and provide any relevant information players should know.";
 
 const COVER_IMAGE_HELPER =
-  "Image size : 1200 × 675 px. Allowed File Extensions : webp, jpg, jpeg. Max File Size : 500 KB. A best practice is to present the game in its best light, placing it in the most appropriate setting to make people visually want to discover it.";
+  "Maximum image size: 1200 × 675 px. Allowed file extensions: webp, jpg, jpeg. Max file size: 500 KB.";
 
 const ADDITIONAL_IMAGES_HELPER =
-  "⚠️ By default, your post is illustrated with the cover image only. If the appropriate paid option was selected in the previous step, you can add up to three additional images. To help us place the images correctly in your post item, simply insert the image file names between the relevant paragraphs of your text. Image size : 1200 × 675 px • Allowed File Extensions : webp, jpg, jpeg. Max File Size : 500 KB";
+  "To help us place the images correctly in your post, insert the image file names between the relevant paragraphs of your text.";
 
 const GIVEAWAY_DATES_HELPER =
   "All dates and times are in Brussels time (Europe/Brussels, UTC+1 / UTC+2 DST). Please note that the duration of the giveaway is determined by the option selected in the previous step. Once your giveaway is approved, it will be displayed in three stages: announced with its upcoming start date, shown as active, and finally presented with the results once it has ended.";
@@ -129,7 +128,7 @@ type OrderContextResponse = {
   };
   reservation?: {
     ads_duration_weeks?: number | null;
-    giveaway_duration_weeks?: number | null;
+    giveaway_duration_weeks?: number | string | null;
   };
   options: Array<{
     option_key: string;
@@ -165,7 +164,7 @@ type SubmitPageClientProps = {
 };
 
 const WP_BASE_URL = (process.env.NEXT_PUBLIC_WP_BASE_URL || "https://boardgamegiveaways.com").replace(/\/$/, "");
-const FRONTEND_TREE_MARKER = "submit-app-src";
+const FRONTEND_TREE_MARKER = "root-src";
 const FRONTEND_BUILD_MARKER = process.env.NEXT_PUBLIC_BUILD_STAMP || "build-stamp-missing";
 
 function weekKeyToDate(weekKey: string): string {
@@ -212,6 +211,14 @@ function hasOption(enabledOptions: string[], optionKey: string): boolean {
   });
 }
 
+function toTitleFromKey(raw: string): string {
+  return raw
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (m) => m.toUpperCase());
+}
+
 function resolvePostBodyMaxLength(derivedValues: Record<string, unknown>, enabledOptions: string[]): number | null {
   const direct = derivedValues.post_body_max_length;
   if (typeof direct === "number" && Number.isFinite(direct) && direct > 0) return Math.trunc(direct);
@@ -222,8 +229,16 @@ function resolvePostBodyMaxLength(derivedValues: Record<string, unknown>, enable
 function resolveGiveawayDurationDays(derivedValues: Record<string, unknown>): number {
   const directDays = derivedValues.giveaway_duration_days;
   if (typeof directDays === "number" && [7, 14, 21, 28].includes(directDays)) return directDays;
+  if (typeof directDays === "string") {
+    const parsedDays = Number.parseInt(directDays, 10);
+    if ([7, 14, 21, 28].includes(parsedDays)) return parsedDays;
+  }
   const directWeeks = derivedValues.giveaway_duration_weeks;
   if (typeof directWeeks === "number" && directWeeks >= 1 && directWeeks <= 4) return directWeeks * 7;
+  if (typeof directWeeks === "string") {
+    const parsedWeeks = Number.parseInt(directWeeks, 10);
+    if (parsedWeeks >= 1 && parsedWeeks <= 4) return parsedWeeks * 7;
+  }
 
   for (const [key, value] of Object.entries(derivedValues)) {
     if (!key.toLowerCase().includes("duration")) continue;
@@ -264,10 +279,22 @@ function computeUnlockedHighlights(units: number): number {
 
 function resolveGiveawayDurationDaysFromContext(
   derivedValues: Record<string, unknown>,
+  reservation: OrderContextResponse["reservation"] | undefined,
   enabledOptions: string[]
 ): number {
+  const reservationWeeksRaw = reservation?.giveaway_duration_weeks;
+  const reservationWeeks =
+    typeof reservationWeeksRaw === "number"
+      ? reservationWeeksRaw
+      : typeof reservationWeeksRaw === "string"
+        ? Number.parseInt(reservationWeeksRaw, 10)
+        : NaN;
+
   const fromDerived = resolveGiveawayDurationDays(derivedValues);
-  if (fromDerived !== 7) return fromDerived;
+  const fromReservation =
+    Number.isFinite(reservationWeeks) && reservationWeeks >= 1 && reservationWeeks <= 4 ? reservationWeeks * 7 : 7;
+  const bestKnown = Math.max(fromDerived, fromReservation);
+  if ([7, 14, 21, 28].includes(bestKnown)) return bestKnown;
 
   for (const option of enabledOptions) {
     const normalized = normalizeOptionKey(option);
@@ -283,7 +310,6 @@ function resolveGiveawayDurationDaysFromContext(
 
 export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps) {
   const router = useRouter();
-  const bodyEditorRef = useRef<HTMLDivElement | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [context, setContext] = useState<OrderContextResponse | null>(null);
@@ -434,14 +460,11 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
       }
       const startDate = new Date(startsAt);
       const endDate = new Date(startsAt);
-      const reservationWeeks = context.reservation?.giveaway_duration_weeks;
-      const durationDays =
-        typeof reservationWeeks === "number" && reservationWeeks >= 1 && reservationWeeks <= 4
-          ? reservationWeeks * 7
-          : resolveGiveawayDurationDaysFromContext(
-              context.derived_values ?? {},
-              context.enabled_options ?? []
-            );
+      const durationDays = resolveGiveawayDurationDaysFromContext(
+        context.derived_values ?? {},
+        context.reservation,
+        context.enabled_options ?? []
+      );
       endDate.setUTCDate(endDate.getUTCDate() + Math.max(1, durationDays));
       const dateToKey = (date: Date) =>
         `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
@@ -457,16 +480,6 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
   useEffect(() => {
     setFieldValue("selected_highlight_options", JSON.stringify(selectedHighlightOptions));
   }, [selectedHighlightOptions]);
-
-  useEffect(() => {
-    const editor = bodyEditorRef.current;
-    if (!editor) return;
-    if (document.activeElement === editor) return;
-    const expected = values.body ?? "";
-    if (editor.innerHTML !== expected) {
-      editor.innerHTML = expected;
-    }
-  }, [values.body]);
 
   if (loading) {
     return <div className="rounded-md border bg-white p-4 text-sm text-muted-foreground">Loading submission context...</div>;
@@ -522,6 +535,7 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
         if (!isGiveaway) {
           if (
             field.key === "prize_name" ||
+            field.key === "prize_short_description" ||
             field.key === "giveaway_category" ||
             field.key === "prize_unit_value_usd" ||
             field.key === "prize_units_count" ||
@@ -546,12 +560,10 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
     )
   );
   const derivedGiveawayDurationDaysUsed = isGiveaway
-    ? (
-        typeof currentContext.reservation?.giveaway_duration_weeks === "number" &&
-        currentContext.reservation.giveaway_duration_weeks >= 1 &&
-        currentContext.reservation.giveaway_duration_weeks <= 4
-          ? currentContext.reservation.giveaway_duration_weeks * 7
-          : resolveGiveawayDurationDaysFromContext(currentContext.derived_values ?? {}, currentContext.enabled_options ?? [])
+    ? resolveGiveawayDurationDaysFromContext(
+        currentContext.derived_values ?? {},
+        currentContext.reservation,
+        currentContext.enabled_options ?? []
       )
     : null;
   const resolvedOrderNumber =
@@ -559,6 +571,56 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
     currentContext.order_number ??
     currentContext.order?.order_id ??
     (typeof currentContext.order?.id === "number" ? String(currentContext.order.id) : null);
+  const destinationRequiredMessage = "You must select at least one destination where the prize can be shipped.";
+  const activeOptionSummaries = (() => {
+    const options = Array.isArray(currentContext.options) ? currentContext.options : [];
+    const derived = currentContext.derived_values ?? {};
+    const enabledKeys = new Set(
+      (currentContext.enabled_options ?? [])
+        .filter((v): v is string => typeof v === "string")
+        .map((v) => normalizeOptionKey(v))
+    );
+    const labelByKey: Record<string, string> = {
+      giveawayduration: "Duration",
+      additionalimages: "Additional Images",
+      embeddedvideo: "Embedded Video",
+      extendedtextlimit: "Extended Text Limit",
+      socialboost: "Social Boost",
+      stickypost: "Sticky Post",
+      newsposthighlight: "News Post Highlight",
+      newsletterspot: "Newsletter Spot",
+      newsletterspotlight: "Newsletter Spotlight",
+      sidebarspotlight: "Sidebar Spotlight",
+      herogrid: "Hero Grid",
+      featurednewslist: "Featured News List",
+    };
+
+    return options
+      .filter((option) => Boolean(option.enabled) || enabledKeys.has(normalizeOptionKey(option.option_key)))
+      .map((option) => {
+        const normalizedKey = normalizeOptionKey(option.option_key);
+        const label = labelByKey[normalizedKey] ?? toTitleFromKey(option.option_key);
+        let value = "Enabled";
+        const derivedValue = derived[option.option_key];
+
+        if (normalizedKey.includes("duration") && isGiveaway && derivedGiveawayDurationDaysUsed) {
+          const weeks = Math.max(1, Math.round(derivedGiveawayDurationDaysUsed / 7));
+          value = `${weeks} Week${weeks > 1 ? "s" : ""}`;
+        } else if (derivedValue && typeof derivedValue === "object") {
+          const dv = derivedValue as Record<string, unknown>;
+          if (typeof dv.final === "string" && dv.final.trim()) value = dv.final.trim();
+          else if (typeof dv.final === "number") value = String(dv.final);
+          else if (typeof dv.duration_weeks_purchased === "number") value = `${dv.duration_weeks_purchased} Week${dv.duration_weeks_purchased > 1 ? "s" : ""}`;
+          else if (typeof dv.duration_days_final === "number") value = `${dv.duration_days_final} Days`;
+        } else if (typeof derivedValue === "string" && derivedValue.trim()) {
+          value = derivedValue.trim();
+        } else if (typeof derivedValue === "number") {
+          value = String(derivedValue);
+        }
+
+        return { key: option.option_key, label, value };
+      });
+  })();
   const getGroupSelectionState = (countries: string[]) => {
     if (!countries.length) return "none" as const;
     const selectedCount = countries.reduce((count, country) => count + (selectedShippingCountries.includes(country) ? 1 : 0), 0);
@@ -591,71 +653,6 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
     if (typeof min === "number" && bounded < min) bounded = min;
     if (typeof max === "number" && bounded > max) bounded = max;
     setFieldValue(key, String(Math.trunc(bounded)));
-  }
-
-  function extractTextFromHtml(input: string): string {
-    if (typeof document === "undefined") return input.replace(/<[^>]+>/g, "");
-    const node = document.createElement("div");
-    node.innerHTML = input;
-    return (node.textContent || "").trim();
-  }
-
-  function sanitizeBodyHtml(input: string): string {
-    if (typeof document === "undefined") return input;
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(`<div>${input}</div>`, "text/html");
-    const root = doc.body.firstElementChild as HTMLElement | null;
-    if (!root) return "";
-    const allowed = new Set(["B", "STRONG", "I", "EM", "U", "UL", "LI", "BR", "P", "DIV"]);
-    const sanitizeNode = (node: Node) => {
-      for (const child of Array.from(node.childNodes)) {
-        if (child.nodeType === Node.ELEMENT_NODE) {
-          const el = child as HTMLElement;
-          if (!allowed.has(el.tagName)) {
-            const text = doc.createTextNode(el.textContent || "");
-            node.replaceChild(text, el);
-            continue;
-          }
-          for (const attr of Array.from(el.attributes)) {
-            el.removeAttribute(attr.name);
-          }
-          sanitizeNode(el);
-        }
-      }
-    };
-    sanitizeNode(root);
-    return root.innerHTML;
-  }
-
-  function execBodyCommand(command: "bold" | "italic" | "underline" | "insertUnorderedList") {
-    const editor = bodyEditorRef.current;
-    if (!editor) return;
-    editor.focus();
-    const before = editor.innerHTML;
-    document.execCommand(command, false);
-    if (command === "insertUnorderedList" && editor.innerHTML === before) {
-      const current = editor.innerHTML.trim();
-      editor.innerHTML = current ? `<ul><li>${current}</li></ul>` : "<ul><li>Item</li></ul>";
-    }
-    const sanitized = sanitizeBodyHtml(editor.innerHTML);
-    if (sanitized !== editor.innerHTML) editor.innerHTML = sanitized;
-    setFieldValue("body", sanitized);
-  }
-
-  function onToolbarCommandMouseDown(
-    event: MouseEvent<HTMLButtonElement>,
-    command: "bold" | "italic" | "underline" | "insertUnorderedList"
-  ) {
-    event.preventDefault();
-    execBodyCommand(command);
-  }
-
-  function handleBodyInput() {
-    const editor = bodyEditorRef.current;
-    if (!editor) return;
-    const sanitized = sanitizeBodyHtml(editor.innerHTML);
-    if (sanitized !== editor.innerHTML) editor.innerHTML = sanitized;
-    setFieldValue("body", sanitized);
   }
 
   function buildReservationPayload(): ReservationChoice | null {
@@ -738,7 +735,7 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
 
     if (!field.required) return true;
     if (field.type === "file") return Boolean(fileValues[field.key]);
-    if (field.key === "body") return extractTextFromHtml(values.body ?? "").length > 0;
+    if (field.key === "body") return (values.body ?? "").trim().length > 0;
     const rawValue = values[field.key];
     return typeof rawValue === "string" && rawValue.trim().length > 0;
   }
@@ -837,6 +834,13 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
         setValidationError("Prize name is too long. Maximum allowed length is 150 characters.");
         return false;
       }
+      if (field.key === "prize_short_description" && values.prize_short_description) {
+        const len = values.prize_short_description.trim().length;
+        if (len > 300) {
+          setValidationError("Prize short description is too long. Maximum allowed length is 300 characters.");
+          return false;
+        }
+      }
 
       if (
         (field.key === "giveaway_question" ||
@@ -853,7 +857,7 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
       }
 
       if (field.key === "body" && values.body) {
-        const bodyLength = extractTextFromHtml(values.body ?? "").length;
+        const bodyLength = (values.body ?? "").length;
         if (postBodyMaxLength != null && bodyLength > postBodyMaxLength) {
           setValidationError(`Body is too long. Maximum allowed length is ${postBodyMaxLength} characters.`);
           return false;
@@ -887,7 +891,7 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
 
     if (isGiveaway) {
       if (selectedShippingCountries.length < 1) {
-        setValidationError("Please select at least one eligible country for shipping.");
+        setValidationError(destinationRequiredMessage);
         return false;
       }
       if (selectedHighlightOptions.length > unlockedHighlightCount) {
@@ -940,6 +944,15 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
   }
 
   function renderField(field: ProductFormField) {
+    if (field.key === "order_number") {
+      return (
+        <div key={field.key} className="space-y-2">
+          <Label htmlFor={field.key}>Order number</Label>
+          <Input id={field.key} name={field.key} type="text" value={resolvedOrderNumber ?? ""} readOnly disabled />
+        </div>
+      );
+    }
+
     if (field.key === "start_date" && currentContext.product.product_type === "ads") {
       return (
         <div key={field.key} className="space-y-2">
@@ -1026,61 +1039,39 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
     if (field.type === "textarea") {
       const showBodyCounter = field.key === "body";
       const showShortDescCounter = field.key === "short_product_description";
-      const bodyLength = extractTextFromHtml(values.body ?? "").length;
+      const showPrizeShortCounter = field.key === "prize_short_description";
+      const bodyLength = (values.body ?? "").length;
       const shortLength = values.short_product_description?.length ?? 0;
+      const prizeShortLength = values.prize_short_description?.length ?? 0;
       return (
         <div key={field.key} className="space-y-2">
           <Label htmlFor={field.key}>{label}</Label>
           {showBodyCounter ? (
-            <div className="flex flex-wrap gap-2">
-              <Button type="button" size="sm" variant="outline" onMouseDown={(event) => onToolbarCommandMouseDown(event, "bold")}>
-                Bold
-              </Button>
-              <Button type="button" size="sm" variant="outline" onMouseDown={(event) => onToolbarCommandMouseDown(event, "italic")}>
-                Italic
-              </Button>
-              <Button type="button" size="sm" variant="outline" onMouseDown={(event) => onToolbarCommandMouseDown(event, "underline")}>
-                Underline
-              </Button>
-              <Button type="button" size="sm" variant="outline" onMouseDown={(event) => onToolbarCommandMouseDown(event, "insertUnorderedList")}>
-                Bulleted list
-              </Button>
-            </div>
+            <p className="text-xs text-muted-foreground">{BODY_HELPER_TEXT}</p>
           ) : null}
+          <textarea
+            id={field.key}
+            name={field.key}
+            value={values[field.key] ?? ""}
+            onChange={(event) => setFieldValue(field.key, event.target.value)}
+            required={Boolean(field.required)}
+            maxLength={showShortDescCounter || showPrizeShortCounter ? 300 : undefined}
+            rows={showBodyCounter ? 10 : 4}
+            className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 break-words [overflow-wrap:anywhere]"
+          />
           {showBodyCounter ? (
-            <div
-              id="body"
-              ref={bodyEditorRef}
-              contentEditable
-              suppressContentEditableWarning
-              onInput={handleBodyInput}
-              className="min-h-[240px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-            />
-          ) : (
-            <textarea
-              id={field.key}
-              name={field.key}
-              value={values[field.key] ?? ""}
-              onChange={(event) => setFieldValue(field.key, event.target.value)}
-              required={Boolean(field.required)}
-              maxLength={showShortDescCounter ? 300 : undefined}
-              rows={4}
-              className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-            />
-          )}
-          {showBodyCounter ? (
-            <>
-              <p className="text-xs text-muted-foreground">{BODY_HELPER_TEXT}</p>
-              <p className="text-xs text-muted-foreground">
-                {postBodyMaxLength == null ? "No character limit" : `${bodyLength}/${postBodyMaxLength} characters`}
-              </p>
-            </>
+            <p className="text-xs text-muted-foreground">
+              {postBodyMaxLength == null ? "No character limit" : `${bodyLength}/${postBodyMaxLength} characters`}
+            </p>
           ) : null}
           {showShortDescCounter ? (
             <>
               <p className="text-xs text-muted-foreground">{shortLength}/300 characters</p>
               <p className="text-xs text-muted-foreground">{SHORT_PRODUCT_DESCRIPTION_HELPER}</p>
             </>
+          ) : null}
+          {showPrizeShortCounter ? (
+            <p className="text-xs text-muted-foreground">{prizeShortLength}/300 characters</p>
           ) : null}
           {field.key === "giveaway_question" ? (
             <p className="text-xs text-muted-foreground">{GIVEAWAY_QA_HELPER}</p>
@@ -1129,11 +1120,6 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
               {currentContext.product.product_type === "sponsorship"
                 ? "Upload your sponsorship banner, JPG/JPEG only. Maximum file size: 200 KB."
                 : "Upload a Medium Rectangle banner (680 × 680 px), JPG/JPEG only. Maximum file size: 200 KB."}
-            </p>
-          ) : null}
-          {field.key === "cover_image_upload" ? (
-            <p className="text-xs text-muted-foreground">
-              {COVER_IMAGE_HELPER}
             </p>
           ) : null}
           {field.key === "additional_image_3" ? (
@@ -1308,14 +1294,9 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
     unlimited_body_active: hasUnlimitedBody,
     giveaway_duration_weeks_from_reservation: currentContext.reservation?.giveaway_duration_weeks ?? null,
     giveaway_duration_days_used: derivedGiveawayDurationDaysUsed,
-    editor_mode: "wysiwyg-contenteditable",
-    bullet_command_available:
-      typeof document !== "undefined" &&
-      typeof document.execCommand === "function" &&
-      typeof document.queryCommandSupported === "function"
-        ? document.queryCommandSupported("insertUnorderedList")
-        : false,
-    editor_is_contenteditable: Boolean(bodyEditorRef.current?.isContentEditable),
+    editor_mode: "textarea-plain",
+    bullet_command_available: false,
+    editor_is_contenteditable: false,
     body_state_contains_html: /<[^>]+>/.test(values.body ?? ""),
   };
 
@@ -1330,6 +1311,18 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
         <p className="text-sm text-muted-foreground">Product key: {currentContext.product.product_key}</p>
         {resolvedOrderNumber ? (
           <p className="text-sm text-muted-foreground">Order number: {resolvedOrderNumber}</p>
+        ) : null}
+        {activeOptionSummaries.length > 0 ? (
+          <div className="mt-3 rounded-md border bg-slate-50 p-3">
+            <p className="text-xs font-semibold text-slate-700">Purchased options</p>
+            <div className="mt-2 grid gap-1 sm:grid-cols-2">
+              {activeOptionSummaries.map((item) => (
+                <p key={item.key} className="text-xs text-muted-foreground">
+                  <span className="font-medium text-slate-700">{item.label}:</span> {item.value}
+                </p>
+              ))}
+            </div>
+          </div>
         ) : null}
       </section>
 
@@ -1414,24 +1407,20 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
               <div className="space-y-4">
                 <div className="rounded-md border bg-slate-50 p-4 space-y-3">
                   <h4 className="text-sm font-semibold">A. Basic product information</h4>
-                  <p className="text-xs text-muted-foreground">Provide your company and contact details for editorial follow-up.</p>
-                  {resolvedOrderNumber ? (
-                    <p className="text-xs text-muted-foreground">Order number: {resolvedOrderNumber}</p>
-                  ) : null}
+                  {resolvedOrderNumber ? renderField({ key: "order_number", label: "Order number", type: "text", readonly: true }) : null}
                   {renderFieldsByKeys(["company_name", "contact_email"])}
                 </div>
 
                 <div className="rounded-md border bg-slate-50 p-4 space-y-3">
                   <h4 className="text-sm font-semibold">B. Visual assets</h4>
-                  <p className="text-xs text-muted-foreground">Upload premium visuals for publication.</p>
+                  <p className="text-xs text-muted-foreground">{COVER_IMAGE_HELPER}</p>
                   {renderFieldsByKeys(["cover_image_upload"])}
                   {hasAdditionalImages ? renderFieldsByKeys(["additional_image_1", "additional_image_2", "additional_image_3"]) : null}
                 </div>
 
                 <div className="rounded-md border bg-slate-50 p-4 space-y-3">
                   <h4 className="text-sm font-semibold">C. Main content</h4>
-                  <p className="text-xs text-muted-foreground">Craft a clear editorial message for your audience.</p>
-                  <p className="text-xs text-muted-foreground">{EDITORIAL_REVIEW_HELPER}</p>
+                  <p className="text-xs text-muted-foreground">Craft a clear editorial message for your audience. All submissions are reviewed by our editorial team before publication and must follow our contributor guidelines.</p>
                   {renderFieldsByKeys(isGiveaway && hasEmbeddedVideo ? ["title", "body", "short_product_description", "embedded_video_link"] : ["title", "body", "short_product_description"])}
                 </div>
 
@@ -1439,7 +1428,7 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
                   <div className="rounded-md border bg-slate-50 p-4 space-y-3">
                     <h4 className="text-sm font-semibold">D. Giveaway details</h4>
                     <p className="text-xs text-muted-foreground">Define prize details and audience requirements.</p>
-                    {renderFieldsByKeys(["prize_name", "giveaway_category", "prize_unit_value_usd", "prize_units_count"])}
+                    {renderFieldsByKeys(["prize_name", "prize_short_description", "giveaway_category", "prize_unit_value_usd", "prize_units_count"])}
                     {unlockedHighlightCount > 0 ? (
                       <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 space-y-2">
                         <p className="text-sm font-semibold text-emerald-900">
@@ -1493,6 +1482,11 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
                     <div className="rounded-md border bg-slate-50 p-4 space-y-3">
                       <h4 className="text-sm font-semibold">F. Distribution / eligibility</h4>
                       <p className="text-xs text-muted-foreground">Select where you can ship the giveaway prize.</p>
+                      {validationError === destinationRequiredMessage ? (
+                        <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                          {destinationRequiredMessage}
+                        </div>
+                      ) : null}
                       <div className="flex flex-wrap gap-2">
                         <Button type="button" variant="outline" onClick={selectAllWorld}>Select all world</Button>
                         <Button type="button" variant="outline" onClick={deselectAllWorld}>Deselect all world</Button>

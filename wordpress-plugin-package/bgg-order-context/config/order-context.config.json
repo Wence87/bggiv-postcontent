@@ -766,6 +766,138 @@
             "validation": "—"
           },
           "derived": null
+        },
+        {
+          "option_key": "hero_grid",
+          "option_name": "Hero Grid",
+          "technical_slug": "hero_grid",
+          "business_type": "select",
+          "source": {
+            "purchased_raw": "Hero Grid (+$ 25.00)",
+            "possible_values": "Do not feature my news post in the hero grid.\n1 Day\n2 Days\n3 Days\n4 Days\n5 Days\n6 Days\n7 Days",
+            "wc_raw_example": "1 Day (+$ 9.00)\n2 Days (+$ 18.00)\n3 Days (+$ 27.00)\n4 Days (+$ 36.00)\n5 Days (+$ 45.00)\n6 Days (+$ 54.00)\n7 Days (+$ 63.00)"
+          },
+          "rules": {
+            "derive_rule": "Aucune action formulaire",
+            "asks_additional_info": false,
+            "collect_info": "—",
+            "fields_count": "—",
+            "field_type": "—",
+            "required": "—",
+            "business_rule": "—",
+            "values": {
+              "base_included": "—",
+              "purchased": "De 1 à 7 jours",
+              "paid_additional": "De 1 à 7 jours",
+              "final": "De 1 à 7 jours"
+            }
+          },
+          "activated_block": {
+            "name": "—",
+            "condition": "—",
+            "fields": "—",
+            "validation": "—"
+          },
+          "derived": null
+        },
+        {
+          "option_key": "newsletter_feature",
+          "option_name": "Newsletter Feature",
+          "technical_slug": "newsletter_feature",
+          "business_type": "toggle",
+          "source": {
+            "purchased_raw": "Weekly Newsletter (+$ 20.00)",
+            "possible_values": "I do not feature my post in the weekly newsletter.\nI feature my post in the weekly newsletter.",
+            "wc_raw_example": "I feature my post in the weekly newsletter. (+$ 9.00)"
+          },
+          "rules": {
+            "derive_rule": "Aucune action formulaire",
+            "asks_additional_info": false,
+            "collect_info": "—",
+            "fields_count": "—",
+            "field_type": "—",
+            "required": "—",
+            "business_rule": "—",
+            "values": {
+              "base_included": "—",
+              "purchased": "1",
+              "paid_additional": "1",
+              "final": "1"
+            }
+          },
+          "activated_block": {
+            "name": "—",
+            "condition": "—",
+            "fields": "—",
+            "validation": "—"
+          },
+          "derived": null
+        },
+        {
+          "option_key": "extended_text_limit",
+          "option_name": "Extended Text Limit",
+          "technical_slug": "extended_text_limit",
+          "business_type": "toggle",
+          "source": {
+            "purchased_raw": "Extended Text Limit (+$ 15.00)",
+            "possible_values": "I limit my post to 1,000 characters.\nNo character limit.",
+            "wc_raw_example": "No character limit. (+$ 9.00)"
+          },
+          "rules": {
+            "derive_rule": "Retirer la limite de 1000 signes",
+            "asks_additional_info": false,
+            "collect_info": "—",
+            "fields_count": "—",
+            "field_type": "—",
+            "required": "—",
+            "business_rule": "Retire la limite de 1000 signes",
+            "values": {
+              "base_included": "1000 signes",
+              "purchased": "Illimité",
+              "paid_additional": "Tout ce qui est au-delà de 1000 signes",
+              "final": "Illimité"
+            }
+          },
+          "activated_block": {
+            "name": "—",
+            "condition": "—",
+            "fields": "—",
+            "validation": "—"
+          },
+          "derived": null
+        },
+        {
+          "option_key": "giveaway_duration",
+          "option_name": "Giveaway Duration",
+          "technical_slug": "giveaway_duration",
+          "business_type": "duration",
+          "source": {
+            "purchased_raw": "Giveaway Duration: 2 weeks\nGiveaway Duration: 3 weeks\nGiveaway Duration: 4 weeks",
+            "possible_values": "1 week\n2 weeks\n3 weeks\n4 weeks",
+            "wc_raw_example": "Giveaway Duration: 2 weeks"
+          },
+          "rules": {
+            "derive_rule": "Compute giveaway duration in weeks/days from selected value",
+            "asks_additional_info": false,
+            "collect_info": "—",
+            "fields_count": "—",
+            "field_type": "—",
+            "required": "—",
+            "business_rule": "Default 1 week, paid options extend to 2/3/4 weeks",
+            "values": {
+              "base_included": "1 week",
+              "purchased": "2 weeks",
+              "paid_additional": "1 week",
+              "final": "2 weeks"
+            }
+          },
+          "activated_block": {
+            "name": "—",
+            "condition": "—",
+            "fields": "—",
+            "validation": "—"
+          },
+          "derived": null
         }
       ],
       "form_fields": [

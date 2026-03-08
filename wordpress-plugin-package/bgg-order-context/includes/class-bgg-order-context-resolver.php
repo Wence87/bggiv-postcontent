@@ -327,15 +327,23 @@ final class BGG_Order_Context_Resolver {
         $values = isset($rules['values']) && is_array($rules['values']) ? $rules['values'] : [];
 
         $included = 1;
-        if (isset($values['base_included']) && preg_match('/(\d+)/', (string) $values['base_included'], $m) === 1) {
-            $included = max(1, (int) $m[1]);
+        $included_from_values = self::extract_duration_weeks((string) ($values['base_included'] ?? ''));
+        if ($included_from_values !== null) {
+            $included = $included_from_values;
         }
 
         $purchased = $included;
-        if (is_string($raw_value) && preg_match('/(\d+)/', $raw_value, $m) === 1) {
-            $purchased = max(1, (int) $m[1]);
-        } elseif (isset($values['purchased']) && preg_match('/(\d+)/', (string) $values['purchased'], $m) === 1) {
-            $purchased = max(1, (int) $m[1]);
+        if (is_string($raw_value)) {
+            $raw_weeks = self::extract_duration_weeks($raw_value);
+            if ($raw_weeks !== null) {
+                $purchased = $raw_weeks;
+            }
+        }
+        if ($purchased === $included) {
+            $purchased_from_values = self::extract_duration_weeks((string) ($values['purchased'] ?? ''));
+            if ($purchased_from_values !== null) {
+                $purchased = $purchased_from_values;
+            }
         }
 
         $final = max($included, $purchased);
@@ -364,10 +372,12 @@ final class BGG_Order_Context_Resolver {
             $key_match = (
                 ($option_key !== '' && $meta_key_norm === $option_key) ||
                 ($technical_slug !== '' && $meta_key_norm === $technical_slug) ||
-                ($option_name !== '' && $meta_key_norm === $option_name)
+                ($option_name !== '' && $meta_key_norm === $option_name) ||
+                self::meta_key_matches_option($meta_key_norm, $option_key, $technical_slug, $option_name)
             );
 
-            if ($key_match || self::option_is_enabled_from_raw_value($option, $raw)) {
+            // Never match by raw value alone: require key-level relation to avoid cross-option numeric pollution.
+            if ($key_match) {
                 return [
                     'enabled' => self::option_is_enabled_from_raw_value($option, $raw),
                     'raw_value' => $raw,
@@ -414,6 +424,50 @@ final class BGG_Order_Context_Resolver {
         }
 
         return true;
+    }
+
+    private static function extract_duration_weeks(string $raw): ?int {
+        $raw = trim(strtolower($raw));
+        if ($raw === '') {
+            return null;
+        }
+
+        if (preg_match('/\b(1|2|3|4)\s*week/i', $raw, $m) === 1) {
+            return (int) $m[1];
+        }
+        if (preg_match('/\b(7|14|21|28)\s*day/i', $raw, $m) === 1) {
+            return (int) ((int) $m[1] / 7);
+        }
+
+        // Last-resort scalar values, still constrained to 1..4.
+        if (preg_match('/\b([1-4])\b/', $raw, $m) === 1) {
+            return (int) $m[1];
+        }
+
+        return null;
+    }
+
+    private static function meta_key_matches_option(string $meta_key_norm, string $option_key, string $technical_slug, string $option_name): bool {
+        if ($meta_key_norm === '') {
+            return false;
+        }
+
+        $candidates = array_filter([$option_key, $technical_slug, $option_name], static fn($v) => $v !== '');
+        foreach ($candidates as $candidate) {
+            if ($candidate === $meta_key_norm) {
+                return true;
+            }
+            if (strpos($meta_key_norm, $candidate) !== false || strpos($candidate, $meta_key_norm) !== false) {
+                return true;
+            }
+        }
+
+        // Duration options often come through as pa_duration / attribute_pa_duration.
+        if (strpos($option_key, 'duration') !== false || strpos($technical_slug, 'duration') !== false || strpos($option_name, 'duration') !== false) {
+            return strpos($meta_key_norm, 'duration') !== false;
+        }
+
+        return false;
     }
 
     private static function build_item_meta_payload(WC_Order_Item_Product $item): array {

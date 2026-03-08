@@ -11,6 +11,7 @@ final class BGG_Order_Context_Plugin {
         add_action('rest_api_init', [BGG_Order_Context_REST::class, 'register_routes']);
         add_filter('rest_pre_dispatch', [self::class, 'block_disallowed_origin'], 10, 3);
         add_filter('rest_pre_serve_request', [self::class, 'serve_cors_headers'], 10, 4);
+        add_action('woocommerce_order_status_processing', [self::class, 'ensure_cart_cleared_for_submit_order'], 20, 1);
         add_action('woocommerce_thankyou', [self::class, 'render_thank_you_submit_redirect'], 20, 1);
         add_action('woocommerce_email_after_order_table', [self::class, 'render_email_submit_link'], 20, 4);
         add_filter('woocommerce_my_account_my_orders_actions', [self::class, 'add_my_account_submit_action'], 20, 2);
@@ -69,6 +70,7 @@ final class BGG_Order_Context_Plugin {
         if (!$order instanceof WC_Order) {
             return;
         }
+        self::ensure_cart_cleared_for_submit_order((int) $order->get_id());
         if (!BGG_Order_Context_REST::is_allowed_order_status((string) $order->get_status())) {
             return;
         }
@@ -161,5 +163,33 @@ final class BGG_Order_Context_Plugin {
         $product_type = (string) ($product_context['product_type'] ?? '');
 
         return $product_key !== '' && $product_type !== '' && $product_type !== 'unknown';
+    }
+
+    public static function ensure_cart_cleared_for_submit_order(int $order_id): void {
+        if (!function_exists('WC')) {
+            return;
+        }
+
+        $order = wc_get_order($order_id);
+        if (!$order instanceof WC_Order) {
+            return;
+        }
+        if (!BGG_Order_Context_REST::is_allowed_order_status((string) $order->get_status())) {
+            return;
+        }
+        if (!self::is_submit_enabled_order($order)) {
+            return;
+        }
+
+        $wc = WC();
+        if (!$wc || !isset($wc->cart) || !$wc->cart) {
+            return;
+        }
+
+        // Defensive cleanup: ensure checkout submit orders do not keep stale cart payload.
+        $wc->cart->empty_cart(true);
+        if (method_exists($wc->cart, 'set_session')) {
+            $wc->cart->set_session();
+        }
     }
 }

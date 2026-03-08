@@ -81,16 +81,30 @@ function normalizeOptionKey(value: string): string {
 function resolveGiveawayDurationDays(context: Record<string, unknown>): number {
   const reservation = context.reservation;
   if (reservation && typeof reservation === "object") {
-    const weeks = (reservation as Record<string, unknown>).giveaway_duration_weeks;
-    if (typeof weeks === "number" && weeks >= 1 && weeks <= 4) return weeks * 7;
+    const weeksRaw = (reservation as Record<string, unknown>).giveaway_duration_weeks;
+    const weeks =
+      typeof weeksRaw === "number"
+        ? weeksRaw
+        : typeof weeksRaw === "string"
+          ? Number.parseInt(weeksRaw, 10)
+          : NaN;
+    if (Number.isFinite(weeks) && weeks >= 1 && weeks <= 4) return weeks * 7;
   }
   const derived = context.derived_values;
   if (derived && typeof derived === "object") {
     const map = derived as Record<string, unknown>;
     const directDays = map.giveaway_duration_days;
     if (typeof directDays === "number" && [7, 14, 21, 28].includes(directDays)) return directDays;
+    if (typeof directDays === "string") {
+      const parsedDays = Number.parseInt(directDays, 10);
+      if ([7, 14, 21, 28].includes(parsedDays)) return parsedDays;
+    }
     const directWeeks = map.giveaway_duration_weeks;
     if (typeof directWeeks === "number" && directWeeks >= 1 && directWeeks <= 4) return directWeeks * 7;
+    if (typeof directWeeks === "string") {
+      const parsedWeeks = Number.parseInt(directWeeks, 10);
+      if (parsedWeeks >= 1 && parsedWeeks <= 4) return parsedWeeks * 7;
+    }
 
     for (const [key, value] of Object.entries(map)) {
       if (!key.toLowerCase().includes("duration")) continue;
@@ -326,6 +340,7 @@ export async function POST(request: NextRequest) {
   const body = normalizeString(formData.body);
   const bodyText = stripHtml(body);
   const shortProductDescription = normalizeString(formData.short_product_description);
+  const prizeShortDescription = normalizeString(formData.prize_short_description);
   const embeddedVideoLink = normalizeString(formData.embedded_video_link);
   const prizeName = normalizeString(formData.prize_name);
   const giveawayCategory = normalizeString(formData.giveaway_category);
@@ -407,11 +422,14 @@ export async function POST(request: NextRequest) {
   }
 
   if (isGiveaway) {
-    if (!prizeName || !giveawayCategory || !giveawayQuestion || !answerCorrect || !answerWrong1 || !answerWrong2 || !answerWrong3 || !answerWrong4) {
+    if (!prizeName || !prizeShortDescription || !giveawayCategory || !giveawayQuestion || !answerCorrect || !answerWrong1 || !answerWrong2 || !answerWrong3 || !answerWrong4) {
       return badRequest("Missing required giveaway fields");
     }
     if (prizeName.length > 150) {
       return badRequest("Prize name is too long. Maximum allowed length is 150 characters.");
+    }
+    if (prizeShortDescription.length > 300) {
+      return badRequest("Prize short description is too long. Maximum allowed length is 300 characters.");
     }
     if (
       giveawayQuestion.length > 150 ||
@@ -433,7 +451,7 @@ export async function POST(request: NextRequest) {
       return badRequest("Minimum age is invalid.");
     }
     if (shippingCountries.length < 1) {
-      return badRequest("At least one eligible shipping country is required.");
+      return badRequest("You must select at least one destination where the prize can be shipped.");
     }
     const unlocked = computeUnlockedHighlights(prizeUnitsCount);
     if (selectedHighlightOptions.length > unlocked) {
@@ -564,6 +582,7 @@ export async function POST(request: NextRequest) {
           title: title || undefined,
           body: body || undefined,
           short_product_description: shortProductDescription || undefined,
+          prize_short_description: prizeShortDescription || undefined,
           embedded_video_link: embeddedVideoLink || undefined,
           shipping_countries: shippingCountries,
           selected_highlight_options: selectedHighlightOptions,

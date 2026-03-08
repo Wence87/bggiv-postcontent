@@ -13,6 +13,7 @@ export type BookingCreateErrorCode =
   | "STARTS_AT_MUST_BE_FULL_HOUR"
   | "HOUR_ALREADY_BOOKED"
   | "POST_LEADTIME_LOCKED"
+  | "DAY_ALREADY_HAS_POST"
   | "PROMO_DAILY_LIMIT"
   | "GIVEAWAY_DAILY_LIMIT";
 
@@ -250,7 +251,6 @@ export async function getPostsAvailability(
       globalTakenHoursByDay.set(dayKey, new Set<number>());
     }
     globalTakenHoursByDay.get(dayKey)!.add(hourInt);
-
     if (booking.product === Product.PROMO) {
       promoCountByDay.set(dayKey, (promoCountByDay.get(dayKey) ?? 0) + 1);
     } else if (booking.product === Product.GIVEAWAY) {

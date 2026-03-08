@@ -198,9 +198,21 @@ final class BGG_Order_Context_REST {
 
         if ($diagMode) {
             $response['resolver_diagnostic'] = BGG_Order_Context_Resolver::get_resolution_debug($order, $product_context);
+            $giveaway_options_count = self::get_product_options_count($config, 'publish_giveaway');
+            $resolver_file = self::get_class_file_marker('BGG_Order_Context_Resolver');
+            $plugin_file = defined('BGG_ORDER_CONTEXT_PLUGIN_FILE') ? (string) BGG_ORDER_CONTEXT_PLUGIN_FILE : '';
+            $config_file = defined('BGG_ORDER_CONTEXT_CONFIG_PATH') ? (string) BGG_ORDER_CONTEXT_CONFIG_PATH : '';
             $response['debug'] = [
                 'plugin_version' => defined('BGG_ORDER_CONTEXT_VERSION') ? (string) BGG_ORDER_CONTEXT_VERSION : 'unknown',
+                'plugin_build_marker' => '2026-03-08-deployment-truth-1',
+                'plugin_class_marker' => 'BGG_Order_Context_Plugin',
+                'plugin_file_marker' => __FILE__,
+                'plugin_main_file' => $plugin_file,
+                'resolver_file_marker' => $resolver_file,
                 'config_version' => $config['version'] ?? null,
+                'config_file_path' => $config_file,
+                'config_file_realpath' => $config_file !== '' ? (realpath($config_file) ?: $config_file) : '',
+                'config_generated_at' => $config['generated_at'] ?? null,
                 'product_key' => (string) ($product_context['product_key'] ?? ''),
                 'product_type' => (string) ($product_context['product_type'] ?? ''),
                 'order_number' => (string) $order->get_order_number(),
@@ -209,6 +221,7 @@ final class BGG_Order_Context_REST {
                 'derived_giveaway_duration_weeks' => $giveaway_duration_weeks,
                 'has_additional_images_option' => self::has_option_key($options_context['enabled_options'] ?? [], 'additional_images'),
                 'has_extended_text_option' => self::has_option_key($options_context['enabled_options'] ?? [], 'extended_textlimit'),
+                'publish_giveaway_config_options_count' => $giveaway_options_count,
             ];
         }
 
@@ -353,6 +366,12 @@ final class BGG_Order_Context_REST {
                 if (strpos($key_lc, 'duration') === false) {
                     continue;
                 }
+                if (is_array($value) && isset($value['duration_weeks_purchased'])) {
+                    $weeks = (int) $value['duration_weeks_purchased'];
+                    if ($weeks >= 1 && $weeks <= 4) {
+                        return $weeks;
+                    }
+                }
                 if (is_array($value) && isset($value['duration_weeks_final'])) {
                     $weeks = (int) $value['duration_weeks_final'];
                     if ($weeks >= 1 && $weeks <= 4) {
@@ -429,6 +448,32 @@ final class BGG_Order_Context_REST {
             }
         }
         return false;
+    }
+
+    private static function get_product_options_count(array $config, string $product_key): int {
+        if (!isset($config['products']) || !is_array($config['products'])) {
+            return 0;
+        }
+        foreach ($config['products'] as $product) {
+            if (!is_array($product)) continue;
+            if ((string) ($product['product_key'] ?? '') !== $product_key) continue;
+            $options = isset($product['options']) && is_array($product['options']) ? $product['options'] : [];
+            return count($options);
+        }
+        return 0;
+    }
+
+    private static function get_class_file_marker(string $class_name): string {
+        if (!class_exists($class_name)) {
+            return '';
+        }
+        try {
+            $reflection = new ReflectionClass($class_name);
+            $file = $reflection->getFileName();
+            return is_string($file) ? $file : '';
+        } catch (Throwable $e) {
+            return '';
+        }
     }
 
     private static function resolve_company_prefill(WC_Order $order): string {
