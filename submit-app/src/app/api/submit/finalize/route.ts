@@ -10,7 +10,8 @@ export const runtime = "nodejs";
 
 const ADS_SPONSOR_IMAGE_MAX_SIZE_BYTES = 200 * 1024;
 const POSTS_IMAGE_MAX_SIZE_BYTES = 500 * 1024;
-const ALLOWED_IMAGE_MIMES = new Set(["image/jpeg", "image/pjpeg"]);
+const ALLOWED_JPEG_MIMES = new Set(["image/jpeg", "image/pjpeg"]);
+const ALLOWED_POSTS_IMAGE_MIMES = new Set(["image/jpeg", "image/pjpeg", "image/webp"]);
 
 function apiError(status: number, code: string, message: string) {
   return NextResponse.json({ code, message }, { status });
@@ -33,6 +34,111 @@ function hasValidJpegExtension(name: string): boolean {
   return lower.endsWith(".jpg") || lower.endsWith(".jpeg");
 }
 
+function hasValidPostsImageExtension(name: string): boolean {
+  const lower = name.toLowerCase();
+  return lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".webp");
+}
+
+function getDateKeyInBrussels(date: Date): string {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Brussels",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const parts: Record<string, string> = {};
+  for (const part of formatter.formatToParts(date)) {
+    if (part.type !== "literal") parts[part.type] = part.value;
+  }
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function resolvePostBodyMaxLength(context: Record<string, unknown>): number | null {
+  const derived = context.derived_values;
+  if (!derived || typeof derived !== "object") return 1000;
+  const direct = (derived as Record<string, unknown>).post_body_max_length;
+  if (typeof direct === "number" && Number.isFinite(direct) && direct > 0) return Math.trunc(direct);
+  if (direct === null) return null;
+  const enabled = Array.isArray(context.enabled_options) ? context.enabled_options : [];
+  if (
+    enabled.some(
+      (value) => typeof value === "string" && normalizeOptionKey(value).includes(normalizeOptionKey("extended_textlimit"))
+    )
+  ) {
+    return null;
+  }
+  return 1000;
+}
+
+function normalizeOptionKey(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function resolveGiveawayDurationDays(context: Record<string, unknown>): number {
+  const derived = context.derived_values;
+  if (derived && typeof derived === "object") {
+    const map = derived as Record<string, unknown>;
+    const directDays = map.giveaway_duration_days;
+    if (typeof directDays === "number" && [7, 14, 21, 28].includes(directDays)) return directDays;
+    const directWeeks = map.giveaway_duration_weeks;
+    if (typeof directWeeks === "number" && directWeeks >= 1 && directWeeks <= 4) return directWeeks * 7;
+
+    for (const [key, value] of Object.entries(map)) {
+      if (!key.toLowerCase().includes("duration")) continue;
+      if (typeof value === "number" && value >= 1 && value <= 4) return value * 7;
+      if (typeof value === "number" && [7, 14, 21, 28].includes(value)) return value;
+      if (typeof value === "string") {
+        const cleaned = value.toLowerCase();
+        const dayMatch = /(\d{1,2})\s*day/.exec(cleaned);
+        if (dayMatch) {
+          const days = Number(dayMatch[1]);
+          if ([7, 14, 21, 28].includes(days)) return days;
+        }
+        const weekMatch = /([1-4])\s*week/.exec(cleaned);
+        if (weekMatch) return Number(weekMatch[1]) * 7;
+      }
+      if (value && typeof value === "object") {
+        const finalValue = (value as Record<string, unknown>).duration_weeks_final;
+        if (typeof finalValue === "number" && finalValue >= 1 && finalValue <= 4) return finalValue * 7;
+        const finalDays = (value as Record<string, unknown>).duration_days_final;
+        if (typeof finalDays === "number" && [7, 14, 21, 28].includes(finalDays)) return finalDays;
+        const genericFinal = (value as Record<string, unknown>).final;
+        if (typeof genericFinal === "number" && [7, 14, 21, 28].includes(genericFinal)) return genericFinal;
+      }
+    }
+  }
+
+  const enabledOptions = Array.isArray(context.enabled_options) ? context.enabled_options : [];
+  for (const raw of enabledOptions) {
+    if (typeof raw !== "string") continue;
+    const normalized = normalizeOptionKey(raw);
+    if (!normalized.includes("duration")) continue;
+    const weekMatch = /([1-4])week/.exec(normalized);
+    if (weekMatch) return Number(weekMatch[1]) * 7;
+    const dayMatch = /(7|14|21|28)day/.exec(normalized);
+    if (dayMatch) return Number(dayMatch[1]);
+  }
+  return 7;
+}
+
+function parseJsonStringArray(value: unknown): string[] {
+  if (typeof value !== "string" || !value.trim()) return [];
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((entry): entry is string => typeof entry === "string");
+  } catch {
+    return [];
+  }
+}
+
+function computeUnlockedHighlights(units: number): number {
+  if (units >= 20) return 3;
+  if (units >= 10) return 2;
+  if (units >= 5) return 1;
+  return 0;
+}
+
 function monthKeyToRange(monthKey: string): { startDate: string; endDate: string } | null {
   const match = /^(\d{4})-(\d{2})$/.exec(monthKey);
   if (!match) return null;
@@ -45,79 +151,6 @@ function monthKeyToRange(monthKey: string): { startDate: string; endDate: string
     startDate: `${first.getUTCFullYear()}-${String(first.getUTCMonth() + 1).padStart(2, "0")}-${String(first.getUTCDate()).padStart(2, "0")}`,
     endDate: `${last.getUTCFullYear()}-${String(last.getUTCMonth() + 1).padStart(2, "0")}-${String(last.getUTCDate()).padStart(2, "0")}`,
   };
-}
-
-function getDateKeyInBrussels(date: Date): string {
-  const formatter = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Europe/Brussels",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
-  const parts: Record<string, string> = {};
-  for (const part of formatter.formatToParts(date)) {
-    if (part.type !== "literal") {
-      parts[part.type] = part.value;
-    }
-  }
-  return `${parts.year}-${parts.month}-${parts.day}`;
-}
-
-function resolvePostBodyMaxLength(context: Record<string, unknown>): number | null {
-  const derived = context.derived_values;
-  if (!derived || typeof derived !== "object") {
-    return 1000;
-  }
-  const derivedObj = derived as Record<string, unknown>;
-  const direct = derivedObj.post_body_max_length;
-  if (typeof direct === "number" && Number.isFinite(direct) && direct > 0) {
-    return Math.trunc(direct);
-  }
-
-  const isUnlimited = (value: string) => {
-    const normalized = value.toLowerCase();
-    return normalized.includes("illimit") || normalized.includes("unlimit") || normalized.includes("no character limit");
-  };
-
-  for (const [key, value] of Object.entries(derivedObj)) {
-    const keyLc = key.toLowerCase();
-    if (!keyLc.includes("text") && !keyLc.includes("body") && !keyLc.includes("limit")) {
-      continue;
-    }
-
-    if (typeof value === "number" && Number.isFinite(value) && value > 0) {
-      return Math.trunc(value);
-    }
-
-    if (typeof value === "string") {
-      if (isUnlimited(value)) return null;
-      const numeric = /(\d{2,6})/.exec(value);
-      if (numeric) return Number(numeric[1]);
-    }
-
-    if (value && typeof value === "object") {
-      const final = (value as Record<string, unknown>).final;
-      if (typeof final === "number" && Number.isFinite(final) && final > 0) {
-        return Math.trunc(final);
-      }
-      if (typeof final === "string") {
-        if (isUnlimited(final)) return null;
-        const numeric = /(\d{2,6})/.exec(final);
-        if (numeric) return Number(numeric[1]);
-      }
-    }
-  }
-
-  const enabledOptions = Array.isArray(context.enabled_options) ? context.enabled_options : [];
-  if (
-    enabledOptions.some(
-      (entry) => typeof entry === "string" && entry.toLowerCase() === "extended_textlimit"
-    )
-  ) {
-    return null;
-  }
-
-  return 1000;
 }
 
 function getJpegDimensions(buffer: Uint8Array): { width: number; height: number } | null {
@@ -170,6 +203,7 @@ async function parseRequestPayload(request: NextRequest): Promise<{
   formData: Record<string, unknown>;
   reservationChoice: Record<string, unknown>;
   file: File | null;
+  additionalFiles: File[];
 }> {
   const contentType = request.headers.get("content-type") || "";
 
@@ -204,8 +238,13 @@ async function parseRequestPayload(request: NextRequest): Promise<{
 
     const maybeFile = form.get("banner_image_upload") ?? form.get("cover_image_upload") ?? form.get("uploaded_files");
     const file = maybeFile instanceof File ? maybeFile : null;
+    const additionalFiles: File[] = [];
+    for (const key of ["additional_image_1", "additional_image_2", "additional_image_3"]) {
+      const value = form.get(key);
+      if (value instanceof File) additionalFiles.push(value);
+    }
 
-    return { token, productKey, formData: parsedFormData, reservationChoice: parsedReservation, file };
+    return { token, productKey, formData: parsedFormData, reservationChoice: parsedReservation, file, additionalFiles };
   }
 
   const body = (await request.json()) as Record<string, unknown>;
@@ -219,7 +258,7 @@ async function parseRequestPayload(request: NextRequest): Promise<{
   const uploaded = body.uploaded_files as Record<string, unknown> | undefined;
   const file = uploaded && uploaded.banner_image_upload instanceof File ? uploaded.banner_image_upload : null;
 
-  return { token, productKey, formData, reservationChoice, file };
+  return { token, productKey, formData, reservationChoice, file, additionalFiles: [] };
 }
 
 function mapProductType(productType: string): Product {
@@ -249,7 +288,7 @@ export async function POST(request: NextRequest) {
     return badRequest(code);
   }
 
-  const { token, productKey, formData, reservationChoice, file } = parsed;
+  const { token, productKey, formData, reservationChoice, file, additionalFiles } = parsed;
   if (!token) {
     return badRequest("Missing token");
   }
@@ -276,9 +315,24 @@ export async function POST(request: NextRequest) {
   const contactEmail = normalizeString(formData.contact_email);
   const title = normalizeString(formData.title);
   const body = normalizeString(formData.body);
+  const shortProductDescription = normalizeString(formData.short_product_description);
+  const embeddedVideoLink = normalizeString(formData.embedded_video_link);
+  const prizeName = normalizeString(formData.prize_name);
+  const giveawayCategory = normalizeString(formData.giveaway_category);
+  const giveawayQuestion = normalizeString(formData.giveaway_question);
+  const answerCorrect = normalizeString(formData.answer_correct);
+  const answerWrong1 = normalizeString(formData.answer_wrong_1);
+  const answerWrong2 = normalizeString(formData.answer_wrong_2);
+  const answerWrong3 = normalizeString(formData.answer_wrong_3);
+  const answerWrong4 = normalizeString(formData.answer_wrong_4);
   const targetUrl = normalizeString(formData.target_url);
   const startDate = normalizeString(formData.start_date);
   const notes = normalizeString(formData.notes);
+  const prizeUnitsCount = Number(normalizeString(formData.prize_units_count));
+  const prizeUnitValueUsd = Number(normalizeString(formData.prize_unit_value_usd));
+  const minimumAge = Number(normalizeString(formData.minimum_age));
+  const shippingCountries = parseJsonStringArray(formData.shipping_countries);
+  const selectedHighlightOptions = parseJsonStringArray(formData.selected_highlight_options);
   const reservationMonthKey = normalizeString(reservationChoice.monthKey);
   const reservationWeekKey = normalizeString(reservationChoice.weekKey);
   const reservationStartsAt = normalizeString(reservationChoice.startsAtUtc);
@@ -296,6 +350,7 @@ export async function POST(request: NextRequest) {
     context.product.product_type === "news" ||
     context.product.product_type === "promo" ||
     context.product.product_type === "giveaway";
+  const isGiveaway = context.product.product_type === "giveaway";
 
   if (!effectiveCompanyName || !effectiveContactEmail) {
     return badRequest("Missing required form fields");
@@ -305,40 +360,93 @@ export async function POST(request: NextRequest) {
     return badRequest("Missing required form fields");
   }
 
+  if (!isValidEmail(effectiveContactEmail)) {
+    return badRequest("Invalid contact_email");
+  }
+
   if (isPostsProduct) {
-    if (!title) {
-      return badRequest("Missing required title");
-    }
-    if (title.length > 150) {
-      return badRequest("Title is too long. Maximum allowed length is 150 characters.");
+    if (!title || title.length > 150) {
+      return badRequest("Title is invalid. Maximum allowed length is 150 characters.");
     }
     if (!body) {
       return badRequest("Missing required body");
     }
-    const postBodyMaxLength = resolvePostBodyMaxLength(context as unknown as Record<string, unknown>);
-    if (postBodyMaxLength != null && body.length > postBodyMaxLength) {
-      return badRequest(`Body is too long. Maximum allowed length is ${postBodyMaxLength} characters.`);
+    const bodyMax = resolvePostBodyMaxLength(context as unknown as Record<string, unknown>);
+    if (bodyMax != null && body.length > bodyMax) {
+      return badRequest(`Body is too long. Maximum allowed length is ${bodyMax} characters.`);
+    }
+    if (shortProductDescription.length < 100 || shortProductDescription.length > 300) {
+      return badRequest("Short product description must be between 100 and 300 characters.");
+    }
+    if (embeddedVideoLink) {
+      try {
+        const parsedUrl = new URL(embeddedVideoLink);
+        if (!parsedUrl.protocol.startsWith("http")) throw new Error("INVALID_VIDEO");
+      } catch {
+        return badRequest("Invalid embedded video link.");
+      }
+    }
+    for (const image of additionalFiles) {
+      if (!ALLOWED_POSTS_IMAGE_MIMES.has(image.type) || !hasValidPostsImageExtension(image.name || "")) {
+        return badRequest("Invalid image format. Only WEBP/JPG/JPEG files are allowed.");
+      }
+      if (image.size <= 0 || image.size > POSTS_IMAGE_MAX_SIZE_BYTES) {
+        return badRequest("Image too large. Maximum allowed size is 500 KB.");
+      }
     }
   }
 
-  if (!isValidEmail(effectiveContactEmail)) {
-    return badRequest("Invalid contact_email");
+  if (isGiveaway) {
+    if (!prizeName || !giveawayCategory || !giveawayQuestion || !answerCorrect || !answerWrong1 || !answerWrong2 || !answerWrong3 || !answerWrong4) {
+      return badRequest("Missing required giveaway fields");
+    }
+    if (prizeName.length > 150) {
+      return badRequest("Prize name is too long. Maximum allowed length is 150 characters.");
+    }
+    if (
+      giveawayQuestion.length > 150 ||
+      answerCorrect.length > 150 ||
+      answerWrong1.length > 150 ||
+      answerWrong2.length > 150 ||
+      answerWrong3.length > 150 ||
+      answerWrong4.length > 150
+    ) {
+      return badRequest("Giveaway question and answers must be 150 characters maximum.");
+    }
+    if (!Number.isFinite(prizeUnitValueUsd) || prizeUnitValueUsd < 10 || prizeUnitValueUsd > 700) {
+      return badRequest("Prize value must be between 10 and 700 USD.");
+    }
+    if (!Number.isFinite(prizeUnitsCount) || prizeUnitsCount < 2 || prizeUnitsCount > 20) {
+      return badRequest("Number of prize units must be between 2 and 20.");
+    }
+    if (!Number.isFinite(minimumAge) || minimumAge < 1 || minimumAge > 120) {
+      return badRequest("Minimum age is invalid.");
+    }
+    if (shippingCountries.length < 1) {
+      return badRequest("At least one eligible shipping country is required.");
+    }
+    const unlocked = computeUnlockedHighlights(prizeUnitsCount);
+    if (selectedHighlightOptions.length > unlocked) {
+      return badRequest("Selected free highlight options exceed unlocked quantity.");
+    }
   }
 
   if (!file) {
     return badRequest("Missing banner_image_upload");
   }
 
-  if (!ALLOWED_IMAGE_MIMES.has(file.type)) {
-    return badRequest("Invalid image format. Only JPG/JPEG files are allowed.");
+  const allowedMimes = isPostsProduct ? ALLOWED_POSTS_IMAGE_MIMES : ALLOWED_JPEG_MIMES;
+  const hasValidExtension = isPostsProduct ? hasValidPostsImageExtension(file.name || "") : hasValidJpegExtension(file.name || "");
+  const maxSize = isPostsProduct ? POSTS_IMAGE_MAX_SIZE_BYTES : ADS_SPONSOR_IMAGE_MAX_SIZE_BYTES;
+  if (!allowedMimes.has(file.type) || !hasValidExtension) {
+    return badRequest(
+      isPostsProduct
+        ? "Invalid image format. Only WEBP/JPG/JPEG files are allowed."
+        : "Invalid image format. Only JPG/JPEG files are allowed."
+    );
   }
 
-  if (!hasValidJpegExtension(file.name || "")) {
-    return badRequest("Invalid image format. Only JPG/JPEG files are allowed.");
-  }
-
-  const maxImageSizeBytes = isPostsProduct ? POSTS_IMAGE_MAX_SIZE_BYTES : ADS_SPONSOR_IMAGE_MAX_SIZE_BYTES;
-  if (file.size <= 0 || file.size > maxImageSizeBytes) {
+  if (file.size <= 0 || file.size > maxSize) {
     return badRequest(
       isPostsProduct
         ? "Image too large. Maximum allowed size is 500 KB."
@@ -391,12 +499,18 @@ export async function POST(request: NextRequest) {
     if (!reservationStartsAt) {
       return badRequest("Missing reservation slot");
     }
-    const reservedStartsAtDate = new Date(reservationStartsAt);
-    if (Number.isNaN(reservedStartsAtDate.getTime())) {
+    const startsAt = new Date(reservationStartsAt);
+    if (Number.isNaN(startsAt.getTime())) {
       return badRequest("Invalid reservation slot");
     }
-    effectiveStartDate = getDateKeyInBrussels(reservedStartsAtDate);
+    effectiveStartDate = getDateKeyInBrussels(startsAt);
     effectiveEndDate = "";
+    if (isGiveaway) {
+      const durationDays = resolveGiveawayDurationDays(context as unknown as Record<string, unknown>);
+      const end = new Date(startsAt);
+      end.setUTCDate(end.getUTCDate() + durationDays);
+      effectiveEndDate = getDateKeyInBrussels(end);
+    }
   }
   if (!effectiveStartDate) {
     return badRequest("Missing required start_date");
@@ -439,6 +553,10 @@ export async function POST(request: NextRequest) {
           ...formData,
           title: title || undefined,
           body: body || undefined,
+          short_product_description: shortProductDescription || undefined,
+          embedded_video_link: embeddedVideoLink || undefined,
+          shipping_countries: shippingCountries,
+          selected_highlight_options: selectedHighlightOptions,
           start_date: effectiveStartDate,
           end_date: effectiveEndDate || undefined,
         },

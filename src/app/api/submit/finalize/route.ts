@@ -60,25 +60,63 @@ function resolvePostBodyMaxLength(context: Record<string, unknown>): number | nu
   if (typeof direct === "number" && Number.isFinite(direct) && direct > 0) return Math.trunc(direct);
   if (direct === null) return null;
   const enabled = Array.isArray(context.enabled_options) ? context.enabled_options : [];
-  if (enabled.some((value) => typeof value === "string" && value.toLowerCase() === "extended_textlimit")) {
+  if (
+    enabled.some(
+      (value) => typeof value === "string" && normalizeOptionKey(value).includes(normalizeOptionKey("extended_textlimit"))
+    )
+  ) {
     return null;
   }
   return 1000;
 }
 
+function normalizeOptionKey(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
 function resolveGiveawayDurationDays(context: Record<string, unknown>): number {
   const derived = context.derived_values;
-  if (!derived || typeof derived !== "object") return 7;
-  const map = derived as Record<string, unknown>;
-  const direct = map.giveaway_duration_days;
-  if (typeof direct === "number" && [7, 14, 21, 28].includes(direct)) return direct;
-  for (const [key, value] of Object.entries(map)) {
-    if (!key.toLowerCase().includes("duration")) continue;
-    if (typeof value === "number" && value >= 1 && value <= 4) return value * 7;
-    if (value && typeof value === "object") {
-      const finalValue = (value as Record<string, unknown>).duration_weeks_final;
-      if (typeof finalValue === "number" && finalValue >= 1 && finalValue <= 4) return finalValue * 7;
+  if (derived && typeof derived === "object") {
+    const map = derived as Record<string, unknown>;
+    const directDays = map.giveaway_duration_days;
+    if (typeof directDays === "number" && [7, 14, 21, 28].includes(directDays)) return directDays;
+    const directWeeks = map.giveaway_duration_weeks;
+    if (typeof directWeeks === "number" && directWeeks >= 1 && directWeeks <= 4) return directWeeks * 7;
+
+    for (const [key, value] of Object.entries(map)) {
+      if (!key.toLowerCase().includes("duration")) continue;
+      if (typeof value === "number" && value >= 1 && value <= 4) return value * 7;
+      if (typeof value === "number" && [7, 14, 21, 28].includes(value)) return value;
+      if (typeof value === "string") {
+        const cleaned = value.toLowerCase();
+        const dayMatch = /(\d{1,2})\s*day/.exec(cleaned);
+        if (dayMatch) {
+          const days = Number(dayMatch[1]);
+          if ([7, 14, 21, 28].includes(days)) return days;
+        }
+        const weekMatch = /([1-4])\s*week/.exec(cleaned);
+        if (weekMatch) return Number(weekMatch[1]) * 7;
+      }
+      if (value && typeof value === "object") {
+        const finalValue = (value as Record<string, unknown>).duration_weeks_final;
+        if (typeof finalValue === "number" && finalValue >= 1 && finalValue <= 4) return finalValue * 7;
+        const finalDays = (value as Record<string, unknown>).duration_days_final;
+        if (typeof finalDays === "number" && [7, 14, 21, 28].includes(finalDays)) return finalDays;
+        const genericFinal = (value as Record<string, unknown>).final;
+        if (typeof genericFinal === "number" && [7, 14, 21, 28].includes(genericFinal)) return genericFinal;
+      }
     }
+  }
+
+  const enabledOptions = Array.isArray(context.enabled_options) ? context.enabled_options : [];
+  for (const raw of enabledOptions) {
+    if (typeof raw !== "string") continue;
+    const normalized = normalizeOptionKey(raw);
+    if (!normalized.includes("duration")) continue;
+    const weekMatch = /([1-4])week/.exec(normalized);
+    if (weekMatch) return Number(weekMatch[1]) * 7;
+    const dayMatch = /(7|14|21|28)day/.exec(normalized);
+    if (dayMatch) return Number(dayMatch[1]);
   }
   return 7;
 }
@@ -361,6 +399,19 @@ export async function POST(request: NextRequest) {
   if (isGiveaway) {
     if (!prizeName || !giveawayCategory || !giveawayQuestion || !answerCorrect || !answerWrong1 || !answerWrong2 || !answerWrong3 || !answerWrong4) {
       return badRequest("Missing required giveaway fields");
+    }
+    if (prizeName.length > 150) {
+      return badRequest("Prize name is too long. Maximum allowed length is 150 characters.");
+    }
+    if (
+      giveawayQuestion.length > 150 ||
+      answerCorrect.length > 150 ||
+      answerWrong1.length > 150 ||
+      answerWrong2.length > 150 ||
+      answerWrong3.length > 150 ||
+      answerWrong4.length > 150
+    ) {
+      return badRequest("Giveaway question and answers must be 150 characters maximum.");
     }
     if (!Number.isFinite(prizeUnitValueUsd) || prizeUnitValueUsd < 10 || prizeUnitValueUsd > 700) {
       return badRequest("Prize value must be between 10 and 700 USD.");

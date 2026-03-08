@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -36,7 +36,7 @@ const DEFAULT_POSTS_FORM_FIELDS: ProductFormField[] = [
   { key: "additional_image_1", label: "Additional image 1", type: "file", required: false, accept: ".webp,.jpg,.jpeg,image/webp,image/jpeg" },
   { key: "additional_image_2", label: "Additional image 2", type: "file", required: false, accept: ".webp,.jpg,.jpeg,image/webp,image/jpeg" },
   { key: "additional_image_3", label: "Additional image 3", type: "file", required: false, accept: ".webp,.jpg,.jpeg,image/webp,image/jpeg" },
-  { key: "prize_name", label: "Prize name", type: "text", required: true },
+  { key: "prize_name", label: "Prize name", type: "text", required: true, max: 150 },
   {
     key: "giveaway_category",
     label: "Giveaway category",
@@ -59,12 +59,12 @@ const DEFAULT_POSTS_FORM_FIELDS: ProductFormField[] = [
   { key: "prize_unit_value_usd", label: "Prize value (USD)", type: "number", required: true, min: 10, max: 700 },
   { key: "prize_units_count", label: "Number of units offered", type: "number", required: true, min: 2, max: 20 },
   { key: "minimum_age", label: "Minimum age", type: "number", required: true, min: 1, max: 120 },
-  { key: "giveaway_question", label: "Giveaway question", type: "textarea", required: true },
-  { key: "answer_correct", label: "✅ Correct answer", type: "text", required: true },
-  { key: "answer_wrong_1", label: "❌ Wrong answer 1", type: "text", required: true },
-  { key: "answer_wrong_2", label: "❌ Wrong answer 2", type: "text", required: true },
-  { key: "answer_wrong_3", label: "❌ Wrong answer 3", type: "text", required: true },
-  { key: "answer_wrong_4", label: "❌ Wrong answer 4", type: "text", required: true },
+  { key: "giveaway_question", label: "Giveaway question", type: "text", required: true, max: 150 },
+  { key: "answer_correct", label: "✅ Correct answer", type: "text", required: true, max: 150 },
+  { key: "answer_wrong_1", label: "❌ Wrong answer 1", type: "text", required: true, max: 150 },
+  { key: "answer_wrong_2", label: "❌ Wrong answer 2", type: "text", required: true, max: 150 },
+  { key: "answer_wrong_3", label: "❌ Wrong answer 3", type: "text", required: true, max: 150 },
+  { key: "answer_wrong_4", label: "❌ Wrong answer 4", type: "text", required: true, max: 150 },
   { key: "start_date", label: "Start date", type: "date", required: true, readonly: true },
   { key: "end_date", label: "End date", type: "date", required: true, readonly: true },
   { key: "notes", label: "Notes", type: "textarea", required: false },
@@ -193,8 +193,16 @@ function productToPostsView(productType: OrderContextResponse["product"]["produc
   return "NEWS";
 }
 
+function normalizeOptionKey(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
 function hasOption(enabledOptions: string[], optionKey: string): boolean {
-  return enabledOptions.some((value) => value.toLowerCase() === optionKey.toLowerCase());
+  const target = normalizeOptionKey(optionKey);
+  return enabledOptions.some((value) => {
+    const normalized = normalizeOptionKey(value);
+    return normalized === target || normalized.includes(target);
+  });
 }
 
 function resolvePostBodyMaxLength(derivedValues: Record<string, unknown>, enabledOptions: string[]): number | null {
@@ -207,13 +215,33 @@ function resolvePostBodyMaxLength(derivedValues: Record<string, unknown>, enable
 function resolveGiveawayDurationDays(derivedValues: Record<string, unknown>): number {
   const directDays = derivedValues.giveaway_duration_days;
   if (typeof directDays === "number" && [7, 14, 21, 28].includes(directDays)) return directDays;
+  const directWeeks = derivedValues.giveaway_duration_weeks;
+  if (typeof directWeeks === "number" && directWeeks >= 1 && directWeeks <= 4) return directWeeks * 7;
 
   for (const [key, value] of Object.entries(derivedValues)) {
     if (!key.toLowerCase().includes("duration")) continue;
     if (typeof value === "number" && value >= 1 && value <= 4) return value * 7;
+    if (typeof value === "number" && [7, 14, 21, 28].includes(value)) return value;
+    if (typeof value === "string") {
+      const cleaned = value.toLowerCase();
+      const dayMatch = /(\d{1,2})\s*day/.exec(cleaned);
+      if (dayMatch) {
+        const days = Number(dayMatch[1]);
+        if ([7, 14, 21, 28].includes(days)) return days;
+      }
+      const weekMatch = /(\d)\s*week/.exec(cleaned);
+      if (weekMatch) {
+        const weeks = Number(weekMatch[1]);
+        if (weeks >= 1 && weeks <= 4) return weeks * 7;
+      }
+    }
     if (value && typeof value === "object") {
       const finalValue = (value as Record<string, unknown>).duration_weeks_final;
       if (typeof finalValue === "number" && finalValue >= 1 && finalValue <= 4) return finalValue * 7;
+      const finalDays = (value as Record<string, unknown>).duration_days_final;
+      if (typeof finalDays === "number" && [7, 14, 21, 28].includes(finalDays)) return finalDays;
+      const genericFinal = (value as Record<string, unknown>).final;
+      if (typeof genericFinal === "number" && [7, 14, 21, 28].includes(genericFinal)) return genericFinal;
     }
   }
 
@@ -227,8 +255,28 @@ function computeUnlockedHighlights(units: number): number {
   return 0;
 }
 
+function resolveGiveawayDurationDaysFromContext(
+  derivedValues: Record<string, unknown>,
+  enabledOptions: string[]
+): number {
+  const fromDerived = resolveGiveawayDurationDays(derivedValues);
+  if (fromDerived !== 7) return fromDerived;
+
+  for (const option of enabledOptions) {
+    const normalized = normalizeOptionKey(option);
+    if (!normalized.includes("duration")) continue;
+    const weekMatch = /([1-4])week/.exec(normalized);
+    if (weekMatch) return Number(weekMatch[1]) * 7;
+    const dayMatch = /(7|14|21|28)day/.exec(normalized);
+    if (dayMatch) return Number(dayMatch[1]);
+  }
+
+  return 7;
+}
+
 export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps) {
   const router = useRouter();
+  const bodyTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [context, setContext] = useState<OrderContextResponse | null>(null);
@@ -379,7 +427,10 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
       }
       const startDate = new Date(startsAt);
       const endDate = new Date(startsAt);
-      const durationDays = resolveGiveawayDurationDays(context.derived_values ?? {});
+      const durationDays = resolveGiveawayDurationDaysFromContext(
+        context.derived_values ?? {},
+        context.enabled_options ?? []
+      );
       endDate.setUTCDate(endDate.getUTCDate() + Math.max(1, durationDays));
       const dateToKey = (date: Date) =>
         `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
@@ -419,7 +470,13 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
     ? resolvePostBodyMaxLength(currentContext.derived_values ?? {}, currentContext.enabled_options ?? [])
     : null;
   const hasEmbeddedVideo = isPostsProduct && hasOption(currentContext.enabled_options ?? [], "embedded_video");
-  const hasAdditionalImages = isPostsProduct && hasOption(currentContext.enabled_options ?? [], "additional_images");
+  const hasAdditionalImages =
+    isPostsProduct &&
+    ((currentContext.enabled_options ?? []).some((value) => normalizeOptionKey(value).includes("additionalimages")) ||
+      (currentContext.options ?? []).some(
+        (entry) => Boolean(entry.enabled) && normalizeOptionKey(entry.option_key).includes("additionalimages")
+      ) ||
+      hasOption(currentContext.enabled_options ?? [], "additional_images"));
   const giveawayUnitsCount = Number(values.prize_units_count || 0);
   const unlockedHighlightCount = isGiveaway ? computeUnlockedHighlights(giveawayUnitsCount) : 0;
   const availableHighlightOptions = (currentContext.options ?? [])
@@ -454,6 +511,18 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
         return true;
       })
     : formFields;
+  const getGroupSelectionState = (countries: string[]) => {
+    if (!countries.length) return "none" as const;
+    const selectedCount = countries.reduce((count, country) => count + (selectedShippingCountries.includes(country) ? 1 : 0), 0);
+    if (selectedCount === 0) return "none" as const;
+    if (selectedCount === countries.length) return "all" as const;
+    return "partial" as const;
+  };
+  const groupStateLabel = (state: "all" | "partial" | "none") => {
+    if (state === "all") return { icon: "✓", className: "text-emerald-700", text: "All selected" };
+    if (state === "partial") return { icon: "•", className: "text-amber-700", text: "Partially selected" };
+    return { icon: "✕", className: "text-red-700", text: "None selected" };
+  };
 
   function setFieldValue(key: string, value: string) {
     setValues((previous) => ({ ...previous, [key]: value }));
@@ -461,6 +530,53 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
 
   function setFieldFileValue(key: string, file: File | null) {
     setFileValues((previous) => ({ ...previous, [key]: file }));
+  }
+
+  function setBoundedNumberFieldValue(key: string, raw: string, min?: number, max?: number) {
+    if (raw.trim() === "") {
+      setFieldValue(key, "");
+      return;
+    }
+    const numeric = Number(raw);
+    if (!Number.isFinite(numeric)) return;
+    let bounded = numeric;
+    if (typeof min === "number" && bounded < min) bounded = min;
+    if (typeof max === "number" && bounded > max) bounded = max;
+    setFieldValue(key, String(Math.trunc(bounded)));
+  }
+
+  function withSelectionWrap(prefix: string, suffix: string) {
+    const area = bodyTextareaRef.current;
+    if (!area) return;
+    const start = area.selectionStart ?? 0;
+    const end = area.selectionEnd ?? 0;
+    const current = values.body ?? "";
+    const selected = current.slice(start, end);
+    const next = `${current.slice(0, start)}${prefix}${selected}${suffix}${current.slice(end)}`;
+    setFieldValue("body", next);
+    requestAnimationFrame(() => {
+      const cursor = end + prefix.length + suffix.length;
+      area.focus();
+      area.setSelectionRange(cursor, cursor);
+    });
+  }
+
+  function applyBulletedList() {
+    const area = bodyTextareaRef.current;
+    if (!area) return;
+    const start = area.selectionStart ?? 0;
+    const end = area.selectionEnd ?? 0;
+    const current = values.body ?? "";
+    const selected = current.slice(start, end) || "Item";
+    const lines = selected.split("\n").map((line) => (line.trim().startsWith("- ") ? line : `- ${line}`));
+    const replaced = lines.join("\n");
+    const next = `${current.slice(0, start)}${replaced}${current.slice(end)}`;
+    setFieldValue("body", next);
+    requestAnimationFrame(() => {
+      const cursor = start + replaced.length;
+      area.focus();
+      area.setSelectionRange(cursor, cursor);
+    });
   }
 
   function buildReservationPayload(): ReservationChoice | null {
@@ -634,6 +750,25 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
 
       if (field.key === "title" && values.title && values.title.trim().length > 150) {
         setValidationError("Title is too long. Maximum allowed length is 150 characters.");
+        return false;
+      }
+
+      if (field.key === "prize_name" && values.prize_name && values.prize_name.trim().length > 150) {
+        setValidationError("Prize name is too long. Maximum allowed length is 150 characters.");
+        return false;
+      }
+
+      if (
+        (field.key === "giveaway_question" ||
+          field.key === "answer_correct" ||
+          field.key === "answer_wrong_1" ||
+          field.key === "answer_wrong_2" ||
+          field.key === "answer_wrong_3" ||
+          field.key === "answer_wrong_4") &&
+        values[field.key] &&
+        values[field.key].trim().length > 150
+      ) {
+        setValidationError(`${field.label} is too long. Maximum allowed length is 150 characters.`);
         return false;
       }
 
@@ -816,18 +951,36 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
       return (
         <div key={field.key} className="space-y-2">
           <Label htmlFor={field.key}>{label}</Label>
+          {showBodyCounter ? (
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" size="sm" variant="outline" onClick={() => withSelectionWrap("**", "**")}>
+                Bold
+              </Button>
+              <Button type="button" size="sm" variant="outline" onClick={() => withSelectionWrap("_", "_")}>
+                Italic
+              </Button>
+              <Button type="button" size="sm" variant="outline" onClick={() => withSelectionWrap("<u>", "</u>")}>
+                Underline
+              </Button>
+              <Button type="button" size="sm" variant="outline" onClick={applyBulletedList}>
+                Bulleted list
+              </Button>
+            </div>
+          ) : null}
           <textarea
             id={field.key}
             name={field.key}
+            ref={showBodyCounter ? bodyTextareaRef : undefined}
             value={values[field.key] ?? ""}
             onChange={(event) => setFieldValue(field.key, event.target.value)}
             required={Boolean(field.required)}
-            rows={4}
+            maxLength={showShortDescCounter ? 300 : undefined}
+            rows={showBodyCounter ? 10 : 4}
             className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           />
           {showBodyCounter ? (
             <p className="text-xs text-muted-foreground">
-              {bodyLength}/{postBodyMaxLength ?? "unlimited"} characters
+              {postBodyMaxLength == null ? "No character limit" : `${bodyLength}/${postBodyMaxLength} characters`}
             </p>
           ) : null}
           {showShortDescCounter ? (
@@ -910,7 +1063,7 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
             step={1}
             required={Boolean(field.required)}
             value={values[field.key] ?? ""}
-            onChange={(event) => setFieldValue(field.key, event.target.value)}
+            onChange={(event) => setBoundedNumberFieldValue(field.key, event.target.value, field.min, field.max)}
           />
           {field.key === "prize_unit_value_usd" ? (
             <p className="text-xs text-muted-foreground">Per unit. Shipping not included.</p>
@@ -933,12 +1086,34 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
           name={field.key}
           type={field.type}
           required={Boolean(field.required)}
-          maxLength={field.key === "title" ? 150 : undefined}
+          maxLength={
+            field.key === "title" ||
+            field.key === "prize_name" ||
+            field.key === "giveaway_question" ||
+            field.key === "answer_correct" ||
+            field.key === "answer_wrong_1" ||
+            field.key === "answer_wrong_2" ||
+            field.key === "answer_wrong_3" ||
+            field.key === "answer_wrong_4"
+              ? 150
+              : undefined
+          }
           value={values[field.key] ?? ""}
           onChange={(event) => setFieldValue(field.key, event.target.value)}
         />
         {field.key === "title" ? (
           <p className="text-xs text-muted-foreground">{(values.title?.length ?? 0)}/150 characters</p>
+        ) : null}
+        {field.key === "prize_name" ? (
+          <p className="text-xs text-muted-foreground">{(values.prize_name?.length ?? 0)}/150 characters</p>
+        ) : null}
+        {(field.key === "giveaway_question" ||
+          field.key === "answer_correct" ||
+          field.key === "answer_wrong_1" ||
+          field.key === "answer_wrong_2" ||
+          field.key === "answer_wrong_3" ||
+          field.key === "answer_wrong_4") ? (
+          <p className="text-xs text-muted-foreground">{(values[field.key]?.length ?? 0)}/150 characters</p>
         ) : null}
         {field.key === "prize_name" ? (
           <p className="text-xs text-muted-foreground">{GIVEAWAY_PRIZE_NAME_HELPER}</p>
@@ -982,7 +1157,7 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
   const reservationLegend = (
     <div className="rounded-md border bg-white p-3 text-xs">
       <p className="mb-2 font-medium">Legend</p>
-      <div className="grid gap-2 sm:grid-cols-2">
+      <div className="grid grid-cols-4 gap-2">
         <div className="flex items-center gap-2"><span className="h-3 w-3 rounded bg-slate-300" /> Locked</div>
         <div className="flex items-center gap-2"><span className="h-3 w-3 rounded bg-green-200" /> Available</div>
         <div className="flex items-center gap-2"><span className="h-3 w-3 rounded bg-blue-300" /> My reservation</div>
@@ -1144,30 +1319,37 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
                   <div className="rounded-md border bg-slate-50 p-4 space-y-3">
                     <h4 className="text-sm font-semibold">D. Giveaway details</h4>
                     <p className="text-xs text-muted-foreground">Define prize details and audience requirements.</p>
-                    {renderFieldsByKeys(["prize_name", "giveaway_category", "prize_unit_value_usd", "prize_units_count", "minimum_age"])}
-                    <div className="rounded-md border bg-white p-3 space-y-2">
-                      <p className="text-sm font-semibold">Unlocked free highlight options</p>
-                      <p className="text-xs text-muted-foreground">
-                        Based on your prize quantity, you can select up to {unlockedHighlightCount} free highlight option(s).
-                      </p>
-                      {unlockedHighlightCount > 0 && availableHighlightOptions.length > 0 ? (
-                        <div className="grid gap-2 sm:grid-cols-2">
-                          {availableHighlightOptions.map((optionKey) => (
-                            <label key={optionKey} className="flex items-center gap-2 text-sm">
-                              <input
-                                type="checkbox"
-                                checked={selectedHighlightOptions.includes(optionKey)}
-                                onChange={() => toggleHighlightOption(optionKey)}
-                                disabled={!selectedHighlightOptions.includes(optionKey) && selectedHighlightOptions.length >= unlockedHighlightCount}
-                              />
-                              <span>{optionKey.replace(/_/g, " ")}</span>
-                            </label>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="text-xs text-muted-foreground">No free highlight option unlocked yet.</p>
-                      )}
-                    </div>
+                    {renderFieldsByKeys(["prize_name", "giveaway_category", "prize_unit_value_usd", "prize_units_count"])}
+                    {unlockedHighlightCount > 0 ? (
+                      <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 space-y-2">
+                        <p className="text-sm font-semibold text-emerald-900">
+                          {unlockedHighlightCount === 1 ? "🎁 Great! You unlocked 1 free Highlight Option." : null}
+                          {unlockedHighlightCount === 2 ? "🎁🎁 Great! You unlocked 2 free Highlight Options." : null}
+                          {unlockedHighlightCount >= 3 ? "🎁🎁🎁 Great! You unlocked 3 free Highlight Options." : null}
+                        </p>
+                        <p className="text-xs text-emerald-900">
+                          Based on your prize quantity, you can select up to {unlockedHighlightCount} free highlight option(s).
+                        </p>
+                        {availableHighlightOptions.length > 0 ? (
+                          <div className="grid gap-2 sm:grid-cols-2">
+                            {availableHighlightOptions.map((optionKey) => (
+                              <label key={optionKey} className="flex items-center gap-2 text-sm">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedHighlightOptions.includes(optionKey)}
+                                  onChange={() => toggleHighlightOption(optionKey)}
+                                  disabled={!selectedHighlightOptions.includes(optionKey) && selectedHighlightOptions.length >= unlockedHighlightCount}
+                                />
+                                <span>{optionKey.replace(/_/g, " ")}</span>
+                              </label>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-muted-foreground">No highlight options available in this order context.</p>
+                        )}
+                      </div>
+                    ) : null}
+                    {renderFieldsByKeys(["minimum_age"])}
                   </div>
                 ) : null}
 
@@ -1201,7 +1383,11 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
                             <Button type="button" variant="outline" className="h-auto p-0 text-sm font-medium" onClick={() => toggleGeoSection("europe")}>
                               {expandedGeoSections.europe ? "▾" : "▸"} Europe
                             </Button>
-                            <div className="flex gap-2">
+                            <div className="flex items-center gap-3">
+                              {(() => {
+                                const state = groupStateLabel(getGroupSelectionState([...COUNTRY_GROUPS.europe.eu, ...COUNTRY_GROUPS.europe.other]));
+                                return <span className={`text-xs font-semibold ${state.className}`}>{state.icon} {state.text}</span>;
+                              })()}
                               <Button type="button" variant="outline" size="sm" onClick={() => addCountries([...COUNTRY_GROUPS.europe.eu, ...COUNTRY_GROUPS.europe.other])}>Select all</Button>
                               <Button type="button" variant="outline" size="sm" onClick={() => removeCountries([...COUNTRY_GROUPS.europe.eu, ...COUNTRY_GROUPS.europe.other])}>Deselect all</Button>
                             </div>
@@ -1213,7 +1399,11 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
                                   <Button type="button" variant="outline" className="h-auto p-0 text-xs font-semibold" onClick={() => toggleGeoSection("europe_eu")}>
                                     {expandedGeoSections.europe_eu ? "▾" : "▸"} European Union
                                   </Button>
-                                  <div className="flex gap-2">
+                                  <div className="flex items-center gap-3">
+                                    {(() => {
+                                      const state = groupStateLabel(getGroupSelectionState(COUNTRY_GROUPS.europe.eu));
+                                      return <span className={`text-xs font-semibold ${state.className}`}>{state.icon} {state.text}</span>;
+                                    })()}
                                     <Button type="button" variant="outline" size="sm" onClick={() => addCountries(COUNTRY_GROUPS.europe.eu)}>Select all</Button>
                                     <Button type="button" variant="outline" size="sm" onClick={() => removeCountries(COUNTRY_GROUPS.europe.eu)}>Deselect all</Button>
                                   </div>
@@ -1234,7 +1424,11 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
                                   <Button type="button" variant="outline" className="h-auto p-0 text-xs font-semibold" onClick={() => toggleGeoSection("europe_other")}>
                                     {expandedGeoSections.europe_other ? "▾" : "▸"} Other European countries
                                   </Button>
-                                  <div className="flex gap-2">
+                                  <div className="flex items-center gap-3">
+                                    {(() => {
+                                      const state = groupStateLabel(getGroupSelectionState(COUNTRY_GROUPS.europe.other));
+                                      return <span className={`text-xs font-semibold ${state.className}`}>{state.icon} {state.text}</span>;
+                                    })()}
                                     <Button type="button" variant="outline" size="sm" onClick={() => addCountries(COUNTRY_GROUPS.europe.other)}>Select all</Button>
                                     <Button type="button" variant="outline" size="sm" onClick={() => removeCountries(COUNTRY_GROUPS.europe.other)}>Deselect all</Button>
                                   </div>
@@ -1267,7 +1461,11 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
                                 >
                                   {expandedGeoSections[continent.sectionKey] ? "▾" : "▸"} {continent.label}
                                 </Button>
-                                <div className="flex gap-2">
+                                <div className="flex items-center gap-3">
+                                  {(() => {
+                                    const state = groupStateLabel(getGroupSelectionState(countries));
+                                    return <span className={`text-xs font-semibold ${state.className}`}>{state.icon} {state.text}</span>;
+                                  })()}
                                   <Button type="button" variant="outline" size="sm" onClick={() => addCountries(countries)}>Select all</Button>
                                   <Button type="button" variant="outline" size="sm" onClick={() => removeCountries(countries)}>Deselect all</Button>
                                 </div>
@@ -1301,8 +1499,18 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
 
                 <div className="rounded-md border bg-slate-50 p-4 space-y-3">
                   <h4 className="text-sm font-semibold">{isGiveaway ? "H. Note to admin" : "Note to admin"}</h4>
-                  <p className="text-xs text-muted-foreground">Optional message for the admin review team.</p>
-                  {renderFieldsByKeys(["notes"])}
+                  {isGiveaway ? (
+                    <textarea
+                      id="notes"
+                      name="notes"
+                      value={values.notes ?? ""}
+                      onChange={(event) => setFieldValue("notes", event.target.value)}
+                      rows={4}
+                      className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                    />
+                  ) : (
+                    renderFieldsByKeys(["notes"])
+                  )}
                 </div>
               </div>
             ) : (
