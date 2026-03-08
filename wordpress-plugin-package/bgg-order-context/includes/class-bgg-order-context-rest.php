@@ -197,6 +197,18 @@ final class BGG_Order_Context_REST {
 
         if ($diagMode) {
             $response['resolver_diagnostic'] = BGG_Order_Context_Resolver::get_resolution_debug($order, $product_context);
+            $response['debug'] = [
+                'plugin_version' => defined('BGG_ORDER_CONTEXT_VERSION') ? (string) BGG_ORDER_CONTEXT_VERSION : 'unknown',
+                'config_version' => $config['version'] ?? null,
+                'product_key' => (string) ($product_context['product_key'] ?? ''),
+                'product_type' => (string) ($product_context['product_type'] ?? ''),
+                'order_number' => (string) $order->get_order_number(),
+                'raw_enabled_options' => isset($options_context['enabled_options']) && is_array($options_context['enabled_options']) ? array_values($options_context['enabled_options']) : [],
+                'derived_values' => isset($options_context['derived_values']) && is_array($options_context['derived_values']) ? $options_context['derived_values'] : [],
+                'derived_giveaway_duration_weeks' => $giveaway_duration_weeks,
+                'has_additional_images_option' => self::has_option_key($options_context['enabled_options'] ?? [], 'additional_images'),
+                'has_extended_text_option' => self::has_option_key($options_context['enabled_options'] ?? [], 'extended_textlimit'),
+            ];
         }
 
         return rest_ensure_response($response);
@@ -400,6 +412,22 @@ final class BGG_Order_Context_REST {
         }
 
         return null;
+    }
+
+    private static function normalize_option_key(string $value): string {
+        return preg_replace('/[^a-z0-9]+/', '', strtolower(trim($value)));
+    }
+
+    private static function has_option_key(array $enabled_options, string $expected): bool {
+        $target = self::normalize_option_key($expected);
+        foreach ($enabled_options as $option) {
+            if (!is_string($option)) continue;
+            $normalized = self::normalize_option_key($option);
+            if ($normalized === $target || strpos($normalized, $target) !== false) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static function resolve_company_prefill(WC_Order $order): string {

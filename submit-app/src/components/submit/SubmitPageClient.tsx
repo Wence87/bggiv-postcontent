@@ -163,6 +163,8 @@ type SubmitPageClientProps = {
 };
 
 const WP_BASE_URL = (process.env.NEXT_PUBLIC_WP_BASE_URL || "https://boardgamegiveaways.com").replace(/\/$/, "");
+const FRONTEND_TREE_MARKER = "submit-app-src";
+const FRONTEND_BUILD_MARKER = process.env.NEXT_PUBLIC_BUILD_STAMP || "build-stamp-missing";
 
 function weekKeyToDate(weekKey: string): string {
   const match = /^(\d{4})-W(\d{2})$/.exec(weekKey);
@@ -315,8 +317,8 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
   });
 
   const contextEndpoint = useMemo(
-    () => `${WP_BASE_URL}/wp-json/bgg/v1/order-context?token=${encodeURIComponent(token)}`,
-    [token]
+    () => `${WP_BASE_URL}/wp-json/bgg/v1/order-context?token=${encodeURIComponent(token)}${diag ? "&diag=1" : ""}`,
+    [token, diag]
   );
 
   useEffect(() => {
@@ -500,6 +502,7 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
       ) ||
       hasOption(currentContext.enabled_options ?? [], "additional_images"));
   const giveawayUnitsCount = Number(values.prize_units_count || 0);
+  const hasUnlimitedBody = isPostsProduct && postBodyMaxLength == null;
   const unlockedHighlightCount = isGiveaway ? computeUnlockedHighlights(giveawayUnitsCount) : 0;
   const availableHighlightOptions = (currentContext.options ?? [])
     .map((entry) => entry.option_key)
@@ -533,6 +536,22 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
         return true;
       })
     : formFields;
+  const normalizedEnabledOptions = Array.from(
+    new Set(
+      (currentContext.enabled_options ?? [])
+        .filter((value): value is string => typeof value === "string")
+        .map((value) => normalizeOptionKey(value))
+    )
+  );
+  const derivedGiveawayDurationDaysUsed = isGiveaway
+    ? (
+        typeof currentContext.reservation?.giveaway_duration_weeks === "number" &&
+        currentContext.reservation.giveaway_duration_weeks >= 1 &&
+        currentContext.reservation.giveaway_duration_weeks <= 4
+          ? currentContext.reservation.giveaway_duration_weeks * 7
+          : resolveGiveawayDurationDaysFromContext(currentContext.derived_values ?? {}, currentContext.enabled_options ?? [])
+      )
+    : null;
   const getGroupSelectionState = (countries: string[]) => {
     if (!countries.length) return "none" as const;
     const selectedCount = countries.reduce((count, country) => count + (selectedShippingCountries.includes(country) ? 1 : 0), 0);
@@ -1257,6 +1276,28 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
     const blocked = new Set(countries);
     setSelectedShippingCountries((prev) => prev.filter((country) => !blocked.has(country)));
   };
+  const diagFrontend = {
+    build_marker: FRONTEND_BUILD_MARKER,
+    frontend_tree: FRONTEND_TREE_MARKER,
+    product_key: currentContext.product.product_key,
+    product_type: currentContext.product.product_type,
+    order_number_seen: currentContext.order?.number ?? null,
+    enabled_options_raw: currentContext.enabled_options ?? [],
+    enabled_options_normalized: normalizedEnabledOptions,
+    additional_images_active: hasAdditionalImages,
+    unlimited_body_active: hasUnlimitedBody,
+    giveaway_duration_weeks_from_reservation: currentContext.reservation?.giveaway_duration_weeks ?? null,
+    giveaway_duration_days_used: derivedGiveawayDurationDaysUsed,
+    editor_mode: "wysiwyg-contenteditable",
+    bullet_command_available:
+      typeof document !== "undefined" &&
+      typeof document.execCommand === "function" &&
+      typeof document.queryCommandSupported === "function"
+        ? document.queryCommandSupported("insertUnorderedList")
+        : false,
+    editor_is_contenteditable: Boolean(bodyEditorRef.current?.isContentEditable),
+    body_state_contains_html: /<[^>]+>/.test(values.body ?? ""),
+  };
 
   return (
     <div className="space-y-6">
@@ -1586,8 +1627,10 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
 
       {diag && diagnostic ? (
         <section className="rounded-md border bg-white p-4">
-          <h3 className="text-base font-semibold">Diagnostic</h3>
-          <pre className="mt-2 overflow-auto rounded-md bg-slate-950 p-3 text-xs text-slate-100">{JSON.stringify(diagnostic, null, 2)}</pre>
+          <h3 className="text-base font-semibold">Runtime Diagnostic (?diag=1)</h3>
+          <p className="mt-2 text-xs text-muted-foreground">Frontend runtime markers and raw WordPress order-context payload.</p>
+          <pre className="mt-2 overflow-auto rounded-md bg-slate-950 p-3 text-xs text-slate-100">{JSON.stringify(diagFrontend, null, 2)}</pre>
+          <pre className="mt-3 overflow-auto rounded-md bg-slate-950 p-3 text-xs text-slate-100">{JSON.stringify(diagnostic, null, 2)}</pre>
         </section>
       ) : null}
     </div>

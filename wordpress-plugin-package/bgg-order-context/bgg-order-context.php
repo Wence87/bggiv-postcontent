@@ -13,6 +13,7 @@ if (!defined('ABSPATH')) {
 define('BGG_ORDER_CONTEXT_PLUGIN_FILE', __FILE__);
 define('BGG_ORDER_CONTEXT_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('BGG_ORDER_CONTEXT_CONFIG_PATH', BGG_ORDER_CONTEXT_PLUGIN_DIR . 'config/order-context.config.json');
+define('BGG_ORDER_CONTEXT_VERSION', '1.1.0');
 
 require_once BGG_ORDER_CONTEXT_PLUGIN_DIR . 'includes/class-bgg-order-context-config.php';
 require_once BGG_ORDER_CONTEXT_PLUGIN_DIR . 'includes/class-bgg-order-context-token.php';
