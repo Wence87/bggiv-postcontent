@@ -13,7 +13,272 @@
         "Nom du produit"
       ],
       "notes": "Le type de promotion doit être explicitement défini (discount %, bundle, 1+1, etc.).\nCe post requiert une image de couverture, un titre (120 signes max.), un body text (1000 signes max. sauf si l’option Extended Text Limit est activée), un lien/URL vers la promo\nToute promotion doit avoir une date et heure de début. Il ne peut y avoir que deux Promo Deal post maximum par jour.\nLes promotions peuvent être limitées dans le temps, impliquant une date et heure de fin.\nCertaines promotions peuvent nécessiter un code coupon.\nDans le body, on ne peut pas insérer d’images, ni de video embedded.\nSi Embedded Video est activé, une vidéo peut être intégrée dans le texte.\nSi Additional Images est acheté, 3 images supplémentaires maximum peuvent être uploadées.\nLe contenu doit être validé avant publication.\nAjouter description courte (160 signes max.).\nAjouter un champ de commentaire pour l’admin.",
-      "options": [],
+      "options": [
+        {
+          "option_key": "social_boost",
+          "option_name": "Social Boost",
+          "technical_slug": "lkf4u",
+          "business_type": "toggle",
+          "source": {
+            "purchased_raw": "Social Boost (+$ 9.00)",
+            "possible_values": "Do not boost my news post.\nSocial Boost.",
+            "wc_raw_example": "Social Boost (+$ 9.00)"
+          },
+          "rules": {
+            "derive_rule": "Aucune action formulaire",
+            "asks_additional_info": false,
+            "collect_info": "—",
+            "fields_count": "—",
+            "field_type": "—",
+            "required": "—",
+            "business_rule": "—",
+            "values": {
+              "base_included": "—",
+              "purchased": "1",
+              "paid_additional": "1",
+              "final": "1"
+            }
+          },
+          "activated_block": {
+            "name": "—",
+            "condition": "—",
+            "fields": "—",
+            "validation": "—"
+          },
+          "derived": null
+        },
+        {
+          "option_key": "featuredspot_herogrid",
+          "option_name": "Featured Spot in the Hero Grid",
+          "technical_slug": "ybsaw",
+          "business_type": "select",
+          "source": {
+            "purchased_raw": "1 Day (+$ 9.00)\n2 Days (+$ 18.00)\n3 Days (+$ 27.00)\n4 Days (+$ 36.00)\n5 Days (+$ 45.00)\n6 Days (+$ 54.00)\n7 Days (+$ 63.00)",
+            "possible_values": "Do not feature my news post in the hero grid.\n1 Day\n2 Days\n3 Days\n4 Days\n5 Days\n6 Days\n7 Days",
+            "wc_raw_example": "1 Day (+$ 9.00)\n2 Days (+$ 18.00)\n3 Days (+$ 27.00)\n4 Days (+$ 36.00)\n5 Days (+$ 45.00)\n6 Days (+$ 54.00)\n7 Days (+$ 63.00)"
+          },
+          "rules": {
+            "derive_rule": "Aucune action formulaire",
+            "asks_additional_info": false,
+            "collect_info": "—",
+            "fields_count": "—",
+            "field_type": "—",
+            "required": "—",
+            "business_rule": "—",
+            "values": {
+              "base_included": "—",
+              "purchased": "De 1 à 7 jours",
+              "paid_additional": "De 1 à 7 jours",
+              "final": "De 1 à 7 jours"
+            }
+          },
+          "activated_block": {
+            "name": "—",
+            "condition": "—",
+            "fields": "—",
+            "validation": "—"
+          },
+          "derived": null
+        },
+        {
+          "option_key": "sticky_post",
+          "option_name": "Sticky Post",
+          "technical_slug": "93j49",
+          "business_type": "select",
+          "source": {
+            "purchased_raw": "1 Day (+$ 9.00)\n2 Days (+$ 18.00)\n3 Days (+$ 27.00)\n4 Days (+$ 36.00)\n5 Days (+$ 45.00)\n6 Days (+$ 54.00)\n7 Days (+$ 63.00)",
+            "possible_values": "Do not pin my news post.\n1 Day\n2 Days\n3 Days\n4 Days\n5 Days\n6 Days\n7 Days",
+            "wc_raw_example": "1 Day (+$ 9.00)\n2 Days (+$ 18.00)\n3 Days (+$ 27.00)\n4 Days (+$ 36.00)\n5 Days (+$ 45.00)\n6 Days (+$ 54.00)\n7 Days (+$ 63.00)"
+          },
+          "rules": {
+            "derive_rule": "Aucune action formulaire",
+            "asks_additional_info": false,
+            "collect_info": "—",
+            "fields_count": "—",
+            "field_type": "—",
+            "required": "—",
+            "business_rule": "—",
+            "values": {
+              "base_included": "—",
+              "purchased": "De 1 à 7 jours",
+              "paid_additional": "De 1 à 7 jours",
+              "final": "De 1 à 7 jours"
+            }
+          },
+          "activated_block": {
+            "name": "—",
+            "condition": "—",
+            "fields": "—",
+            "validation": "—"
+          },
+          "derived": null
+        },
+        {
+          "option_key": "sidebar_spotlight",
+          "option_name": "Sidebar Spotlight",
+          "technical_slug": "grlhn",
+          "business_type": "select",
+          "source": {
+            "purchased_raw": "1 Day (+$ 9.00)\n2 Days (+$ 18.00)\n3 Days (+$ 27.00)\n4 Days (+$ 36.00)\n5 Days (+$ 45.00)\n6 Days (+$ 54.00)\n7 Days (+$ 63.00)",
+            "possible_values": "Do not highlight my news post.\n1 Day\n2 Days\n3 Days\n4 Days\n5 Days\n6 Days\n7 Days",
+            "wc_raw_example": "1 Day (+$ 9.00)\n2 Days (+$ 18.00)\n3 Days (+$ 27.00)\n4 Days (+$ 36.00)\n5 Days (+$ 45.00)\n6 Days (+$ 54.00)\n7 Days (+$ 63.00)"
+          },
+          "rules": {
+            "derive_rule": "Aucune action formulaire",
+            "asks_additional_info": false,
+            "collect_info": "—",
+            "fields_count": "—",
+            "field_type": "—",
+            "required": "—",
+            "business_rule": "—",
+            "values": {
+              "base_included": "—",
+              "purchased": "De 1 à 7 jours",
+              "paid_additional": "De 1 à 7 jours",
+              "final": "De 1 à 7 jours"
+            }
+          },
+          "activated_block": {
+            "name": "—",
+            "condition": "—",
+            "fields": "—",
+            "validation": "—"
+          },
+          "derived": null
+        },
+        {
+          "option_key": "extended_textlimit",
+          "option_name": "Extended Text Limit",
+          "technical_slug": "21tuu",
+          "business_type": "toggle",
+          "source": {
+            "purchased_raw": "No character limit. (+$ 9.00)",
+            "possible_values": "I limit my post to 1,000 characters.\nNo character limit.",
+            "wc_raw_example": "No character limit. (+$ 9.00)"
+          },
+          "rules": {
+            "derive_rule": "Retirer la limite de 1000 signes",
+            "asks_additional_info": false,
+            "collect_info": "—",
+            "fields_count": "—",
+            "field_type": "—",
+            "required": "—",
+            "business_rule": "Retire la limite de 1000 signes",
+            "values": {
+              "base_included": "1000 signes",
+              "purchased": "Illimité",
+              "paid_additional": "Tout ce qui est au-delà de 1000 signes",
+              "final": "Illimité"
+            }
+          },
+          "activated_block": {
+            "name": "—",
+            "condition": "—",
+            "fields": "—",
+            "validation": "—"
+          },
+          "derived": null
+        },
+        {
+          "option_key": "additional_images",
+          "option_name": "Additional Images",
+          "technical_slug": "h2vun",
+          "business_type": "toggle",
+          "source": {
+            "purchased_raw": "I enrich my post with up to three additional images. (+$ 9.00)",
+            "possible_values": "I use the cover image only.\nI enrich my post with up to three additional images.",
+            "wc_raw_example": "I enrich my post with up to three additional images. (+$ 9.00)"
+          },
+          "rules": {
+            "derive_rule": "Afficher trois champs d’upload d’image.",
+            "asks_additional_info": true,
+            "collect_info": "3 images à collecter",
+            "fields_count": "3",
+            "field_type": "upload d’image",
+            "required": "non",
+            "business_rule": "Maximum 3 images supplémentaires.",
+            "values": {
+              "base_included": "1 image (couverture du post)",
+              "purchased": "4",
+              "paid_additional": "3",
+              "final": "4"
+            }
+          },
+          "activated_block": {
+            "name": "additional_image_block",
+            "condition": "si option Additional Images activée",
+            "fields": "additional_image_1\nadditional_image_2\nadditional_image_3",
+            "validation": "Image size : 1200 × 675 px • Allowed File Extensions : webp, jpg, jpeg. Max File Size : 500 KB"
+          },
+          "derived": null
+        },
+        {
+          "option_key": "embedded_video",
+          "option_name": "Embedded Video",
+          "technical_slug": "cxm1l",
+          "business_type": "toggle",
+          "source": {
+            "purchased_raw": "I enhance my post with an embedded video. (+$ 9.00)",
+            "possible_values": "I do not include an embedded video.\nI enhance my post with an embedded video.",
+            "wc_raw_example": "I enhance my post with an embedded video. (+$ 9.00)"
+          },
+          "rules": {
+            "derive_rule": "Permet d’ajouter une seule video embedded dans le body du post",
+            "asks_additional_info": false,
+            "collect_info": "—",
+            "fields_count": "—",
+            "field_type": "—",
+            "required": "—",
+            "business_rule": "Permet d’ajouter une seule video embedded dans le body du post",
+            "values": {
+              "base_included": "—",
+              "purchased": "1",
+              "paid_additional": "1",
+              "final": "1"
+            }
+          },
+          "activated_block": {
+            "name": "—",
+            "condition": "—",
+            "fields": "—",
+            "validation": "—"
+          },
+          "derived": null
+        },
+        {
+          "option_key": "weekly_newsletter",
+          "option_name": "Weekly Newsletter Feature",
+          "technical_slug": "9x0he",
+          "business_type": "toggle",
+          "source": {
+            "purchased_raw": "I feature my post in the weekly newsletter. (+$ 9.00)",
+            "possible_values": "I do not feature my post in the weekly newsletter.\nI feature my post in the weekly newsletter.",
+            "wc_raw_example": "I feature my post in the weekly newsletter. (+$ 9.00)"
+          },
+          "rules": {
+            "derive_rule": "Aucune action formulaire",
+            "asks_additional_info": false,
+            "collect_info": "—",
+            "fields_count": "—",
+            "field_type": "—",
+            "required": "—",
+            "business_rule": "—",
+            "values": {
+              "base_included": "—",
+              "purchased": "1",
+              "paid_additional": "1",
+              "final": "1"
+            }
+          },
+          "activated_block": {
+            "name": "—",
+            "condition": "—",
+            "fields": "—",
+            "validation": "—"
+          },
+          "derived": null
+        }
+      ],
       "form_fields": [
         {
           "key": "company_name",
@@ -237,7 +502,272 @@
         "Nom du produit"
       ],
       "notes": "Le giveaway impose de poser une question à la laquelle les participants doivent répondre. C’est un QCM avec 5 proposition dont une seule est correcte.\nLe participant au concours ne sait pas s’il a bien répondu avant que la fin du concours soit arrivée.\nSi l’option a été achetée, une série d’action marketing s’affiche après que la réponse (correcte ou erronée) à la question a été donnée.\nPrincipe du concours: répondre à la question et toute action octroie des tickets. Au terme du concours, un tirage au sort a lieu: chaque ticket peut ainsi permettre de gagner. Pour chaque ticket tiré au sort, le système vérifie si la réponse à la question est correcte; si oui, le participant gagne; si non, un nouveau ticket est tiré au sort.\nSi Audience Amplifier est activé, des URLs d’actions supplémentaires doivent être fournies.\nCe post requiert une image de couverture, un titre (120 signes max.), un body text (1000 signes max. sauf si l’option Extended Text Limit est activée), un lien/URL vers le site de l’éditeur.\nToute givevaway doit avoir une date et heure de début. Il ne peut y avoir que deux concours maximum par jour.\nLes giveaways sont limités dans le temps. par défaut, un giveaway dure 1 semaine, mais le client peut acheter jusqu’à trois semaines supplémentaires de visibilité (option).\nDans le body, on ne peut pas insérer d’images ni de lien, ni de video embedded.\nSi Embedded Video est activé, une vidéo peut être intégrée dans le texte.\nSi Additional Images est acheté, 3 images supplémentaires maximum peuvent être uploadées.\nEntre le titre et le body, est insérer le bloc concours, composé de: le nom du produit, le nombre d’unités proposées (de 2 à 20), le prix public d’une unité, une featured image du produit, un court descriptif (200 signes max.) la catégorie du giveaway, la liste des pays élligibles, l’âge minimum pour participer.\nLe contenu doit être validé avant publication.\nAjouter description courte (160 signes max.).\nAjouter un champ de commentaire pour l’admin.",
-      "options": [],
+      "options": [
+        {
+          "option_key": "social_boost",
+          "option_name": "Social Boost",
+          "technical_slug": "lkf4u",
+          "business_type": "toggle",
+          "source": {
+            "purchased_raw": "Social Boost (+$ 9.00)",
+            "possible_values": "Do not boost my news post.\nSocial Boost.",
+            "wc_raw_example": "Social Boost (+$ 9.00)"
+          },
+          "rules": {
+            "derive_rule": "Aucune action formulaire",
+            "asks_additional_info": false,
+            "collect_info": "—",
+            "fields_count": "—",
+            "field_type": "—",
+            "required": "—",
+            "business_rule": "—",
+            "values": {
+              "base_included": "—",
+              "purchased": "1",
+              "paid_additional": "1",
+              "final": "1"
+            }
+          },
+          "activated_block": {
+            "name": "—",
+            "condition": "—",
+            "fields": "—",
+            "validation": "—"
+          },
+          "derived": null
+        },
+        {
+          "option_key": "featuredspot_herogrid",
+          "option_name": "Featured Spot in the Hero Grid",
+          "technical_slug": "ybsaw",
+          "business_type": "select",
+          "source": {
+            "purchased_raw": "1 Day (+$ 9.00)\n2 Days (+$ 18.00)\n3 Days (+$ 27.00)\n4 Days (+$ 36.00)\n5 Days (+$ 45.00)\n6 Days (+$ 54.00)\n7 Days (+$ 63.00)",
+            "possible_values": "Do not feature my news post in the hero grid.\n1 Day\n2 Days\n3 Days\n4 Days\n5 Days\n6 Days\n7 Days",
+            "wc_raw_example": "1 Day (+$ 9.00)\n2 Days (+$ 18.00)\n3 Days (+$ 27.00)\n4 Days (+$ 36.00)\n5 Days (+$ 45.00)\n6 Days (+$ 54.00)\n7 Days (+$ 63.00)"
+          },
+          "rules": {
+            "derive_rule": "Aucune action formulaire",
+            "asks_additional_info": false,
+            "collect_info": "—",
+            "fields_count": "—",
+            "field_type": "—",
+            "required": "—",
+            "business_rule": "—",
+            "values": {
+              "base_included": "—",
+              "purchased": "De 1 à 7 jours",
+              "paid_additional": "De 1 à 7 jours",
+              "final": "De 1 à 7 jours"
+            }
+          },
+          "activated_block": {
+            "name": "—",
+            "condition": "—",
+            "fields": "—",
+            "validation": "—"
+          },
+          "derived": null
+        },
+        {
+          "option_key": "sticky_post",
+          "option_name": "Sticky Post",
+          "technical_slug": "93j49",
+          "business_type": "select",
+          "source": {
+            "purchased_raw": "1 Day (+$ 9.00)\n2 Days (+$ 18.00)\n3 Days (+$ 27.00)\n4 Days (+$ 36.00)\n5 Days (+$ 45.00)\n6 Days (+$ 54.00)\n7 Days (+$ 63.00)",
+            "possible_values": "Do not pin my news post.\n1 Day\n2 Days\n3 Days\n4 Days\n5 Days\n6 Days\n7 Days",
+            "wc_raw_example": "1 Day (+$ 9.00)\n2 Days (+$ 18.00)\n3 Days (+$ 27.00)\n4 Days (+$ 36.00)\n5 Days (+$ 45.00)\n6 Days (+$ 54.00)\n7 Days (+$ 63.00)"
+          },
+          "rules": {
+            "derive_rule": "Aucune action formulaire",
+            "asks_additional_info": false,
+            "collect_info": "—",
+            "fields_count": "—",
+            "field_type": "—",
+            "required": "—",
+            "business_rule": "—",
+            "values": {
+              "base_included": "—",
+              "purchased": "De 1 à 7 jours",
+              "paid_additional": "De 1 à 7 jours",
+              "final": "De 1 à 7 jours"
+            }
+          },
+          "activated_block": {
+            "name": "—",
+            "condition": "—",
+            "fields": "—",
+            "validation": "—"
+          },
+          "derived": null
+        },
+        {
+          "option_key": "sidebar_spotlight",
+          "option_name": "Sidebar Spotlight",
+          "technical_slug": "grlhn",
+          "business_type": "select",
+          "source": {
+            "purchased_raw": "1 Day (+$ 9.00)\n2 Days (+$ 18.00)\n3 Days (+$ 27.00)\n4 Days (+$ 36.00)\n5 Days (+$ 45.00)\n6 Days (+$ 54.00)\n7 Days (+$ 63.00)",
+            "possible_values": "Do not highlight my news post.\n1 Day\n2 Days\n3 Days\n4 Days\n5 Days\n6 Days\n7 Days",
+            "wc_raw_example": "1 Day (+$ 9.00)\n2 Days (+$ 18.00)\n3 Days (+$ 27.00)\n4 Days (+$ 36.00)\n5 Days (+$ 45.00)\n6 Days (+$ 54.00)\n7 Days (+$ 63.00)"
+          },
+          "rules": {
+            "derive_rule": "Aucune action formulaire",
+            "asks_additional_info": false,
+            "collect_info": "—",
+            "fields_count": "—",
+            "field_type": "—",
+            "required": "—",
+            "business_rule": "—",
+            "values": {
+              "base_included": "—",
+              "purchased": "De 1 à 7 jours",
+              "paid_additional": "De 1 à 7 jours",
+              "final": "De 1 à 7 jours"
+            }
+          },
+          "activated_block": {
+            "name": "—",
+            "condition": "—",
+            "fields": "—",
+            "validation": "—"
+          },
+          "derived": null
+        },
+        {
+          "option_key": "extended_textlimit",
+          "option_name": "Extended Text Limit",
+          "technical_slug": "21tuu",
+          "business_type": "toggle",
+          "source": {
+            "purchased_raw": "No character limit. (+$ 9.00)",
+            "possible_values": "I limit my post to 1,000 characters.\nNo character limit.",
+            "wc_raw_example": "No character limit. (+$ 9.00)"
+          },
+          "rules": {
+            "derive_rule": "Retirer la limite de 1000 signes",
+            "asks_additional_info": false,
+            "collect_info": "—",
+            "fields_count": "—",
+            "field_type": "—",
+            "required": "—",
+            "business_rule": "Retire la limite de 1000 signes",
+            "values": {
+              "base_included": "1000 signes",
+              "purchased": "Illimité",
+              "paid_additional": "Tout ce qui est au-delà de 1000 signes",
+              "final": "Illimité"
+            }
+          },
+          "activated_block": {
+            "name": "—",
+            "condition": "—",
+            "fields": "—",
+            "validation": "—"
+          },
+          "derived": null
+        },
+        {
+          "option_key": "additional_images",
+          "option_name": "Additional Images",
+          "technical_slug": "h2vun",
+          "business_type": "toggle",
+          "source": {
+            "purchased_raw": "I enrich my post with up to three additional images. (+$ 9.00)",
+            "possible_values": "I use the cover image only.\nI enrich my post with up to three additional images.",
+            "wc_raw_example": "I enrich my post with up to three additional images. (+$ 9.00)"
+          },
+          "rules": {
+            "derive_rule": "Afficher trois champs d’upload d’image.",
+            "asks_additional_info": true,
+            "collect_info": "3 images à collecter",
+            "fields_count": "3",
+            "field_type": "upload d’image",
+            "required": "non",
+            "business_rule": "Maximum 3 images supplémentaires.",
+            "values": {
+              "base_included": "1 image (couverture du post)",
+              "purchased": "4",
+              "paid_additional": "3",
+              "final": "4"
+            }
+          },
+          "activated_block": {
+            "name": "additional_image_block",
+            "condition": "si option Additional Images activée",
+            "fields": "additional_image_1\nadditional_image_2\nadditional_image_3",
+            "validation": "Image size : 1200 × 675 px • Allowed File Extensions : webp, jpg, jpeg. Max File Size : 500 KB"
+          },
+          "derived": null
+        },
+        {
+          "option_key": "embedded_video",
+          "option_name": "Embedded Video",
+          "technical_slug": "cxm1l",
+          "business_type": "toggle",
+          "source": {
+            "purchased_raw": "I enhance my post with an embedded video. (+$ 9.00)",
+            "possible_values": "I do not include an embedded video.\nI enhance my post with an embedded video.",
+            "wc_raw_example": "I enhance my post with an embedded video. (+$ 9.00)"
+          },
+          "rules": {
+            "derive_rule": "Permet d’ajouter une seule video embedded dans le body du post",
+            "asks_additional_info": false,
+            "collect_info": "—",
+            "fields_count": "—",
+            "field_type": "—",
+            "required": "—",
+            "business_rule": "Permet d’ajouter une seule video embedded dans le body du post",
+            "values": {
+              "base_included": "—",
+              "purchased": "1",
+              "paid_additional": "1",
+              "final": "1"
+            }
+          },
+          "activated_block": {
+            "name": "—",
+            "condition": "—",
+            "fields": "—",
+            "validation": "—"
+          },
+          "derived": null
+        },
+        {
+          "option_key": "weekly_newsletter",
+          "option_name": "Weekly Newsletter Feature",
+          "technical_slug": "9x0he",
+          "business_type": "toggle",
+          "source": {
+            "purchased_raw": "I feature my post in the weekly newsletter. (+$ 9.00)",
+            "possible_values": "I do not feature my post in the weekly newsletter.\nI feature my post in the weekly newsletter.",
+            "wc_raw_example": "I feature my post in the weekly newsletter. (+$ 9.00)"
+          },
+          "rules": {
+            "derive_rule": "Aucune action formulaire",
+            "asks_additional_info": false,
+            "collect_info": "—",
+            "fields_count": "—",
+            "field_type": "—",
+            "required": "—",
+            "business_rule": "—",
+            "values": {
+              "base_included": "—",
+              "purchased": "1",
+              "paid_additional": "1",
+              "final": "1"
+            }
+          },
+          "activated_block": {
+            "name": "—",
+            "condition": "—",
+            "fields": "—",
+            "validation": "—"
+          },
+          "derived": null
+        }
+      ],
       "form_fields": [
         {
           "key": "company_name",

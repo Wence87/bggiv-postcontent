@@ -5,15 +5,18 @@ type WPOrderContext = {
     form_id: string;
     form_fields?: Array<{ key: string; required?: boolean; type?: string }>;
   };
+  order?: {
+    number?: string;
+    id?: number;
+  };
   prefill?: {
     company_name?: string;
     contact_email?: string;
   };
   reservation?: {
     ads_duration_weeks?: number | null;
+    giveaway_duration_weeks?: number | null;
   };
-  enabled_options?: string[];
-  derived_values?: Record<string, unknown>;
 };
 
 const WP_BASE_URL = (process.env.NEXT_PUBLIC_WP_BASE_URL || "https://boardgamegiveaways.com").replace(/\/$/, "");

@@ -152,7 +152,20 @@ final class BGG_Order_Context_REST {
         $product_context = BGG_Order_Context_Resolver::resolve_product_context($order, $config);
         $options_context = BGG_Order_Context_Resolver::resolve_options_context($order, $product_context);
         $ads_duration_weeks = self::resolve_ads_duration_weeks($order, $product_context, $options_context);
+        $giveaway_duration_weeks = self::resolve_giveaway_duration_weeks($order, $product_context, $options_context);
         $diagMode = ((string) $request->get_param('diag')) === '1';
+
+        if ($giveaway_duration_weeks !== null) {
+            if (!isset($options_context['derived_values']) || !is_array($options_context['derived_values'])) {
+                $options_context['derived_values'] = [];
+            }
+            if (!isset($options_context['derived_values']['giveaway_duration_weeks'])) {
+                $options_context['derived_values']['giveaway_duration_weeks'] = $giveaway_duration_weeks;
+            }
+            if (!isset($options_context['derived_values']['giveaway_duration_days'])) {
+                $options_context['derived_values']['giveaway_duration_days'] = $giveaway_duration_weeks * 7;
+            }
+        }
 
         $response = [
             'product' => [
@@ -173,6 +186,7 @@ final class BGG_Order_Context_REST {
             ],
             'reservation' => [
                 'ads_duration_weeks' => $ads_duration_weeks,
+                'giveaway_duration_weeks' => $giveaway_duration_weeks,
             ],
             'options' => $options_context['options'],
             'enabled_options' => $options_context['enabled_options'],
@@ -313,6 +327,79 @@ final class BGG_Order_Context_REST {
         }
 
         return 1;
+    }
+
+    private static function resolve_giveaway_duration_weeks(WC_Order $order, array $product_context, array $options_context): ?int {
+        if ((string) ($product_context['product_type'] ?? '') !== 'giveaway') {
+            return null;
+        }
+
+        if (isset($options_context['derived_values']) && is_array($options_context['derived_values'])) {
+            foreach ($options_context['derived_values'] as $key => $value) {
+                $key_lc = strtolower((string) $key);
+                if (strpos($key_lc, 'duration') === false) {
+                    continue;
+                }
+                if (is_array($value) && isset($value['duration_weeks_final'])) {
+                    $weeks = (int) $value['duration_weeks_final'];
+                    if ($weeks >= 1 && $weeks <= 4) {
+                        return $weeks;
+                    }
+                }
+                if (is_numeric($value)) {
+                    $number = (int) $value;
+                    if ($number >= 1 && $number <= 4) return $number;
+                    if (in_array($number, [7, 14, 21, 28], true)) return (int) ($number / 7);
+                }
+                if (is_string($value)) {
+                    $weeks = self::extract_weeks_from_string($value);
+                    if ($weeks !== null) return $weeks;
+                }
+            }
+        }
+
+        foreach ($order->get_items() as $item) {
+            if (!$item instanceof WC_Order_Item_Product) {
+                continue;
+            }
+
+            $meta_candidates = [
+                (string) $item->get_meta('duration_weeks', true),
+                (string) $item->get_meta('pa_duration', true),
+                (string) $item->get_meta('attribute_pa_duration', true),
+                (string) $item->get_meta('duration', true),
+                (string) $item->get_meta('attribute_duration', true),
+                (string) $item->get_meta('giveaway_duration', true),
+                (string) $item->get_meta('giveaway_duration_weeks', true),
+                (string) $item->get_name(),
+            ];
+
+            foreach ($meta_candidates as $candidate) {
+                $weeks = self::extract_weeks_from_string($candidate);
+                if ($weeks !== null) {
+                    return $weeks;
+                }
+            }
+        }
+
+        return 1;
+    }
+
+    private static function extract_weeks_from_string(string $raw): ?int {
+        $raw = trim($raw);
+        if ($raw === '') return null;
+
+        if (preg_match('/\b(1|2|3|4)\s*week/i', $raw, $m) === 1) {
+            return (int) $m[1];
+        }
+        if (preg_match('/\b(7|14|21|28)\s*day/i', $raw, $m) === 1) {
+            return (int) ((int) $m[1] / 7);
+        }
+        if (preg_match('/\b(1|2|3|4)\b/', $raw, $m) === 1) {
+            return (int) $m[1];
+        }
+
+        return null;
     }
 
     private static function resolve_company_prefill(WC_Order $order): string {

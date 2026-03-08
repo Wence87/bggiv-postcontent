@@ -15,6 +15,7 @@ type WPOrderContext = {
   };
   reservation?: {
     ads_duration_weeks?: number | null;
+    giveaway_duration_weeks?: number | null;
   };
 };
 

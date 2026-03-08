@@ -39,6 +39,10 @@ function hasValidPostsImageExtension(name: string): boolean {
   return lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".webp");
 }
 
+function stripHtml(value: string): string {
+  return value.replace(/<[^>]*>/g, "").trim();
+}
+
 function getDateKeyInBrussels(date: Date): string {
   const formatter = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Europe/Brussels",
@@ -75,6 +79,11 @@ function normalizeOptionKey(value: string): string {
 }
 
 function resolveGiveawayDurationDays(context: Record<string, unknown>): number {
+  const reservation = context.reservation;
+  if (reservation && typeof reservation === "object") {
+    const weeks = (reservation as Record<string, unknown>).giveaway_duration_weeks;
+    if (typeof weeks === "number" && weeks >= 1 && weeks <= 4) return weeks * 7;
+  }
   const derived = context.derived_values;
   if (derived && typeof derived === "object") {
     const map = derived as Record<string, unknown>;
@@ -315,6 +324,7 @@ export async function POST(request: NextRequest) {
   const contactEmail = normalizeString(formData.contact_email);
   const title = normalizeString(formData.title);
   const body = normalizeString(formData.body);
+  const bodyText = stripHtml(body);
   const shortProductDescription = normalizeString(formData.short_product_description);
   const embeddedVideoLink = normalizeString(formData.embedded_video_link);
   const prizeName = normalizeString(formData.prize_name);
@@ -368,11 +378,11 @@ export async function POST(request: NextRequest) {
     if (!title || title.length > 150) {
       return badRequest("Title is invalid. Maximum allowed length is 150 characters.");
     }
-    if (!body) {
+    if (!bodyText) {
       return badRequest("Missing required body");
     }
     const bodyMax = resolvePostBodyMaxLength(context as unknown as Record<string, unknown>);
-    if (bodyMax != null && body.length > bodyMax) {
+    if (bodyMax != null && bodyText.length > bodyMax) {
       return badRequest(`Body is too long. Maximum allowed length is ${bodyMax} characters.`);
     }
     if (shortProductDescription.length < 100 || shortProductDescription.length > 300) {
@@ -419,7 +429,7 @@ export async function POST(request: NextRequest) {
     if (!Number.isFinite(prizeUnitsCount) || prizeUnitsCount < 2 || prizeUnitsCount > 20) {
       return badRequest("Number of prize units must be between 2 and 20.");
     }
-    if (!Number.isFinite(minimumAge) || minimumAge < 1 || minimumAge > 120) {
+    if (!Number.isFinite(minimumAge) || minimumAge < 14) {
       return badRequest("Minimum age is invalid.");
     }
     if (shippingCountries.length < 1) {

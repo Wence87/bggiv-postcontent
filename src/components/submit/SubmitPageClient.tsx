@@ -58,7 +58,7 @@ const DEFAULT_POSTS_FORM_FIELDS: ProductFormField[] = [
   },
   { key: "prize_unit_value_usd", label: "Prize value (USD)", type: "number", required: true, min: 10, max: 700 },
   { key: "prize_units_count", label: "Number of units offered", type: "number", required: true, min: 2, max: 20 },
-  { key: "minimum_age", label: "Minimum age", type: "number", required: true, min: 1, max: 120 },
+  { key: "minimum_age", label: "Minimum age", type: "number", required: true, min: 14 },
   { key: "giveaway_question", label: "Giveaway question", type: "text", required: true, max: 150 },
   { key: "answer_correct", label: "✅ Correct answer", type: "text", required: true, max: 150 },
   { key: "answer_wrong_1", label: "❌ Wrong answer 1", type: "text", required: true, max: 150 },
@@ -75,6 +75,8 @@ const SHORT_PRODUCT_DESCRIPTION_HELPER =
 
 const EDITORIAL_REVIEW_HELPER =
   "All submissions are reviewed by our editorial team before publication and must follow our contributor guidelines.";
+const BODY_HELPER_TEXT =
+  "This is the main content of the post. Use it to describe the product, explain the giveaway, and provide any relevant information players should know.";
 
 const COVER_IMAGE_HELPER =
   "Image size : 1200 × 675 px. Allowed File Extensions : webp, jpg, jpeg. Max File Size : 500 KB. A best practice is to present the game in its best light, placing it in the most appropriate setting to make people visually want to discover it.";
@@ -125,6 +127,7 @@ type OrderContextResponse = {
   };
   reservation?: {
     ads_duration_weeks?: number | null;
+    giveaway_duration_weeks?: number | null;
   };
   options: Array<{
     option_key: string;
@@ -276,7 +279,7 @@ function resolveGiveawayDurationDaysFromContext(
 
 export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps) {
   const router = useRouter();
-  const bodyTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const bodyEditorRef = useRef<HTMLDivElement | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [context, setContext] = useState<OrderContextResponse | null>(null);
@@ -427,10 +430,14 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
       }
       const startDate = new Date(startsAt);
       const endDate = new Date(startsAt);
-      const durationDays = resolveGiveawayDurationDaysFromContext(
-        context.derived_values ?? {},
-        context.enabled_options ?? []
-      );
+      const reservationWeeks = context.reservation?.giveaway_duration_weeks;
+      const durationDays =
+        typeof reservationWeeks === "number" && reservationWeeks >= 1 && reservationWeeks <= 4
+          ? reservationWeeks * 7
+          : resolveGiveawayDurationDaysFromContext(
+              context.derived_values ?? {},
+              context.enabled_options ?? []
+            );
       endDate.setUTCDate(endDate.getUTCDate() + Math.max(1, durationDays));
       const dateToKey = (date: Date) =>
         `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
@@ -446,6 +453,16 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
   useEffect(() => {
     setFieldValue("selected_highlight_options", JSON.stringify(selectedHighlightOptions));
   }, [selectedHighlightOptions]);
+
+  useEffect(() => {
+    const editor = bodyEditorRef.current;
+    if (!editor) return;
+    if (document.activeElement === editor) return;
+    const expected = values.body ?? "";
+    if (editor.innerHTML !== expected) {
+      editor.innerHTML = expected;
+    }
+  }, [values.body]);
 
   if (loading) {
     return <div className="rounded-md border bg-white p-4 text-sm text-muted-foreground">Loading submission context...</div>;
@@ -469,7 +486,12 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
   const postBodyMaxLength = isPostsProduct
     ? resolvePostBodyMaxLength(currentContext.derived_values ?? {}, currentContext.enabled_options ?? [])
     : null;
-  const hasEmbeddedVideo = isPostsProduct && hasOption(currentContext.enabled_options ?? [], "embedded_video");
+  const hasEmbeddedVideo =
+    isPostsProduct &&
+    (hasOption(currentContext.enabled_options ?? [], "embedded_video") ||
+      (currentContext.options ?? []).some(
+        (entry) => Boolean(entry.enabled) && normalizeOptionKey(entry.option_key).includes("embeddedvideo")
+      ));
   const hasAdditionalImages =
     isPostsProduct &&
     ((currentContext.enabled_options ?? []).some((value) => normalizeOptionKey(value).includes("additionalimages")) ||
@@ -545,38 +567,56 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
     setFieldValue(key, String(Math.trunc(bounded)));
   }
 
-  function withSelectionWrap(prefix: string, suffix: string) {
-    const area = bodyTextareaRef.current;
-    if (!area) return;
-    const start = area.selectionStart ?? 0;
-    const end = area.selectionEnd ?? 0;
-    const current = values.body ?? "";
-    const selected = current.slice(start, end);
-    const next = `${current.slice(0, start)}${prefix}${selected}${suffix}${current.slice(end)}`;
-    setFieldValue("body", next);
-    requestAnimationFrame(() => {
-      const cursor = end + prefix.length + suffix.length;
-      area.focus();
-      area.setSelectionRange(cursor, cursor);
-    });
+  function extractTextFromHtml(input: string): string {
+    if (typeof document === "undefined") return input.replace(/<[^>]+>/g, "");
+    const node = document.createElement("div");
+    node.innerHTML = input;
+    return (node.textContent || "").trim();
   }
 
-  function applyBulletedList() {
-    const area = bodyTextareaRef.current;
-    if (!area) return;
-    const start = area.selectionStart ?? 0;
-    const end = area.selectionEnd ?? 0;
-    const current = values.body ?? "";
-    const selected = current.slice(start, end) || "Item";
-    const lines = selected.split("\n").map((line) => (line.trim().startsWith("- ") ? line : `- ${line}`));
-    const replaced = lines.join("\n");
-    const next = `${current.slice(0, start)}${replaced}${current.slice(end)}`;
-    setFieldValue("body", next);
-    requestAnimationFrame(() => {
-      const cursor = start + replaced.length;
-      area.focus();
-      area.setSelectionRange(cursor, cursor);
-    });
+  function sanitizeBodyHtml(input: string): string {
+    if (typeof document === "undefined") return input;
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(`<div>${input}</div>`, "text/html");
+    const root = doc.body.firstElementChild as HTMLElement | null;
+    if (!root) return "";
+    const allowed = new Set(["B", "STRONG", "I", "EM", "U", "UL", "LI", "BR", "P", "DIV"]);
+    const sanitizeNode = (node: Node) => {
+      for (const child of Array.from(node.childNodes)) {
+        if (child.nodeType === Node.ELEMENT_NODE) {
+          const el = child as HTMLElement;
+          if (!allowed.has(el.tagName)) {
+            const text = doc.createTextNode(el.textContent || "");
+            node.replaceChild(text, el);
+            continue;
+          }
+          for (const attr of Array.from(el.attributes)) {
+            el.removeAttribute(attr.name);
+          }
+          sanitizeNode(el);
+        }
+      }
+    };
+    sanitizeNode(root);
+    return root.innerHTML;
+  }
+
+  function execBodyCommand(command: "bold" | "italic" | "underline" | "insertUnorderedList") {
+    const editor = bodyEditorRef.current;
+    if (!editor) return;
+    editor.focus();
+    document.execCommand(command, false);
+    const sanitized = sanitizeBodyHtml(editor.innerHTML);
+    if (sanitized !== editor.innerHTML) editor.innerHTML = sanitized;
+    setFieldValue("body", sanitized);
+  }
+
+  function handleBodyInput() {
+    const editor = bodyEditorRef.current;
+    if (!editor) return;
+    const sanitized = sanitizeBodyHtml(editor.innerHTML);
+    if (sanitized !== editor.innerHTML) editor.innerHTML = sanitized;
+    setFieldValue("body", sanitized);
   }
 
   function buildReservationPayload(): ReservationChoice | null {
@@ -659,6 +699,7 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
 
     if (!field.required) return true;
     if (field.type === "file") return Boolean(fileValues[field.key]);
+    if (field.key === "body") return extractTextFromHtml(values.body ?? "").length > 0;
     const rawValue = values[field.key];
     return typeof rawValue === "string" && rawValue.trim().length > 0;
   }
@@ -773,7 +814,7 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
       }
 
       if (field.key === "body" && values.body) {
-        const bodyLength = values.body.trim().length;
+        const bodyLength = extractTextFromHtml(values.body ?? "").length;
         if (postBodyMaxLength != null && bodyLength > postBodyMaxLength) {
           setValidationError(`Body is too long. Maximum allowed length is ${postBodyMaxLength} characters.`);
           return false;
@@ -946,42 +987,55 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
     if (field.type === "textarea") {
       const showBodyCounter = field.key === "body";
       const showShortDescCounter = field.key === "short_product_description";
-      const bodyLength = values.body?.length ?? 0;
+      const bodyLength = extractTextFromHtml(values.body ?? "").length;
       const shortLength = values.short_product_description?.length ?? 0;
       return (
         <div key={field.key} className="space-y-2">
           <Label htmlFor={field.key}>{label}</Label>
           {showBodyCounter ? (
             <div className="flex flex-wrap gap-2">
-              <Button type="button" size="sm" variant="outline" onClick={() => withSelectionWrap("**", "**")}>
+              <Button type="button" size="sm" variant="outline" onClick={() => execBodyCommand("bold")}>
                 Bold
               </Button>
-              <Button type="button" size="sm" variant="outline" onClick={() => withSelectionWrap("_", "_")}>
+              <Button type="button" size="sm" variant="outline" onClick={() => execBodyCommand("italic")}>
                 Italic
               </Button>
-              <Button type="button" size="sm" variant="outline" onClick={() => withSelectionWrap("<u>", "</u>")}>
+              <Button type="button" size="sm" variant="outline" onClick={() => execBodyCommand("underline")}>
                 Underline
               </Button>
-              <Button type="button" size="sm" variant="outline" onClick={applyBulletedList}>
+              <Button type="button" size="sm" variant="outline" onClick={() => execBodyCommand("insertUnorderedList")}>
                 Bulleted list
               </Button>
             </div>
           ) : null}
-          <textarea
-            id={field.key}
-            name={field.key}
-            ref={showBodyCounter ? bodyTextareaRef : undefined}
-            value={values[field.key] ?? ""}
-            onChange={(event) => setFieldValue(field.key, event.target.value)}
-            required={Boolean(field.required)}
-            maxLength={showShortDescCounter ? 300 : undefined}
-            rows={showBodyCounter ? 10 : 4}
-            className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-          />
           {showBodyCounter ? (
-            <p className="text-xs text-muted-foreground">
-              {postBodyMaxLength == null ? "No character limit" : `${bodyLength}/${postBodyMaxLength} characters`}
-            </p>
+            <div
+              id="body"
+              ref={bodyEditorRef}
+              contentEditable
+              suppressContentEditableWarning
+              onInput={handleBodyInput}
+              className="min-h-[240px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            />
+          ) : (
+            <textarea
+              id={field.key}
+              name={field.key}
+              value={values[field.key] ?? ""}
+              onChange={(event) => setFieldValue(field.key, event.target.value)}
+              required={Boolean(field.required)}
+              maxLength={showShortDescCounter ? 300 : undefined}
+              rows={4}
+              className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            />
+          )}
+          {showBodyCounter ? (
+            <>
+              <p className="text-xs text-muted-foreground">{BODY_HELPER_TEXT}</p>
+              <p className="text-xs text-muted-foreground">
+                {postBodyMaxLength == null ? "No character limit" : `${bodyLength}/${postBodyMaxLength} characters`}
+              </p>
+            </>
           ) : null}
           {showShortDescCounter ? (
             <>
@@ -1066,10 +1120,12 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
             onChange={(event) => setBoundedNumberFieldValue(field.key, event.target.value, field.min, field.max)}
           />
           {field.key === "prize_unit_value_usd" ? (
-            <p className="text-xs text-muted-foreground">Per unit. Shipping not included.</p>
+            <p className="text-xs text-muted-foreground">Per unit. Shipping not included. Minimum value: $10.</p>
           ) : null}
           {field.key === "prize_units_count" ? (
-            <p className="text-xs text-muted-foreground">{GIVEAWAY_UNITS_HELPER}</p>
+            <p className="text-xs text-muted-foreground">
+              Minimum: 2 units. Maximum: 20 units. {GIVEAWAY_UNITS_HELPER}
+            </p>
           ) : null}
           {field.key === "minimum_age" ? (
             <p className="text-xs text-muted-foreground">Depending of the laws in your country.</p>
@@ -1298,6 +1354,9 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
                 <div className="rounded-md border bg-slate-50 p-4 space-y-3">
                   <h4 className="text-sm font-semibold">A. Basic product information</h4>
                   <p className="text-xs text-muted-foreground">Provide your company and contact details for editorial follow-up.</p>
+                  {currentContext.order?.number ? (
+                    <p className="text-xs text-muted-foreground">Order number: {currentContext.order.number}</p>
+                  ) : null}
                   {renderFieldsByKeys(["company_name", "contact_email"])}
                 </div>
 
@@ -1422,7 +1481,7 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
                               <div className="rounded border bg-slate-50 p-3 space-y-2">
                                 <div className="flex flex-wrap items-center justify-between gap-2">
                                   <Button type="button" variant="outline" className="h-auto p-0 text-xs font-semibold" onClick={() => toggleGeoSection("europe_other")}>
-                                    {expandedGeoSections.europe_other ? "▾" : "▸"} Other European countries
+                                    {expandedGeoSections.europe_other ? "▾" : "▸"} Other European territories
                                   </Button>
                                   <div className="flex items-center gap-3">
                                     {(() => {
