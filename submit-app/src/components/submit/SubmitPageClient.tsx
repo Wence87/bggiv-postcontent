@@ -156,6 +156,21 @@ type ReservationChoice = {
   startsAtUtc?: string;
 };
 
+type GiveawayFreeHighlightOption = {
+  key:
+    | "audience_amplifier"
+    | "duration"
+    | "hero_grid"
+    | "sticky_post"
+    | "sidebar_spotlight"
+    | "extended_text_limit"
+    | "additional_images"
+    | "embedded_video"
+    | "weekly_newsletter_feature";
+  label: string;
+  level: string;
+};
+
 type DiagnosticState = {
   endpoint: string;
   status: number;
@@ -170,6 +185,17 @@ type SubmitPageClientProps = {
 const WP_BASE_URL = (process.env.NEXT_PUBLIC_WP_BASE_URL || "https://boardgamegiveaways.com").replace(/\/$/, "");
 const FRONTEND_TREE_MARKER = "root-src";
 const FRONTEND_BUILD_MARKER = process.env.NEXT_PUBLIC_BUILD_STAMP || "build-stamp-missing";
+const GIVEAWAY_FREE_HIGHLIGHT_OPTIONS: GiveawayFreeHighlightOption[] = [
+  { key: "audience_amplifier", label: "Audience Amplifier", level: "Multi-Action Entry" },
+  { key: "duration", label: "Duration", level: "4 Weeks" },
+  { key: "hero_grid", label: "Featured Spot in the Hero Grid", level: "7 Days" },
+  { key: "sticky_post", label: "Sticky Post", level: "7 Days" },
+  { key: "sidebar_spotlight", label: "Sidebar Spotlight", level: "7 Days" },
+  { key: "extended_text_limit", label: "Extended Text Limit", level: "No character limit" },
+  { key: "additional_images", label: "Additional Images", level: "Up to 3 additional images" },
+  { key: "embedded_video", label: "Embedded Video", level: "Enabled" },
+  { key: "weekly_newsletter_feature", label: "Weekly Newsletter Feature", level: "Enabled" },
+];
 
 function weekKeyToDate(weekKey: string): string {
   const match = /^(\d{4})-W(\d{2})$/.exec(weekKey);
@@ -256,6 +282,21 @@ function extractDaysLabel(value: string): string | null {
 function stripTrailingPriceFragment(value: string): string {
   const decodedDollar = value.replace(/&#0*36;|&dollar;/gi, "$").replace(/&nbsp;/gi, " ");
   return decodedDollar.replace(/\s*\(\s*\+?\s*\$?\s*[\d\s.,]+(?:\s*[A-Za-z]{3})?\s*\)\s*$/u, "").trim();
+}
+
+function decodeBasicHtmlEntities(value: string): string {
+  return value
+    .replace(/&amp;|&#0*38;/gi, "&")
+    .replace(/&quot;|&#0*34;/gi, "\"")
+    .replace(/&#0*39;|&apos;/gi, "'")
+    .replace(/&lt;|&#0*60;/gi, "<")
+    .replace(/&gt;|&#0*62;/gi, ">")
+    .replace(/&nbsp;|&#0*160;/gi, " ");
+}
+
+function normalizeSocialBoostValue(value: string): string {
+  const decoded = decodeBasicHtmlEntities(value).replace(/\s+/g, " ").trim();
+  return decoded.replace(/\bX\s*&\s*TikTok\b/gi, "X, TikTok");
 }
 
 function resolvePostBodyMaxLength(derivedValues: Record<string, unknown>, enabledOptions: string[]): number | null {
@@ -520,6 +561,21 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
     setFieldValue("selected_highlight_options", JSON.stringify(selectedHighlightOptions));
   }, [selectedHighlightOptions]);
 
+  useEffect(() => {
+    const isGiveaway = context?.product.product_type === "giveaway";
+    if (!isGiveaway) {
+      setSelectedHighlightOptions([]);
+      return;
+    }
+    const unlockedHighlightCount = computeUnlockedHighlights(Number(values.prize_units_count || 0));
+    const giveawayHighlightKeys = new Set<string>(GIVEAWAY_FREE_HIGHLIGHT_OPTIONS.map((entry) => entry.key));
+    setSelectedHighlightOptions((prev) => {
+      const filtered = prev.filter((key) => giveawayHighlightKeys.has(key));
+      if (filtered.length <= unlockedHighlightCount) return filtered;
+      return filtered.slice(0, unlockedHighlightCount);
+    });
+  }, [context?.product.product_type, values.prize_units_count]);
+
   if (loading) {
     return <div className="rounded-md border bg-white p-4 text-sm text-muted-foreground">Loading submission context...</div>;
   }
@@ -558,9 +614,8 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
   const giveawayUnitsCount = Number(values.prize_units_count || 0);
   const hasUnlimitedBody = isPostsProduct && postBodyMaxLength == null;
   const unlockedHighlightCount = isGiveaway ? computeUnlockedHighlights(giveawayUnitsCount) : 0;
-  const availableHighlightOptions = (currentContext.options ?? [])
-    .map((entry) => entry.option_key)
-    .filter((key) => /featured|spotlight|sticky|social_boost|newsletter/i.test(key));
+  const availableHighlightOptions = GIVEAWAY_FREE_HIGHLIGHT_OPTIONS;
+  const giveawayHighlightKeys = new Set<string>(GIVEAWAY_FREE_HIGHLIGHT_OPTIONS.map((entry) => entry.key));
   const allCountries = COUNTRY_GROUPS.world;
   const formFields = isPostsProduct
     ? DEFAULT_POSTS_FORM_FIELDS
@@ -670,12 +725,12 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
     };
 
     const resolveValue = (canonical: string, option: { selected_value?: string | null; selected_value_en?: string | null }): string => {
-      const selectedEn = (option.selected_value_en ?? "").trim();
+      const selectedEn = decodeBasicHtmlEntities((option.selected_value_en ?? "").trim());
       if (selectedEn) {
         return stripTrailingPriceFragment(selectedEn);
       }
 
-      const rawSelected = stripTrailingPriceFragment((option.selected_value ?? "").trim());
+      const rawSelected = stripTrailingPriceFragment(decodeBasicHtmlEntities((option.selected_value ?? "").trim()));
       const normalizedRaw = rawSelected.toLowerCase();
 
       if (canonical === "duration") {
@@ -715,7 +770,7 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
       }
 
       if (canonical === "social_boost") {
-        if (rawSelected && !/^\d+$/.test(rawSelected)) return rawSelected;
+        if (rawSelected && !/^\d+$/.test(rawSelected)) return normalizeSocialBoostValue(rawSelected);
         return "Enabled";
       }
 
@@ -1037,6 +1092,10 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
         setValidationError(destinationRequiredMessage);
         return false;
       }
+      if (selectedHighlightOptions.some((key) => !giveawayHighlightKeys.has(key))) {
+        setValidationError("Invalid free highlight option selected.");
+        return false;
+      }
       if (selectedHighlightOptions.length > unlockedHighlightCount) {
         setValidationError(`You can select at most ${unlockedHighlightCount} free highlight option(s).`);
         return false;
@@ -1352,6 +1411,7 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
   }
 
   const productType = currentContext.product.product_type;
+  const productBadgeLabel = productType === "promo" ? "Promo Deal" : productType.toUpperCase();
   const hasConfirmedReservation =
     reservationConfirmed &&
     Boolean(reservationChoice.weekKey || reservationChoice.monthKey || reservationChoice.startsAtUtc);
@@ -1407,7 +1467,11 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
   const toggleHighlightOption = (optionKey: string) => {
     setSelectedHighlightOptions((prev) => {
       if (prev.includes(optionKey)) return prev.filter((item) => item !== optionKey);
-      if (prev.length >= unlockedHighlightCount) return prev;
+      if (prev.length >= unlockedHighlightCount) {
+        setValidationError(`You can select at most ${unlockedHighlightCount} free highlight option(s).`);
+        return prev;
+      }
+      setValidationError(null);
       return [...prev, optionKey];
     });
   };
@@ -1453,7 +1517,7 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
       <section className="rounded-md border bg-white p-4">
         <div className="flex items-center justify-between">
           <h2 className="text-base font-semibold">Submission Context</h2>
-          <Badge variant="secondary">{productType.toUpperCase()}</Badge>
+          <Badge variant="secondary">{productBadgeLabel}</Badge>
         </div>
         <p className="mt-2 text-sm text-muted-foreground">Form: {currentContext.product.form_id}</p>
         <p className="text-sm text-muted-foreground">Product key: {currentContext.product.product_key}</p>
@@ -1580,24 +1644,25 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
                     {unlockedHighlightCount > 0 ? (
                       <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 space-y-2">
                         <p className="text-sm font-semibold text-emerald-900">
-                          {unlockedHighlightCount === 1 ? "🎁 Great! You unlocked 1 free Highlight Option." : null}
-                          {unlockedHighlightCount === 2 ? "🎁🎁 Great! You unlocked 2 free Highlight Options." : null}
-                          {unlockedHighlightCount >= 3 ? "🎁🎁🎁 Great! You unlocked 3 free Highlight Options." : null}
+                          {unlockedHighlightCount === 1 ? "🎁 You unlocked 1 free highlight option at its maximum level." : null}
+                          {unlockedHighlightCount === 2 ? "🎁🎁 You unlocked 2 free highlight options at their maximum level." : null}
+                          {unlockedHighlightCount >= 3 ? "🎁🎁🎁 You unlocked 3 free highlight options at their maximum level." : null}
                         </p>
                         <p className="text-xs text-emerald-900">
-                          Based on your prize quantity, you can select up to {unlockedHighlightCount} free highlight option(s).
+                          {unlockedHighlightCount === 1 ? "Select the highlight option you want to activate for free." : null}
+                          {unlockedHighlightCount === 2 ? "Select up to 2 highlight options to activate for free." : null}
+                          {unlockedHighlightCount >= 3 ? "Select up to 3 highlight options to activate for free." : null}
                         </p>
                         {availableHighlightOptions.length > 0 ? (
                           <div className="grid gap-2 sm:grid-cols-2">
-                            {availableHighlightOptions.map((optionKey) => (
-                              <label key={optionKey} className="flex items-center gap-2 text-sm">
+                            {availableHighlightOptions.map((option) => (
+                              <label key={option.key} className="flex items-center gap-2 text-sm">
                                 <input
                                   type="checkbox"
-                                  checked={selectedHighlightOptions.includes(optionKey)}
-                                  onChange={() => toggleHighlightOption(optionKey)}
-                                  disabled={!selectedHighlightOptions.includes(optionKey) && selectedHighlightOptions.length >= unlockedHighlightCount}
+                                  checked={selectedHighlightOptions.includes(option.key)}
+                                  onChange={() => toggleHighlightOption(option.key)}
                                 />
-                                <span>{optionKey.replace(/_/g, " ")}</span>
+                                <span>{option.label} — {option.level}</span>
                               </label>
                             ))}
                           </div>

@@ -12,6 +12,17 @@ const ADS_SPONSOR_IMAGE_MAX_SIZE_BYTES = 200 * 1024;
 const POSTS_IMAGE_MAX_SIZE_BYTES = 500 * 1024;
 const ALLOWED_JPEG_MIMES = new Set(["image/jpeg", "image/pjpeg"]);
 const ALLOWED_POSTS_IMAGE_MIMES = new Set(["image/jpeg", "image/pjpeg", "image/webp"]);
+const GIVEAWAY_FREE_HIGHLIGHT_KEYS = new Set([
+  "audience_amplifier",
+  "duration",
+  "hero_grid",
+  "sticky_post",
+  "sidebar_spotlight",
+  "extended_text_limit",
+  "additional_images",
+  "embedded_video",
+  "weekly_newsletter_feature",
+]);
 
 function apiError(status: number, code: string, message: string) {
   return NextResponse.json({ code, message }, { status });
@@ -160,6 +171,28 @@ function computeUnlockedHighlights(units: number): number {
   if (units >= 10) return 2;
   if (units >= 5) return 1;
   return 0;
+}
+
+function toCanonicalGiveawayHighlightKey(raw: string): string | null {
+  const normalized = normalizeOptionKey(raw);
+  const aliasToCanonical: Record<string, string> = {
+    audienceamplifier: "audience_amplifier",
+    duration: "duration",
+    giveawayduration: "duration",
+    herogrid: "hero_grid",
+    featuredspotherogrid: "hero_grid",
+    featuredspotherogrid7days: "hero_grid",
+    stickypost: "sticky_post",
+    sidebarspotlight: "sidebar_spotlight",
+    extendedtextlimit: "extended_text_limit",
+    additionalimages: "additional_images",
+    embeddedvideo: "embedded_video",
+    weeklynewsletterfeature: "weekly_newsletter_feature",
+    weeklynewsletter: "weekly_newsletter_feature",
+    newsletterfeature: "weekly_newsletter_feature",
+  };
+  const canonical = aliasToCanonical[normalized] ?? null;
+  return canonical && GIVEAWAY_FREE_HIGHLIGHT_KEYS.has(canonical) ? canonical : null;
 }
 
 function monthKeyToRange(monthKey: string): { startDate: string; endDate: string } | null {
@@ -361,7 +394,7 @@ export async function POST(request: NextRequest) {
   const prizeUnitValueUsd = Number(normalizeString(formData.prize_unit_value_usd));
   const minimumAge = Number(normalizeString(formData.minimum_age));
   const shippingCountries = parseJsonStringArray(formData.shipping_countries);
-  const selectedHighlightOptions = parseJsonStringArray(formData.selected_highlight_options);
+  const selectedHighlightOptionsRaw = parseJsonStringArray(formData.selected_highlight_options);
   const reservationMonthKey = normalizeString(reservationChoice.monthKey);
   const reservationWeekKey = normalizeString(reservationChoice.weekKey);
   const reservationStartsAt = normalizeString(reservationChoice.startsAtUtc);
@@ -380,6 +413,15 @@ export async function POST(request: NextRequest) {
     context.product.product_type === "promo" ||
     context.product.product_type === "giveaway";
   const isGiveaway = context.product.product_type === "giveaway";
+  const selectedHighlightOptions = isGiveaway
+    ? Array.from(
+        new Set(
+          selectedHighlightOptionsRaw
+            .map((value) => toCanonicalGiveawayHighlightKey(value))
+            .filter((value): value is string => Boolean(value))
+        )
+      )
+    : selectedHighlightOptionsRaw;
 
   if (!effectiveCompanyName || !effectiveContactEmail) {
     return badRequest("Missing required form fields");
@@ -456,6 +498,9 @@ export async function POST(request: NextRequest) {
     }
     if (shippingCountries.length < 1) {
       return badRequest("You must select at least one destination where the prize can be shipped.");
+    }
+    if (selectedHighlightOptionsRaw.some((value) => !toCanonicalGiveawayHighlightKey(value))) {
+      return badRequest("Invalid free highlight option selected.");
     }
     const unlocked = computeUnlockedHighlights(prizeUnitsCount);
     if (selectedHighlightOptions.length > unlocked) {
