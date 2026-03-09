@@ -171,6 +171,24 @@ type GiveawayFreeHighlightOption = {
   level: string;
 };
 
+type AudienceAmplifierField = {
+  key:
+    | "audience_amplifier_boardgamegeek_thread_url"
+    | "audience_amplifier_tweet_message_text"
+    | "audience_amplifier_newsletter_signup_url"
+    | "audience_amplifier_instagram_url"
+    | "audience_amplifier_tiktok_url"
+    | "audience_amplifier_youtube_channel_url"
+    | "audience_amplifier_x_profile_url"
+    | "audience_amplifier_referral_message"
+    | "audience_amplifier_referral_target_url"
+    | "audience_amplifier_youtube_video_url"
+    | "audience_amplifier_visit_page_url";
+  title: string;
+  helper: string;
+  type: "url" | "text";
+};
+
 type DiagnosticState = {
   endpoint: string;
   status: number;
@@ -195,6 +213,74 @@ const GIVEAWAY_FREE_HIGHLIGHT_OPTIONS: GiveawayFreeHighlightOption[] = [
   { key: "additional_images", label: "Additional Images", level: "Up to 3 additional images" },
   { key: "embedded_video", label: "Embedded Video", level: "Enabled" },
   { key: "weekly_newsletter_feature", label: "Weekly Newsletter Feature", level: "Enabled" },
+];
+const AUDIENCE_AMPLIFIER_FIELDS: AudienceAmplifierField[] = [
+  {
+    key: "audience_amplifier_boardgamegeek_thread_url",
+    title: "Subscribe to a BoardGameGeek thread",
+    helper: "URL of the BGG thread participants must subscribe to.",
+    type: "url",
+  },
+  {
+    key: "audience_amplifier_tweet_message_text",
+    title: "Tweet message",
+    helper: "Prefilled share message template for X/Twitter.",
+    type: "text",
+  },
+  {
+    key: "audience_amplifier_newsletter_signup_url",
+    title: "Join an email newsletter",
+    helper: "Newsletter signup page URL.",
+    type: "url",
+  },
+  {
+    key: "audience_amplifier_instagram_url",
+    title: "Visit the publisher's Instagram",
+    helper: "Instagram profile URL.",
+    type: "url",
+  },
+  {
+    key: "audience_amplifier_tiktok_url",
+    title: "Follow the publisher on TikTok",
+    helper: "TikTok profile URL.",
+    type: "url",
+  },
+  {
+    key: "audience_amplifier_youtube_channel_url",
+    title: "Visit the publisher's YouTube channel",
+    helper: "YouTube channel URL.",
+    type: "url",
+  },
+  {
+    key: "audience_amplifier_x_profile_url",
+    title: "Visit the publisher's X page",
+    helper: "X/Twitter profile URL.",
+    type: "url",
+  },
+  {
+    key: "audience_amplifier_referral_message",
+    title: "Refer a friend",
+    helper: "Referral invitation message shown to participants.",
+    type: "text",
+  },
+  {
+    key: "audience_amplifier_referral_target_url",
+    title: "Refer a friend target URL",
+    helper: "Optional landing URL used in referral action.",
+    type: "url",
+  },
+  {
+    key: "audience_amplifier_youtube_video_url",
+    title: "Watch a YouTube video",
+    helper: "Direct YouTube video URL.",
+    type: "url",
+  },
+  {
+    key: "audience_amplifier_visit_page_url",
+    title: "Visit a page",
+    helper: "Any URL (Kickstarter, publisher website, campaign page, etc.).",
+    type: "url",
+  },
 ];
 
 function weekKeyToDate(weekKey: string): string {
@@ -355,6 +441,15 @@ function computeUnlockedHighlights(units: number): number {
   if (units >= 10) return 2;
   if (units >= 5) return 1;
   return 0;
+}
+
+function isValidHttpUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
 function resolveGiveawayDurationDaysFromContext(
@@ -611,6 +706,12 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
         (entry) => Boolean(entry.enabled) && normalizeOptionKey(entry.option_key).includes("additionalimages")
       ) ||
       hasOption(currentContext.enabled_options ?? [], "additional_images"));
+  const hasAudienceAmplifier =
+    isGiveaway &&
+    (hasOption(currentContext.enabled_options ?? [], "audience_amplifier") ||
+      (currentContext.options ?? []).some(
+        (entry) => Boolean(entry.enabled) && normalizeOptionKey(entry.option_key).includes("audienceamplifier")
+      ));
   const giveawayUnitsCount = Number(values.prize_units_count || 0);
   const hasUnlimitedBody = isPostsProduct && postBodyMaxLength == null;
   const unlockedHighlightCount = isGiveaway ? computeUnlockedHighlights(giveawayUnitsCount) : 0;
@@ -1091,6 +1192,26 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
       if (selectedShippingCountries.length < 1) {
         setValidationError(destinationRequiredMessage);
         return false;
+      }
+      if (hasAudienceAmplifier) {
+        for (const field of AUDIENCE_AMPLIFIER_FIELDS) {
+          const value = (values[field.key] ?? "").trim();
+          if (field.key === "audience_amplifier_referral_target_url") {
+            if (value && !isValidHttpUrl(value)) {
+              setValidationError(`${field.title} must be a valid URL.`);
+              return false;
+            }
+            continue;
+          }
+          if (!value) {
+            setValidationError(`Missing required field: ${field.title}`);
+            return false;
+          }
+          if (field.type === "url" && !isValidHttpUrl(value)) {
+            setValidationError(`${field.title} must be a valid URL.`);
+            return false;
+          }
+        }
       }
       if (selectedHighlightOptions.some((key) => !giveawayHighlightKeys.has(key))) {
         setValidationError("Invalid free highlight option selected.");
@@ -1618,27 +1739,27 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
             {isPostsProduct ? (
               <div className="space-y-4">
                 <div className="rounded-md border bg-slate-50 p-4 space-y-3">
-                  <h4 className="text-sm font-semibold">A. Basic product information</h4>
+                  <h4 className="text-sm font-semibold">{isGiveaway ? "BASIC PRODUCT INFORMATION" : "A. Basic product information"}</h4>
                   {resolvedOrderNumber ? renderField({ key: "order_number", label: "Order number", type: "text", readonly: true }) : null}
                   {renderFieldsByKeys(["company_name", "contact_email"])}
                 </div>
 
                 <div className="rounded-md border bg-slate-50 p-4 space-y-3">
-                  <h4 className="text-sm font-semibold">B. Visual assets</h4>
+                  <h4 className="text-sm font-semibold">{isGiveaway ? "VISUAL ASSETS" : "B. Visual assets"}</h4>
                   <p className="text-xs text-muted-foreground">{COVER_IMAGE_HELPER}</p>
                   {renderFieldsByKeys(["cover_image_upload"])}
                   {hasAdditionalImages ? renderFieldsByKeys(["additional_image_1", "additional_image_2", "additional_image_3"]) : null}
                 </div>
 
                 <div className="rounded-md border bg-slate-50 p-4 space-y-3">
-                  <h4 className="text-sm font-semibold">C. Main content</h4>
+                  <h4 className="text-sm font-semibold">{isGiveaway ? "MAIN CONTENT" : "C. Main content"}</h4>
                   <p className="text-xs text-muted-foreground">Craft a clear editorial message for your audience. All submissions are reviewed by our editorial team before publication and must follow our contributor guidelines.</p>
                   {renderFieldsByKeys(isGiveaway && hasEmbeddedVideo ? ["title", "body", "short_product_description", "embedded_video_link"] : ["title", "body", "short_product_description"])}
                 </div>
 
                 {isGiveaway ? (
                   <div className="rounded-md border bg-slate-50 p-4 space-y-3">
-                    <h4 className="text-sm font-semibold">D. Giveaway details</h4>
+                    <h4 className="text-sm font-semibold">GIVEAWAY DETAILS</h4>
                     <p className="text-xs text-muted-foreground">Define prize details and audience requirements.</p>
                     {renderFieldsByKeys(["prize_name", "prize_short_description", "giveaway_category", "prize_unit_value_usd", "prize_units_count"])}
                     {unlockedHighlightCount > 0 ? (
@@ -1686,14 +1807,14 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
                 {isGiveaway ? (
                   <>
                     <div className="rounded-md border bg-slate-50 p-4 space-y-3">
-                      <h4 className="text-sm font-semibold">E. Publication / timing</h4>
+                      <h4 className="text-sm font-semibold">PUBLICATION / TIMING</h4>
                       <p className="text-xs text-muted-foreground">Dates are derived from your reservation and purchased duration.</p>
                       <p className="text-xs text-muted-foreground">{GIVEAWAY_DATES_HELPER}</p>
                       {renderFieldsByKeys(["start_date", "end_date"])}
                     </div>
 
                     <div className="rounded-md border bg-slate-50 p-4 space-y-3">
-                      <h4 className="text-sm font-semibold">F. Distribution / eligibility</h4>
+                      <h4 className="text-sm font-semibold">DISTRIBUTION / ELIGIBILITY</h4>
                       <p className="text-xs text-muted-foreground">Select where you can ship the giveaway prize.</p>
                       {validationError === destinationRequiredMessage ? (
                         <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -1818,9 +1939,45 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
                     </div>
 
                     <div className="rounded-md border bg-slate-50 p-4 space-y-3">
-                      <h4 className="text-sm font-semibold">G. Quiz question and answers</h4>
+                      <h4 className="text-sm font-semibold">QUIZ QUESTION AND ANSWERS</h4>
                       {renderFieldsByKeys(["giveaway_question", "answer_correct", "answer_wrong_1", "answer_wrong_2", "answer_wrong_3", "answer_wrong_4"])}
                     </div>
+                    {hasAudienceAmplifier ? (
+                      <div className="rounded-md border bg-slate-50 p-4 space-y-3">
+                        <h4 className="text-sm font-semibold">AUDIENCE AMPLIFIER</h4>
+                        <p className="text-xs text-muted-foreground">
+                          Configure the Multi-Action Entry interactions for this giveaway.
+                        </p>
+                        <div className="space-y-3">
+                          {AUDIENCE_AMPLIFIER_FIELDS.map((field) => (
+                            <div key={field.key} className="rounded-md border bg-white p-3 space-y-2">
+                              <p className="text-sm font-semibold">{field.title}</p>
+                              <p className="text-xs text-muted-foreground">{field.helper}</p>
+                              {field.type === "url" ? (
+                                <Input
+                                  id={field.key}
+                                  name={field.key}
+                                  type="url"
+                                  required={field.key !== "audience_amplifier_referral_target_url"}
+                                  value={values[field.key] ?? ""}
+                                  onChange={(event) => setFieldValue(field.key, event.target.value)}
+                                />
+                              ) : (
+                                <textarea
+                                  id={field.key}
+                                  name={field.key}
+                                  required
+                                  value={values[field.key] ?? ""}
+                                  onChange={(event) => setFieldValue(field.key, event.target.value)}
+                                  className="w-full rounded-md border px-3 py-2 text-sm"
+                                  rows={3}
+                                />
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
                   </>
                 ) : null}
 

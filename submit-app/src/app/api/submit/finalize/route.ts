@@ -23,6 +23,17 @@ const GIVEAWAY_FREE_HIGHLIGHT_KEYS = new Set([
   "embedded_video",
   "weekly_newsletter_feature",
 ]);
+const AUDIENCE_AMPLIFIER_ACTION_KEYS = [
+  "boardgamegeek_thread_url",
+  "tweet_message_text",
+  "newsletter_signup_url",
+  "instagram_url",
+  "tiktok_url",
+  "youtube_channel_url",
+  "x_profile_url",
+  "youtube_video_url",
+  "visit_page_url",
+] as const;
 
 function apiError(status: number, code: string, message: string) {
   return NextResponse.json({ code, message }, { status });
@@ -193,6 +204,32 @@ function toCanonicalGiveawayHighlightKey(raw: string): string | null {
   };
   const canonical = aliasToCanonical[normalized] ?? null;
   return canonical && GIVEAWAY_FREE_HIGHLIGHT_KEYS.has(canonical) ? canonical : null;
+}
+
+function isValidHttpUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function hasAudienceAmplifierEnabled(context: Record<string, unknown>): boolean {
+  const enabledOptions = Array.isArray(context.enabled_options) ? context.enabled_options : [];
+  if (
+    enabledOptions.some(
+      (value) => typeof value === "string" && normalizeOptionKey(value).includes(normalizeOptionKey("audience_amplifier"))
+    )
+  ) {
+    return true;
+  }
+  const options = Array.isArray(context.options) ? context.options : [];
+  return options.some((option) => {
+    if (!option || typeof option !== "object") return false;
+    const map = option as Record<string, unknown>;
+    return Boolean(map.enabled) && typeof map.option_key === "string" && normalizeOptionKey(map.option_key).includes("audienceamplifier");
+  });
 }
 
 function monthKeyToRange(monthKey: string): { startDate: string; endDate: string } | null {
@@ -413,6 +450,7 @@ export async function POST(request: NextRequest) {
     context.product.product_type === "promo" ||
     context.product.product_type === "giveaway";
   const isGiveaway = context.product.product_type === "giveaway";
+  const hasAudienceAmplifier = isGiveaway && hasAudienceAmplifierEnabled(context as unknown as Record<string, unknown>);
   const selectedHighlightOptions = isGiveaway
     ? Array.from(
         new Set(
@@ -422,6 +460,21 @@ export async function POST(request: NextRequest) {
         )
       )
     : selectedHighlightOptionsRaw;
+  const audienceAmplifierActions = {
+    boardgamegeek_thread_url: normalizeString(formData.audience_amplifier_boardgamegeek_thread_url),
+    tweet_message_text: normalizeString(formData.audience_amplifier_tweet_message_text),
+    newsletter_signup_url: normalizeString(formData.audience_amplifier_newsletter_signup_url),
+    instagram_url: normalizeString(formData.audience_amplifier_instagram_url),
+    tiktok_url: normalizeString(formData.audience_amplifier_tiktok_url),
+    youtube_channel_url: normalizeString(formData.audience_amplifier_youtube_channel_url),
+    x_profile_url: normalizeString(formData.audience_amplifier_x_profile_url),
+    refer_a_friend: {
+      referral_message: normalizeString(formData.audience_amplifier_referral_message),
+      target_url: normalizeString(formData.audience_amplifier_referral_target_url),
+    },
+    youtube_video_url: normalizeString(formData.audience_amplifier_youtube_video_url),
+    visit_page_url: normalizeString(formData.audience_amplifier_visit_page_url),
+  };
 
   if (!effectiveCompanyName || !effectiveContactEmail) {
     return badRequest("Missing required form fields");
@@ -501,6 +554,26 @@ export async function POST(request: NextRequest) {
     }
     if (selectedHighlightOptionsRaw.some((value) => !toCanonicalGiveawayHighlightKey(value))) {
       return badRequest("Invalid free highlight option selected.");
+    }
+    if (hasAudienceAmplifier) {
+      for (const key of AUDIENCE_AMPLIFIER_ACTION_KEYS) {
+        const value = audienceAmplifierActions[key];
+        if (!value) {
+          return badRequest(`Missing Audience Amplifier field: ${key}`);
+        }
+        if (!isValidHttpUrl(value)) {
+          return badRequest(`Invalid Audience Amplifier URL: ${key}`);
+        }
+      }
+      if (!audienceAmplifierActions.refer_a_friend.referral_message) {
+        return badRequest("Missing Audience Amplifier field: refer_a_friend.referral_message");
+      }
+      if (
+        audienceAmplifierActions.refer_a_friend.target_url &&
+        !isValidHttpUrl(audienceAmplifierActions.refer_a_friend.target_url)
+      ) {
+        return badRequest("Invalid Audience Amplifier URL: refer_a_friend.target_url");
+      }
     }
     const unlocked = computeUnlockedHighlights(prizeUnitsCount);
     if (selectedHighlightOptions.length > unlocked) {
@@ -635,6 +708,7 @@ export async function POST(request: NextRequest) {
           embedded_video_link: embeddedVideoLink || undefined,
           shipping_countries: shippingCountries,
           selected_highlight_options: selectedHighlightOptions,
+          audience_amplifier_actions: hasAudienceAmplifier ? audienceAmplifierActions : undefined,
           start_date: effectiveStartDate,
           end_date: effectiveEndDate || undefined,
         },
