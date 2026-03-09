@@ -136,11 +136,23 @@ final class BGG_Order_Context_Resolver {
 
             $match = self::resolve_option_match($option, $meta);
             $option_key = (string) ($option['option_key'] ?? '');
+            $canonical_key = self::canonical_option_key(
+                $option_key,
+                (string) ($option['option_name'] ?? ''),
+                (string) ($option['technical_slug'] ?? '')
+            );
+            $selected_raw = !empty($match['enabled']) && is_string($match['raw_value'])
+                ? self::clean_selected_value((string) $match['raw_value'])
+                : null;
 
             $option_payload = [
                 'option_key' => $option_key,
+                'canonical_key' => $canonical_key,
+                'display_label' => self::option_display_label($canonical_key),
                 'business_type' => (string) ($option['business_type'] ?? ''),
                 'enabled' => (bool) $match['enabled'],
+                'selected_value' => $selected_raw,
+                'selected_value_en' => self::normalize_selected_value_en($canonical_key, $selected_raw),
             ];
 
             if (!empty($match['enabled'])) {
@@ -424,6 +436,129 @@ final class BGG_Order_Context_Resolver {
         }
 
         return true;
+    }
+
+    private static function clean_selected_value(string $raw): string {
+        $value = trim($raw);
+        if ($value === '') {
+            return '';
+        }
+
+        // Remove trailing Woo price fragments.
+        $value = preg_replace('/\s*\(\+\s*[$€£]\s*[\d.,]+\)\s*$/u', '', $value) ?? $value;
+        $value = preg_replace('/\s*\(\s*[\d.,]+\s*[$€£]\s*\)\s*$/u', '', $value) ?? $value;
+        $value = trim($value);
+
+        // Normalize known non-English leftovers.
+        $lc = strtolower($value);
+        if ($lc === 'illimité' || $lc === 'illimite') {
+            return 'No character limit';
+        }
+
+        return $value;
+    }
+
+    private static function canonical_option_key(string $option_key, string $option_name, string $technical_slug): string {
+        $candidates = [
+            self::normalize_match_key($option_key),
+            self::normalize_match_key($option_name),
+            self::normalize_match_key($technical_slug),
+        ];
+
+        foreach ($candidates as $normalized) {
+            if ($normalized === '') continue;
+            if (strpos($normalized, 'audienceamplifier') !== false) return 'audience_amplifier';
+            if (strpos($normalized, 'duration') !== false) return 'duration';
+            if (strpos($normalized, 'socialboost') !== false) return 'social_boost';
+            if (strpos($normalized, 'herogrid') !== false || strpos($normalized, 'featuredspot') !== false) return 'hero_grid';
+            if (strpos($normalized, 'stickypost') !== false) return 'sticky_post';
+            if (strpos($normalized, 'sidebarspotlight') !== false) return 'sidebar_spotlight';
+            if (strpos($normalized, 'extendedtext') !== false) return 'extended_text_limit';
+            if (strpos($normalized, 'additionalimages') !== false) return 'additional_images';
+            if (strpos($normalized, 'embeddedvideo') !== false) return 'embedded_video';
+            if (strpos($normalized, 'newsletter') !== false) return 'weekly_newsletter_feature';
+        }
+
+        return self::normalize_match_key($option_key);
+    }
+
+    private static function option_display_label(string $canonical_key): string {
+        $map = [
+            'audience_amplifier' => 'Audience Amplifier',
+            'duration' => 'Duration',
+            'social_boost' => 'Social Boost',
+            'hero_grid' => 'Featured Spot in the Hero Grid',
+            'sticky_post' => 'Sticky Post',
+            'sidebar_spotlight' => 'Sidebar Spotlight',
+            'extended_text_limit' => 'Extended Text Limit',
+            'additional_images' => 'Additional Images',
+            'embedded_video' => 'Embedded Video',
+            'weekly_newsletter_feature' => 'Weekly Newsletter Feature',
+        ];
+        return $map[$canonical_key] ?? '';
+    }
+
+    private static function normalize_selected_value_en(string $canonical_key, ?string $selected_raw): ?string {
+        $raw = is_string($selected_raw) ? trim($selected_raw) : '';
+        $normalized = strtolower($raw);
+
+        if ($canonical_key === 'extended_text_limit') {
+            return 'No character limit';
+        }
+        if ($canonical_key === 'additional_images') {
+            return 'Up to 3 additional images';
+        }
+        if ($canonical_key === 'embedded_video' || $canonical_key === 'weekly_newsletter_feature') {
+            return 'Enabled';
+        }
+
+        if ($canonical_key === 'duration') {
+            $weeks = self::extract_weeks_any_locale($raw);
+            if ($weeks !== null) return $weeks . ' Week' . ($weeks > 1 ? 's' : '');
+            return null;
+        }
+
+        if (in_array($canonical_key, ['hero_grid', 'sticky_post', 'sidebar_spotlight'], true)) {
+            $days = self::extract_days_any_locale($raw);
+            if ($days !== null) return $days . ' Day' . ($days > 1 ? 's' : '');
+            return null;
+        }
+
+        if ($raw === '' || preg_match('/^\d+$/', $raw) === 1) {
+            return null;
+        }
+        if ($normalized === 'illimité' || $normalized === 'illimite') {
+            return 'No character limit';
+        }
+        if (strpos($normalized, 'de ') !== false && strpos($normalized, 'jour') !== false) {
+            return null;
+        }
+
+        return $raw;
+    }
+
+    private static function extract_weeks_any_locale(string $raw): ?int {
+        $raw = strtolower(trim($raw));
+        if ($raw === '') return null;
+        if (preg_match('/\b([1-4])\s*(week|weeks|semaine|semaines)\b/u', $raw, $m) === 1) {
+            return (int) $m[1];
+        }
+        if (preg_match('/\b(7|14|21|28)\s*(day|days|jour|jours)\b/u', $raw, $m) === 1) {
+            return (int) ((int) $m[1] / 7);
+        }
+        return null;
+    }
+
+    private static function extract_days_any_locale(string $raw): ?int {
+        $raw = strtolower(trim($raw));
+        if ($raw === '') return null;
+        if (preg_match('/\b(1|2|3|4|5|6|7|14|21|28)\s*(day|days|jour|jours)\b/u', $raw, $m) === 1) {
+            return (int) $m[1];
+        }
+        if (preg_match('/\b([1-4])\s*(week|weeks|semaine|semaines)\b/u', $raw, $m) === 1) {
+            return (int) $m[1] * 7;
+        }
+        return null;
     }
 
     private static function extract_duration_weeks(string $raw): ?int {

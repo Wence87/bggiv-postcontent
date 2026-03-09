@@ -132,8 +132,12 @@ type OrderContextResponse = {
   };
   options: Array<{
     option_key: string;
+    canonical_key?: string;
+    display_label?: string;
     business_type: string;
     enabled: boolean;
+    selected_value?: string | null;
+    selected_value_en?: string | null;
   }>;
   enabled_options: string[];
   derived_values: Record<string, unknown>;
@@ -217,6 +221,36 @@ function toTitleFromKey(raw: string): string {
     .replace(/\s+/g, " ")
     .trim()
     .replace(/\b\w/g, (m) => m.toUpperCase());
+}
+
+function extractWeeksLabel(value: string): string | null {
+  const normalized = value.toLowerCase().trim();
+  const weekMatch = /([1-4])\s*week/.exec(normalized);
+  if (weekMatch) {
+    const weeks = Number(weekMatch[1]);
+    return `${weeks} Week${weeks > 1 ? "s" : ""}`;
+  }
+  const dayMatch = /(7|14|21|28)\s*day/.exec(normalized);
+  if (dayMatch) {
+    const weeks = Number(dayMatch[1]) / 7;
+    return `${weeks} Week${weeks > 1 ? "s" : ""}`;
+  }
+  return null;
+}
+
+function extractDaysLabel(value: string): string | null {
+  const normalized = value.toLowerCase().trim();
+  const dayMatch = /(1|2|3|4|5|6|7|14|21|28)\s*day/.exec(normalized);
+  if (dayMatch) {
+    const days = Number(dayMatch[1]);
+    return `${days} Day${days > 1 ? "s" : ""}`;
+  }
+  const weekMatch = /([1-4])\s*week/.exec(normalized);
+  if (weekMatch) {
+    const days = Number(weekMatch[1]) * 7;
+    return `${days} Days`;
+  }
+  return null;
 }
 
 function resolvePostBodyMaxLength(derivedValues: Record<string, unknown>, enabledOptions: string[]): number | null {
@@ -574,52 +608,156 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
   const destinationRequiredMessage = "You must select at least one destination where the prize can be shipped.";
   const activeOptionSummaries = (() => {
     const options = Array.isArray(currentContext.options) ? currentContext.options : [];
-    const derived = currentContext.derived_values ?? {};
     const enabledKeys = new Set(
       (currentContext.enabled_options ?? [])
         .filter((v): v is string => typeof v === "string")
         .map((v) => normalizeOptionKey(v))
     );
-    const labelByKey: Record<string, string> = {
-      giveawayduration: "Duration",
-      additionalimages: "Additional Images",
-      embeddedvideo: "Embedded Video",
-      extendedtextlimit: "Extended Text Limit",
-      socialboost: "Social Boost",
-      stickypost: "Sticky Post",
-      newsposthighlight: "News Post Highlight",
-      newsletterspot: "Newsletter Spot",
-      newsletterspotlight: "Newsletter Spotlight",
-      sidebarspotlight: "Sidebar Spotlight",
-      herogrid: "Hero Grid",
-      featurednewslist: "Featured News List",
+    const labelByCanonical: Record<string, string> = {
+      audience_amplifier: "Audience Amplifier",
+      duration: "Duration",
+      social_boost: "Social Boost",
+      hero_grid: "Featured Spot in the Hero Grid",
+      sticky_post: "Sticky Post",
+      sidebar_spotlight: "Sidebar Spotlight",
+      extended_text_limit: "Extended Text Limit",
+      additional_images: "Additional Images",
+      embedded_video: "Embedded Video",
+      weekly_newsletter_feature: "Weekly Newsletter Feature",
+    };
+    const summaryByCanonical = new Map<string, { key: string; label: string; value: string }>();
+
+    const toCanonical = (rawKey: string): string => {
+      const normalized = normalizeOptionKey(rawKey);
+      const aliasToCanonical: Record<string, string> = {
+        audienceamplifier: "audience_amplifier",
+        giveawayduration: "duration",
+        duration: "duration",
+        socialboost: "social_boost",
+        featuredspotherogrid: "hero_grid",
+        herogrid: "hero_grid",
+        featuredspotherogrid7days: "hero_grid",
+        stickypost: "sticky_post",
+        sidebarspotlight: "sidebar_spotlight",
+        extendedtextlimit: "extended_text_limit",
+        extendedtext_limit: "extended_text_limit",
+        additionalimages: "additional_images",
+        additional_images: "additional_images",
+        embeddedvideo: "embedded_video",
+        embedded_video: "embedded_video",
+        weeklynewsletter: "weekly_newsletter_feature",
+        weeklynewsletterfeature: "weekly_newsletter_feature",
+        newsletterfeature: "weekly_newsletter_feature",
+        newsletter_feature: "weekly_newsletter_feature",
+      };
+      if (aliasToCanonical[normalized]) return aliasToCanonical[normalized];
+      if (normalized.includes("herogrid")) return "hero_grid";
+      if (normalized.includes("newsletter")) return "weekly_newsletter_feature";
+      if (normalized.includes("extendedtext")) return "extended_text_limit";
+      if (normalized.includes("additionalimages")) return "additional_images";
+      if (normalized.includes("embeddedvideo")) return "embedded_video";
+      if (normalized.includes("socialboost")) return "social_boost";
+      if (normalized.includes("stickypost")) return "sticky_post";
+      if (normalized.includes("sidebarspotlight")) return "sidebar_spotlight";
+      if (normalized.includes("duration")) return "duration";
+      if (normalized.includes("audienceamplifier")) return "audience_amplifier";
+      return normalized;
     };
 
-    return options
-      .filter((option) => Boolean(option.enabled) || enabledKeys.has(normalizeOptionKey(option.option_key)))
-      .map((option) => {
-        const normalizedKey = normalizeOptionKey(option.option_key);
-        const label = labelByKey[normalizedKey] ?? toTitleFromKey(option.option_key);
-        let value = "Enabled";
-        const derivedValue = derived[option.option_key];
+    const resolveValue = (canonical: string, option: { selected_value?: string | null; selected_value_en?: string | null }): string => {
+      const selectedEn = (option.selected_value_en ?? "").trim();
+      if (selectedEn) {
+        return selectedEn;
+      }
 
-        if (normalizedKey.includes("duration") && isGiveaway && derivedGiveawayDurationDaysUsed) {
-          const weeks = Math.max(1, Math.round(derivedGiveawayDurationDaysUsed / 7));
-          value = `${weeks} Week${weeks > 1 ? "s" : ""}`;
-        } else if (derivedValue && typeof derivedValue === "object") {
-          const dv = derivedValue as Record<string, unknown>;
-          if (typeof dv.final === "string" && dv.final.trim()) value = dv.final.trim();
-          else if (typeof dv.final === "number") value = String(dv.final);
-          else if (typeof dv.duration_weeks_purchased === "number") value = `${dv.duration_weeks_purchased} Week${dv.duration_weeks_purchased > 1 ? "s" : ""}`;
-          else if (typeof dv.duration_days_final === "number") value = `${dv.duration_days_final} Days`;
-        } else if (typeof derivedValue === "string" && derivedValue.trim()) {
-          value = derivedValue.trim();
-        } else if (typeof derivedValue === "number") {
-          value = String(derivedValue);
+      const rawSelected = (option.selected_value ?? "").trim();
+      const normalizedRaw = rawSelected.toLowerCase();
+
+      if (canonical === "duration") {
+        if (rawSelected) {
+          const fromRaw = extractWeeksLabel(rawSelected);
+          if (fromRaw) return fromRaw;
         }
+        if (derivedGiveawayDurationDaysUsed) {
+          const weeks = Math.max(1, Math.round(derivedGiveawayDurationDaysUsed / 7));
+          return `${weeks} Week${weeks > 1 ? "s" : ""}`;
+        }
+        return "";
+      }
 
-        return { key: option.option_key, label, value };
+      if (canonical === "extended_text_limit") {
+        if (normalizedRaw.includes("no character limit") || normalizedRaw.includes("unlimited") || normalizedRaw.includes("illimité")) {
+          return "No character limit";
+        }
+        return "No character limit";
+      }
+
+      if (canonical === "additional_images") {
+        return "Up to 3 additional images";
+      }
+
+      if (canonical === "hero_grid" || canonical === "sticky_post" || canonical === "sidebar_spotlight") {
+        if (rawSelected) {
+          const fromRaw = extractDaysLabel(rawSelected);
+          if (fromRaw) return fromRaw;
+        }
+        return "Enabled";
+      }
+
+      if (canonical === "audience_amplifier") {
+        if (rawSelected && !/^\d+$/.test(rawSelected)) return toTitleFromKey(rawSelected);
+        return "Enabled";
+      }
+
+      if (canonical === "social_boost") {
+        if (rawSelected && !/^\d+$/.test(rawSelected)) return rawSelected;
+        return "Enabled";
+      }
+
+      if (canonical === "embedded_video" || canonical === "weekly_newsletter_feature") {
+        return "Enabled";
+      }
+
+      if (rawSelected && !/^\d+$/.test(rawSelected)) {
+        if (normalizedRaw.includes("de ") && normalizedRaw.includes("jour")) return "Enabled";
+        if (normalizedRaw.includes("illimité")) return "No character limit";
+        return rawSelected;
+      }
+
+      return "Enabled";
+    };
+
+    for (const option of options) {
+      const optionNorm = normalizeOptionKey(option.option_key);
+      if (!Boolean(option.enabled) && !enabledKeys.has(optionNorm)) continue;
+      const canonical = option.canonical_key ? toCanonical(option.canonical_key) : toCanonical(option.option_key);
+      if (!canonical || summaryByCanonical.has(canonical)) continue;
+      if (!labelByCanonical[canonical]) continue;
+      const value = resolveValue(canonical, option);
+      if (!value) continue;
+      summaryByCanonical.set(canonical, {
+        key: canonical,
+        label: option.display_label && option.display_label.trim() ? option.display_label.trim() : labelByCanonical[canonical],
+        value,
       });
+    }
+
+    const displayOrder = [
+      "audience_amplifier",
+      "duration",
+      "social_boost",
+      "hero_grid",
+      "sticky_post",
+      "sidebar_spotlight",
+      "extended_text_limit",
+      "additional_images",
+      "embedded_video",
+      "weekly_newsletter_feature",
+    ];
+
+    return displayOrder
+      .map((key) => summaryByCanonical.get(key))
+      .filter((entry): entry is { key: string; label: string; value: string } => Boolean(entry));
   })();
   const getGroupSelectionState = (countries: string[]) => {
     if (!countries.length) return "none" as const;
@@ -1049,6 +1187,9 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
           {showBodyCounter ? (
             <p className="text-xs text-muted-foreground">{BODY_HELPER_TEXT}</p>
           ) : null}
+          {showShortDescCounter ? (
+            <p className="text-xs text-muted-foreground">{SHORT_PRODUCT_DESCRIPTION_HELPER}</p>
+          ) : null}
           <textarea
             id={field.key}
             name={field.key}
@@ -1067,7 +1208,6 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
           {showShortDescCounter ? (
             <>
               <p className="text-xs text-muted-foreground">{shortLength}/300 characters</p>
-              <p className="text-xs text-muted-foreground">{SHORT_PRODUCT_DESCRIPTION_HELPER}</p>
             </>
           ) : null}
           {showPrizeShortCounter ? (
@@ -1133,6 +1273,17 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
       return (
         <div key={field.key} className="space-y-2">
           <Label htmlFor={field.key}>{label}</Label>
+          {field.key === "prize_unit_value_usd" ? (
+            <p className="text-xs text-muted-foreground">Per unit. Shipping not included.</p>
+          ) : null}
+          {field.key === "prize_units_count" ? (
+            <p className="text-xs text-muted-foreground">
+              Minimum: 2 units. Maximum: 20 units. {GIVEAWAY_UNITS_HELPER}
+            </p>
+          ) : null}
+          {field.key === "minimum_age" ? (
+            <p className="text-xs text-muted-foreground">Depending of the laws in your country.</p>
+          ) : null}
           <Input
             id={field.key}
             name={field.key}
@@ -1145,15 +1296,7 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
             onChange={(event) => setBoundedNumberFieldValue(field.key, event.target.value, field.min, field.max)}
           />
           {field.key === "prize_unit_value_usd" ? (
-            <p className="text-xs text-muted-foreground">Per unit. Shipping not included. Minimum value: $10.</p>
-          ) : null}
-          {field.key === "prize_units_count" ? (
-            <p className="text-xs text-muted-foreground">
-              Minimum: 2 units. Maximum: 20 units. {GIVEAWAY_UNITS_HELPER}
-            </p>
-          ) : null}
-          {field.key === "minimum_age" ? (
-            <p className="text-xs text-muted-foreground">Depending of the laws in your country.</p>
+            <p className="text-xs text-muted-foreground">Minimum value: $10.</p>
           ) : null}
         </div>
       );
@@ -1162,6 +1305,9 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
     return (
       <div key={field.key} className="space-y-2">
         <Label htmlFor={field.key}>{label}</Label>
+        {field.key === "prize_name" ? (
+          <p className="text-xs text-muted-foreground">{GIVEAWAY_PRIZE_NAME_HELPER}</p>
+        ) : null}
         <Input
           id={field.key}
           name={field.key}
@@ -1195,9 +1341,6 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
           field.key === "answer_wrong_3" ||
           field.key === "answer_wrong_4") ? (
           <p className="text-xs text-muted-foreground">{(values[field.key]?.length ?? 0)}/150 characters</p>
-        ) : null}
-        {field.key === "prize_name" ? (
-          <p className="text-xs text-muted-foreground">{GIVEAWAY_PRIZE_NAME_HELPER}</p>
         ) : null}
       </div>
     );
