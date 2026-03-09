@@ -710,7 +710,16 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
     isGiveaway &&
     (hasOption(currentContext.enabled_options ?? [], "audience_amplifier") ||
       (currentContext.options ?? []).some(
-        (entry) => Boolean(entry.enabled) && normalizeOptionKey(entry.option_key).includes("audienceamplifier")
+        (entry) =>
+          Boolean(entry.enabled) &&
+          (
+            normalizeOptionKey(entry.option_key).includes("audienceamplifier") ||
+            normalizeOptionKey(entry.canonical_key ?? "").includes("audienceamplifier") ||
+            normalizeOptionKey(entry.display_label ?? "").includes("audienceamplifier") ||
+            normalizeOptionKey(entry.option_key).includes("multiactionentry") ||
+            normalizeOptionKey(entry.canonical_key ?? "").includes("multiactionentry") ||
+            normalizeOptionKey(entry.display_label ?? "").includes("multiactionentry")
+          )
       ));
   const giveawayUnitsCount = Number(values.prize_units_count || 0);
   const hasUnlimitedBody = isPostsProduct && postBodyMaxLength == null;
@@ -1623,6 +1632,21 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
     order_number_seen: resolvedOrderNumber,
     enabled_options_raw: currentContext.enabled_options ?? [],
     enabled_options_normalized: normalizedEnabledOptions,
+    audience_amplifier_detected: hasAudienceAmplifier,
+    audience_amplifier_option_hits: (currentContext.options ?? [])
+      .filter((entry) => Boolean(entry.enabled))
+      .map((entry) => ({
+        option_key: entry.option_key,
+        canonical_key: entry.canonical_key ?? null,
+        display_label: entry.display_label ?? null,
+        audience_match:
+          normalizeOptionKey(entry.option_key).includes("audienceamplifier") ||
+          normalizeOptionKey(entry.canonical_key ?? "").includes("audienceamplifier") ||
+          normalizeOptionKey(entry.display_label ?? "").includes("audienceamplifier") ||
+          normalizeOptionKey(entry.option_key).includes("multiactionentry") ||
+          normalizeOptionKey(entry.canonical_key ?? "").includes("multiactionentry") ||
+          normalizeOptionKey(entry.display_label ?? "").includes("multiactionentry"),
+      })),
     additional_images_active: hasAdditionalImages,
     unlimited_body_active: hasUnlimitedBody,
     giveaway_duration_weeks_from_reservation: currentContext.reservation?.giveaway_duration_weeks ?? null,
@@ -1982,7 +2006,7 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
                 ) : null}
 
                 <div className="rounded-md border bg-slate-50 p-4 space-y-3">
-                  <h4 className="text-sm font-semibold">{isGiveaway ? "H. Note to admin" : "Note to admin"}</h4>
+                  <h4 className="text-sm font-semibold">{isGiveaway ? "NOTE TO ADMIN" : "Note to admin"}</h4>
                   {isGiveaway ? (
                     <textarea
                       id="notes"

@@ -219,7 +219,12 @@ function hasAudienceAmplifierEnabled(context: Record<string, unknown>): boolean 
   const enabledOptions = Array.isArray(context.enabled_options) ? context.enabled_options : [];
   if (
     enabledOptions.some(
-      (value) => typeof value === "string" && normalizeOptionKey(value).includes(normalizeOptionKey("audience_amplifier"))
+      (value) =>
+        typeof value === "string" &&
+        (
+          normalizeOptionKey(value).includes(normalizeOptionKey("audience_amplifier")) ||
+          normalizeOptionKey(value).includes("multiactionentry")
+        )
     )
   ) {
     return true;
@@ -228,7 +233,18 @@ function hasAudienceAmplifierEnabled(context: Record<string, unknown>): boolean 
   return options.some((option) => {
     if (!option || typeof option !== "object") return false;
     const map = option as Record<string, unknown>;
-    return Boolean(map.enabled) && typeof map.option_key === "string" && normalizeOptionKey(map.option_key).includes("audienceamplifier");
+    if (!Boolean(map.enabled)) return false;
+    const optionKey = typeof map.option_key === "string" ? normalizeOptionKey(map.option_key) : "";
+    const canonicalKey = typeof map.canonical_key === "string" ? normalizeOptionKey(map.canonical_key) : "";
+    const displayLabel = typeof map.display_label === "string" ? normalizeOptionKey(map.display_label) : "";
+    return (
+      optionKey.includes("audienceamplifier") ||
+      canonicalKey.includes("audienceamplifier") ||
+      displayLabel.includes("audienceamplifier") ||
+      optionKey.includes("multiactionentry") ||
+      canonicalKey.includes("multiactionentry") ||
+      displayLabel.includes("multiactionentry")
+    );
   });
 }
 
