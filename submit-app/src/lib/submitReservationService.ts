@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { BookingStatus, Prisma, Product } from "@prisma/client";
+import { BookingStatus, Prisma, Product, ReservationSource } from "@prisma/client";
 import { createBooking } from "@/lib/bookingService";
 import { prisma } from "@/lib/prisma";
 
@@ -12,6 +12,7 @@ export type ReservationInput = {
   weekKey?: string;
   startsAtUtc?: string;
   adsDurationWeeks?: number;
+  linkedOrderId?: string | null;
 };
 
 function addHours(date: Date, hours: number): Date {
@@ -31,18 +32,44 @@ function mapProduct(productType: string): Product {
 }
 
 export async function cancelActiveReservationByToken(token: string): Promise<void> {
-  await prisma.booking.updateMany({
+  const active = await prisma.booking.findMany({
     where: {
       reservedByOrderId: tokenReservationRef(token),
       status: BookingStatus.DRAFT_RESERVED,
+      reservationLocked: false,
       expiresAt: {
         gt: new Date(),
       },
+    },
+    select: {
+      id: true,
+      reservationSource: true,
+      reservedByOrderId: true,
+      linkedOrderId: true,
+    },
+  });
+
+  if (active.length < 1) return;
+
+  await prisma.booking.updateMany({
+    where: {
+      id: { in: active.map((entry) => entry.id) },
     },
     data: {
       status: BookingStatus.CANCELLED,
     },
   });
+
+  for (const reservation of active) {
+    console.info("[reservation-audit] cancelled", {
+      reservationId: reservation.id,
+      reason: "replace_by_new_selection",
+      source: reservation.reservationSource,
+      linkedOrderId: reservation.linkedOrderId ?? null,
+      reservedByOrderId: reservation.reservedByOrderId ?? null,
+      ts: new Date().toISOString(),
+    });
+  }
 }
 
 export async function reserveForSubmit(input: ReservationInput) {
@@ -58,10 +85,13 @@ export async function reserveForSubmit(input: ReservationInput) {
   const booking = await createBooking({
     product,
     status: BookingStatus.DRAFT_RESERVED,
+    reservationSource: ReservationSource.DRAFT_HOLD,
+    reservationLocked: false,
     monthKey: input.monthKey,
     weekKey: input.weekKey,
     startsAtUtc: input.startsAtUtc,
     reservedByOrderId: tokenReservationRef(input.token),
+    linkedOrderId: input.linkedOrderId ?? null,
     expiresAt,
     companyName: "Pending submission",
     customerEmail: "pending@example.com",
@@ -163,6 +193,7 @@ async function reserveAdsWeeksForSubmit(input: ReservationInput, expiresAt: Date
         where: {
           reservedByOrderId: tokenRef,
           status: BookingStatus.DRAFT_RESERVED,
+          reservationLocked: false,
           expiresAt: { gt: now },
         },
         data: { status: BookingStatus.CANCELLED },
@@ -204,6 +235,9 @@ async function reserveAdsWeeksForSubmit(input: ReservationInput, expiresAt: Date
             startsAtUtc: null,
             endsAtUtc: null,
             reservedByOrderId: tokenRef,
+            reservationSource: ReservationSource.DRAFT_HOLD,
+            reservationLocked: false,
+            linkedOrderId: input.linkedOrderId ?? null,
             expiresAt,
             companyName: "Pending submission",
             customerEmail: "pending@example.com",

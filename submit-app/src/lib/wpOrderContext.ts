@@ -1,4 +1,4 @@
-type WPOrderContext = {
+export type WPOrderContext = {
   order_number?: string;
   product: {
     product_type: string;
@@ -49,4 +49,21 @@ export async function fetchWPOrderContextByToken(token: string): Promise<WPOrder
   }
 
   return payload as WPOrderContext;
+}
+
+function normalizeWooOrderId(value: unknown): string | null {
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+    return String(Math.trunc(value));
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (/^\d+$/.test(trimmed) && trimmed !== "0") {
+      return String(Number.parseInt(trimmed, 10));
+    }
+  }
+  return null;
+}
+
+export function resolveLinkedOrderIdFromContext(context: WPOrderContext): string | null {
+  return normalizeWooOrderId(context.order?.id) ?? normalizeWooOrderId(context.order?.order_id);
 }

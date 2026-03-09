@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { allowRateLimited, getClientIp, isAllowedOrigin } from "@/lib/apiSecurity";
-import { fetchWPOrderContextByToken } from "@/lib/wpOrderContext";
+import { fetchWPOrderContextByToken, resolveLinkedOrderIdFromContext } from "@/lib/wpOrderContext";
 import { reserveForSubmit } from "@/lib/submitReservationService";
 
 export const runtime = "nodejs";
@@ -99,6 +99,10 @@ export async function POST(request: NextRequest) {
     const adsDurationWeeksRaw =
       typeof context.reservation?.ads_duration_weeks === "number" ? context.reservation.ads_duration_weeks : 1;
     const adsDurationWeeks = Math.max(1, Math.min(52, Math.trunc(adsDurationWeeksRaw || 1)));
+    const linkedOrderId = resolveLinkedOrderIdFromContext(context);
+    if (!linkedOrderId) {
+      return apiError(422, "ORDER_ID_MISSING", "Valid WooCommerce order id is missing from order context");
+    }
 
     if (context.product.product_type === "sponsorship") {
       if (!monthKey) return badRequest("Missing monthKey");
@@ -121,6 +125,7 @@ export async function POST(request: NextRequest) {
       weekKey,
       startsAtUtc,
       adsDurationWeeks,
+      linkedOrderId,
     });
 
     return NextResponse.json({

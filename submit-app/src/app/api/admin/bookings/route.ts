@@ -744,9 +744,21 @@ export async function DELETE(request: NextRequest) {
     return badRequest(message);
   }
 
+  const protectedCount = await prisma.booking.count({
+    where: parsed.groupId
+      ? { groupId: parsed.groupId, reservationLocked: true }
+      : { id: parsed.id!, reservationLocked: true },
+  });
+  if (protectedCount > 0) {
+    return NextResponse.json(
+      { code: "PROTECTED_RESERVATION", message: "Protected reservations cannot be deleted." },
+      { status: 409 }
+    );
+  }
+
   const result = parsed.groupId
-    ? await prisma.booking.deleteMany({ where: { groupId: parsed.groupId } })
-    : await prisma.booking.deleteMany({ where: { id: parsed.id! } });
+    ? await prisma.booking.deleteMany({ where: { groupId: parsed.groupId, reservationLocked: false } })
+    : await prisma.booking.deleteMany({ where: { id: parsed.id!, reservationLocked: false } });
 
   const deletedCount = result.count;
   if (deletedCount === 0) {

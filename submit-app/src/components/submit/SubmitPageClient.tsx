@@ -253,6 +253,11 @@ function extractDaysLabel(value: string): string | null {
   return null;
 }
 
+function stripTrailingPriceFragment(value: string): string {
+  const decodedDollar = value.replace(/&#0*36;|&dollar;/gi, "$").replace(/&nbsp;/gi, " ");
+  return decodedDollar.replace(/\s*\(\s*\+?\s*\$?\s*[\d\s.,]+(?:\s*[A-Za-z]{3})?\s*\)\s*$/u, "").trim();
+}
+
 function resolvePostBodyMaxLength(derivedValues: Record<string, unknown>, enabledOptions: string[]): number | null {
   const direct = derivedValues.post_body_max_length;
   if (typeof direct === "number" && Number.isFinite(direct) && direct > 0) return Math.trunc(direct);
@@ -667,10 +672,10 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
     const resolveValue = (canonical: string, option: { selected_value?: string | null; selected_value_en?: string | null }): string => {
       const selectedEn = (option.selected_value_en ?? "").trim();
       if (selectedEn) {
-        return selectedEn;
+        return stripTrailingPriceFragment(selectedEn);
       }
 
-      const rawSelected = (option.selected_value ?? "").trim();
+      const rawSelected = stripTrailingPriceFragment((option.selected_value ?? "").trim());
       const normalizedRaw = rawSelected.toLowerCase();
 
       if (canonical === "duration") {

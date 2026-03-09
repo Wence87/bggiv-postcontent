@@ -1,4 +1,4 @@
-import { BookingStatus, Prisma, Product, type Booking } from "@prisma/client";
+import { BookingStatus, Prisma, Product, ReservationSource, type Booking } from "@prisma/client";
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/library";
 import { prisma } from "@/lib/prisma";
 
@@ -20,12 +20,15 @@ export type BookingCreateErrorCode =
 export type CreateBookingInput = {
   product: Product;
   status?: BookingStatus;
+  reservationSource?: ReservationSource;
+  reservationLocked?: boolean;
   groupId?: string | null;
   startsAtUtc?: Date | string | null;
   endsAtUtc?: Date | string | null;
   monthKey?: string | null;
   weekKey?: string | null;
   reservedByOrderId?: string | null;
+  linkedOrderId?: string | null;
   expiresAt?: Date | string | null;
   companyName: string;
   customerEmail: string;
@@ -310,6 +313,8 @@ export async function createBooking(input: CreateBookingInput): Promise<Booking>
   const parsedEndsAtUtc = parseOptionalDate(input.endsAtUtc);
   const parsedExpiresAt = parseOptionalDate(input.expiresAt);
   const status = input.status ?? BookingStatus.SUBMITTED;
+  const reservationSource = input.reservationSource ?? ReservationSource.LEGACY;
+  const reservationLocked = input.reservationLocked ?? false;
 
   if (input.product === Product.SPONSORSHIP) {
     if (!input.monthKey) {
@@ -319,12 +324,15 @@ export async function createBooking(input: CreateBookingInput): Promise<Booking>
     const sponsorshipData: Prisma.BookingCreateInput = {
       product: Product.SPONSORSHIP,
       status,
+      reservationSource,
+      reservationLocked,
       groupId: input.groupId ?? null,
       monthKey: input.monthKey,
       weekKey: null,
       startsAtUtc: null,
       endsAtUtc: parsedEndsAtUtc,
       reservedByOrderId: input.reservedByOrderId ?? null,
+      linkedOrderId: input.linkedOrderId ?? null,
       expiresAt: parsedExpiresAt,
       companyName: input.companyName,
       customerEmail: input.customerEmail,
@@ -350,12 +358,15 @@ export async function createBooking(input: CreateBookingInput): Promise<Booking>
     const adsData: Prisma.BookingCreateInput = {
       product: Product.ADS,
       status,
+      reservationSource,
+      reservationLocked,
       groupId: input.groupId ?? null,
       monthKey: null,
       weekKey: input.weekKey,
       startsAtUtc: null,
       endsAtUtc: parsedEndsAtUtc,
       reservedByOrderId: input.reservedByOrderId ?? null,
+      linkedOrderId: input.linkedOrderId ?? null,
       expiresAt: parsedExpiresAt,
       companyName: input.companyName,
       customerEmail: input.customerEmail,
@@ -398,12 +409,15 @@ export async function createBooking(input: CreateBookingInput): Promise<Booking>
     const postData: Prisma.BookingCreateInput = {
       product: input.product,
       status,
+      reservationSource,
+      reservationLocked,
       groupId: input.groupId ?? null,
       monthKey: null,
       weekKey: null,
       startsAtUtc,
       endsAtUtc: parsedEndsAtUtc,
       reservedByOrderId: input.reservedByOrderId ?? null,
+      linkedOrderId: input.linkedOrderId ?? null,
       expiresAt: parsedExpiresAt,
       companyName: input.companyName,
       customerEmail: input.customerEmail,

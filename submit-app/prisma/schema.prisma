@@ -22,6 +22,14 @@ enum BookingStatus {
   PUBLISHED
 }
 
+enum ReservationSource {
+  DRAFT_HOLD
+  WOOCOMMERCE_PAID_ORDER
+  TEST_DATA
+  ADMIN_MANUAL
+  LEGACY
+}
+
 enum SubmissionDraftStatus {
   DRAFT
   SUBMITTED
@@ -38,7 +46,10 @@ model Booking {
   monthKey      String?
   weekKey       String?
   status        BookingStatus @default(SUBMITTED)
+  reservationSource ReservationSource @default(LEGACY)
+  reservationLocked Boolean @default(false)
   reservedByOrderId String?
+  linkedOrderId String?
   expiresAt     DateTime?
   companyName   String
   customerEmail String
@@ -54,6 +65,8 @@ model Booking {
   @@index([startsAtUtc])
   @@index([status, expiresAt])
   @@index([reservedByOrderId])
+  @@index([reservationLocked, reservationSource])
+  @@index([linkedOrderId])
 }
 
 model SubmissionDraft {

@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { allowRateLimited, getClientIp, isAllowedOrigin } from "@/lib/apiSecurity";
-import { fetchWPOrderContextByToken } from "@/lib/wpOrderContext";
+import { fetchWPOrderContextByToken, resolveLinkedOrderIdFromContext } from "@/lib/wpOrderContext";
 import { saveAdsSubmissionWithDb } from "@/lib/finalizeSubmissionService";
 import { getActiveReservationsByToken, tokenReservationRef } from "@/lib/submitReservationService";
-import { BookingStatus, Product } from "@prisma/client";
+import { BookingStatus, Product, ReservationSource } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -333,6 +333,10 @@ export async function POST(request: NextRequest) {
   if (context.product.product_key !== productKey) {
     return apiError(403, "PRODUCT_MISMATCH", "Token and product key mismatch");
   }
+  const linkedOrderId = resolveLinkedOrderIdFromContext(context);
+  if (!linkedOrderId) {
+    return apiError(422, "ORDER_ID_MISSING", "Valid WooCommerce order id is missing from order context");
+  }
 
   const companyName = normalizeString(formData.company_name);
   const contactEmail = normalizeString(formData.contact_email);
@@ -596,9 +600,13 @@ export async function POST(request: NextRequest) {
           reservedByOrderId: tokenReservationRef(token),
           status: BookingStatus.DRAFT_RESERVED,
           product: expectedProduct,
+          reservationLocked: false,
         },
         data: {
           status: BookingStatus.SUBMITTED,
+          reservationSource: ReservationSource.WOOCOMMERCE_PAID_ORDER,
+          reservationLocked: true,
+          linkedOrderId,
           expiresAt: null,
           companyName: effectiveCompanyName,
           customerEmail: effectiveContactEmail,

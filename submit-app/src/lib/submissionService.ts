@@ -1,4 +1,4 @@
-import { BookingStatus, Product, SubmissionDraftStatus } from "@prisma/client";
+import { BookingStatus, Product, ReservationSource, SubmissionDraftStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createBooking, getActiveBookingWhere } from "@/lib/bookingService";
 import type { SubmitTokenPayload } from "@/lib/submitToken";
@@ -60,6 +60,7 @@ async function cancelExistingDraftReservation(draftOrderId: string) {
     where: {
       status: BookingStatus.DRAFT_RESERVED,
       reservedByOrderId: draftOrderId,
+      reservationLocked: false,
       expiresAt: { gt: new Date() },
     },
     orderBy: { createdAt: "desc" },
@@ -102,7 +103,10 @@ export async function reserveDraftSlot(payload: SubmitTokenPayload, slot: Reserv
   const booking = await createBooking({
     product,
     status: BookingStatus.DRAFT_RESERVED,
+    reservationSource: ReservationSource.DRAFT_HOLD,
+    reservationLocked: false,
     reservedByOrderId: draft.orderId,
+    linkedOrderId: payload.order_id,
     expiresAt,
     monthKey: slot.monthKey,
     weekKey: slot.weekKey,
@@ -149,6 +153,9 @@ export async function submitDraftContent(payload: SubmitTokenPayload, title: str
       where: { id: draft.bookingId! },
       data: {
         status: BookingStatus.SUBMITTED,
+        reservationSource: ReservationSource.WOOCOMMERCE_PAID_ORDER,
+        reservationLocked: true,
+        linkedOrderId: payload.order_id,
         expiresAt: null,
       },
     });
@@ -166,17 +173,31 @@ export async function submitDraftContent(payload: SubmitTokenPayload, title: str
 }
 
 export async function cleanupExpiredReservations(now: Date = new Date()) {
-  const expired = await prisma.booking.updateMany({
+  const expiredCandidates = await prisma.booking.findMany({
     where: {
       status: BookingStatus.DRAFT_RESERVED,
+      reservationLocked: false,
+      reservationSource: { in: [ReservationSource.DRAFT_HOLD, ReservationSource.TEST_DATA, ReservationSource.LEGACY] },
       expiresAt: {
         lte: now,
       },
     },
-    data: {
-      status: BookingStatus.CANCELLED,
+    select: {
+      id: true,
+      reservationSource: true,
+      linkedOrderId: true,
+      reservedByOrderId: true,
+      expiresAt: true,
     },
   });
+  const expiredIds = expiredCandidates.map((entry) => entry.id);
+
+  const expired = expiredIds.length
+    ? await prisma.booking.updateMany({
+        where: { id: { in: expiredIds } },
+        data: { status: BookingStatus.CANCELLED },
+      })
+    : { count: 0 };
 
   const cancelledDrafts = await prisma.submissionDraft.updateMany({
     where: {
@@ -191,6 +212,18 @@ export async function cleanupExpiredReservations(now: Date = new Date()) {
       status: SubmissionDraftStatus.CANCELLED,
     },
   });
+
+  for (const reservation of expiredCandidates) {
+    console.info("[reservation-audit] cleaned", {
+      reservationId: reservation.id,
+      reason: "expired_draft_hold",
+      source: reservation.reservationSource,
+      linkedOrderId: reservation.linkedOrderId ?? null,
+      reservedByOrderId: reservation.reservedByOrderId ?? null,
+      expiredAt: reservation.expiresAt?.toISOString() ?? null,
+      ts: now.toISOString(),
+    });
+  }
 
   return {
     expiredBookings: expired.count,
