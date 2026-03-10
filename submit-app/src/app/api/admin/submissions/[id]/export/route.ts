@@ -22,6 +22,14 @@ function toCsvRow(values: string[]): string {
     .join(",");
 }
 
+function asString(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function asStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : [];
+}
+
 export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   const auth = authenticateAdminRequest(request);
   if (!auth) return unauthorized();
@@ -65,6 +73,30 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
     : {};
   const title = typeof form.title === "string" ? form.title : "";
   const shortDescription = typeof form.short_product_description === "string" ? form.short_product_description : "";
+  const body = typeof form.body === "string" ? form.body : "";
+  const notesToAdmin = typeof form.notes === "string" ? form.notes : "";
+  const giveawayDetails = [
+    asString(form.prize_name),
+    asString(form.giveaway_category),
+    asString(form.prize_units_count),
+    asString(form.prize_unit_value_usd),
+  ]
+    .filter(Boolean)
+    .join(" | ");
+  const quizQuestion = asString(form.giveaway_question);
+  const quizAnswers = [
+    asString(form.answer_correct),
+    asString(form.answer_wrong_1),
+    asString(form.answer_wrong_2),
+    asString(form.answer_wrong_3),
+    asString(form.answer_wrong_4),
+  ]
+    .filter(Boolean)
+    .join(" | ");
+  const shippingCountries = asStringArray(form.shipping_countries).join(", ");
+  const audienceAmplifier = form.audience_amplifier_actions && typeof form.audience_amplifier_actions === "object"
+    ? JSON.stringify(form.audience_amplifier_actions)
+    : "";
   const purchasedOptionsSummary = summarizePurchasedOptions(submission);
   const reservedSlot = formatReservedSlot(submission);
 
@@ -86,7 +118,14 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
       "reserved_slot",
       "title",
       "short_description",
+      "body",
+      "notes_to_admin",
       "purchased_options_summary",
+      "giveaway_details",
+      "quiz_question",
+      "quiz_answers",
+      "shipping_countries",
+      "audience_amplifier_configuration",
       "created_at",
       "updated_at",
     ]);
@@ -107,7 +146,14 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
       reservedSlot,
       title,
       shortDescription,
+      body,
+      notesToAdmin,
       purchasedOptionsSummary,
+      giveawayDetails,
+      quizQuestion,
+      quizAnswers,
+      shippingCountries,
+      audienceAmplifier,
       submission.createdAt.toISOString(),
       submission.updatedAt.toISOString(),
     ]);
@@ -122,7 +168,63 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
   }
 
   if (format === "package") {
+    const packageHeader = toCsvRow([
+      "submission_id",
+      "order_number",
+      "linked_order_id",
+      "product_type",
+      "company",
+      "contact_email",
+      "reserved_slot",
+      "payment_status",
+      "editorial_status",
+      "publication_status",
+      "reviewer_assignee",
+      "title",
+      "short_product_description",
+      "body",
+      "notes_to_admin",
+      "purchased_options_summary",
+      "giveaway_details",
+      "quiz_question",
+      "quiz_answers",
+      "shipping_countries",
+      "audience_amplifier_configuration",
+      "created_at",
+      "updated_at",
+    ]);
+    const packageRow = toCsvRow([
+      submission.id,
+      submission.orderNumber || "",
+      submission.linkedOrderId || "",
+      submission.productType,
+      submission.companyName,
+      submission.contactEmail,
+      reservedSlot,
+      submission.ops?.orderPaymentStatus || "PAID",
+      submission.ops?.editorialStatus || "SUBMITTED",
+      submission.ops?.publicationStatus || "NOT_SCHEDULED",
+      submission.ops?.reviewerAssignee || "",
+      title,
+      shortDescription,
+      body,
+      notesToAdmin,
+      purchasedOptionsSummary,
+      giveawayDetails,
+      quizQuestion,
+      quizAnswers,
+      shippingCountries,
+      audienceAmplifier,
+      submission.createdAt.toISOString(),
+      submission.updatedAt.toISOString(),
+    ]);
+
     const zip = createZip([
+      {
+        name: `${orderPrefix}-submission.csv`,
+        data: new TextEncoder().encode(`${packageHeader}\n${packageRow}\n`),
+        modifiedAt: submission.updatedAt,
+      },
       {
         name: `${orderPrefix}-submission.json`,
         data: new TextEncoder().encode(JSON.stringify(payload, null, 2)),

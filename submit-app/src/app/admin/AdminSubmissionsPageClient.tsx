@@ -33,6 +33,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 const ADMIN_TOKEN_KEY = "adminToken";
+const VIEWED_SUBMISSIONS_KEY = "adminViewedSubmissionIds";
 
 type ListRow = {
   id: string;
@@ -114,10 +115,10 @@ type DetailPayload = {
 
 type SortKey =
   | "orderNumber"
+  | "urgency"
   | "productType"
   | "company"
   | "reservedSlot"
-  | "urgency"
   | "createdAt"
   | "updatedAt"
   | "paymentStatus"
@@ -189,6 +190,10 @@ function urgencyFromCreated(createdAt: string): { label: string; className: stri
   }
   const days = Math.floor(hours / 24);
   return { label: `${days}d`, className: "bg-red-100 text-red-800 border-red-200", minutes };
+}
+
+function isEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 }
 
 function getString(data: Record<string, unknown>, key: string): string {
@@ -289,9 +294,13 @@ export default function AdminSubmissionsPageClient() {
   const [reservedFrom, setReservedFrom] = useState("");
   const [reservedTo, setReservedTo] = useState("");
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [pageSize, setPageSize] = useState(20);
 
   const [sortKey, setSortKey] = useState<SortKey>("createdAt");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
+
+  const [selectedRowIds, setSelectedRowIds] = useState<string[]>([]);
+  const [viewedSubmissionIds, setViewedSubmissionIds] = useState<string[]>([]);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<DetailPayload | null>(null);
@@ -311,6 +320,17 @@ export default function AdminSubmissionsPageClient() {
   useEffect(() => {
     const stored = window.localStorage.getItem(ADMIN_TOKEN_KEY) ?? "";
     setToken(stored);
+
+    const viewedRaw = window.localStorage.getItem(VIEWED_SUBMISSIONS_KEY);
+    if (!viewedRaw) return;
+    try {
+      const parsed = JSON.parse(viewedRaw) as unknown;
+      if (Array.isArray(parsed)) {
+        setViewedSubmissionIds(parsed.filter((item): item is string => typeof item === "string"));
+      }
+    } catch {
+      setViewedSubmissionIds([]);
+    }
   }, []);
 
   const updateToken = (value: string) => {
@@ -323,6 +343,15 @@ export default function AdminSubmissionsPageClient() {
     setToken("");
     window.localStorage.removeItem(ADMIN_TOKEN_KEY);
     setUnauthorized(false);
+  };
+
+  const markViewed = (id: string) => {
+    setViewedSubmissionIds((prev) => {
+      if (prev.includes(id)) return prev;
+      const next = [...prev, id];
+      window.localStorage.setItem(VIEWED_SUBMISSIONS_KEY, JSON.stringify(next));
+      return next;
+    });
   };
 
   const adminFetch = useCallback(
@@ -356,9 +385,9 @@ export default function AdminSubmissionsPageClient() {
     if (createdTo) params.set("createdTo", createdTo);
     if (reservedFrom) params.set("reservedFrom", reservedFrom);
     if (reservedTo) params.set("reservedTo", reservedTo);
-    params.set("limit", "120");
+    params.set("limit", String(pageSize));
     return params.toString();
-  }, [query, productType, editorialStatus, publicationStatus, paymentStatus, company, contactEmail, orderNumber, reviewer, hasAssets, createdFrom, createdTo, reservedFrom, reservedTo]);
+  }, [query, productType, editorialStatus, publicationStatus, paymentStatus, company, contactEmail, orderNumber, reviewer, hasAssets, createdFrom, createdTo, reservedFrom, reservedTo, pageSize]);
 
   const refresh = useCallback(async () => {
     if (!token.trim()) return;
@@ -370,8 +399,10 @@ export default function AdminSubmissionsPageClient() {
         return;
       }
       const payload = (await response.json()) as { items: ListRow[]; role: string };
-      setRows(Array.isArray(payload.items) ? payload.items : []);
+      const nextRows = Array.isArray(payload.items) ? payload.items : [];
+      setRows(nextRows);
       setRole(payload.role || "-");
+      setSelectedRowIds((prev) => prev.filter((id) => nextRows.some((row) => row.id === id)));
       setUnauthorized(false);
     } finally {
       setLoading(false);
@@ -391,6 +422,7 @@ export default function AdminSubmissionsPageClient() {
       if (!response.ok) return;
       const payload = (await response.json()) as DetailPayload;
       setDetail(payload);
+      markViewed(id);
       setWorkflow({
         orderPaymentStatus: payload.workflow.orderPaymentStatus,
         editorialStatus: payload.workflow.editorialStatus,
@@ -422,10 +454,17 @@ export default function AdminSubmissionsPageClient() {
     }
   };
 
-  const download = (path: string) => {
-    if (!token) return;
-    const url = `${path}${path.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}`;
-    window.open(url, "_blank", "noopener,noreferrer");
+  const updateInlineStatus = async (
+    rowId: string,
+    patch: Partial<Pick<ListRow, "editorialStatus" | "publicationStatus">>
+  ) => {
+    const response = await adminFetch(`/api/admin/submissions/${rowId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    if (!response.ok) return;
+    setRows((prev) => prev.map((row) => (row.id === rowId ? { ...row, ...patch } : row)));
   };
 
   const roleCanEdit = useMemo(() => {
@@ -504,8 +543,54 @@ export default function AdminSubmissionsPageClient() {
     return copy;
   }, [rows, sortKey, sortDir]);
 
+  const visibleRowIds = useMemo(() => sortedRows.map((row) => row.id), [sortedRows]);
+  const allVisibleSelected = visibleRowIds.length > 0 && visibleRowIds.every((id) => selectedRowIds.includes(id));
+
+  const toggleSelectAllVisible = () => {
+    if (allVisibleSelected) {
+      setSelectedRowIds((prev) => prev.filter((id) => !visibleRowIds.includes(id)));
+      return;
+    }
+    setSelectedRowIds((prev) => Array.from(new Set([...prev, ...visibleRowIds])));
+  };
+
+  const toggleRowSelection = (id: string) => {
+    setSelectedRowIds((prev) => (prev.includes(id) ? prev.filter((entry) => entry !== id) : [...prev, id]));
+  };
+
+  const download = (path: string) => {
+    if (!token) return;
+    const url = `${path}${path.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}`;
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+
+  const exportCsv = () => {
+    const params = new URLSearchParams(queryString);
+    if (selectedRowIds.length > 0) {
+      params.set("ids", selectedRowIds.join(","));
+    }
+    download(`/api/admin/submissions/export?${params.toString()}`);
+  };
+
+  const previewItemsForRow = (row: ListRow): Array<{ label: string; text: string; Icon: ComponentType<{ className?: string }> }> => {
+    const items: Array<{ label: string; text: string; Icon: ComponentType<{ className?: string }> }> = [];
+    if (row.previews.title !== "-") items.push({ label: "Title", text: row.previews.title, Icon: Tag });
+    if (row.previews.shortDescription !== "-") items.push({ label: "Short description", text: row.previews.shortDescription, Icon: FileText });
+    if (row.previews.body !== "-") items.push({ label: "Body", text: row.previews.body, Icon: AlignLeft });
+
+    if (row.productType.toLowerCase() === "giveaway") {
+      if (row.previews.quiz !== "-") items.push({ label: "Quiz", text: row.previews.quiz, Icon: FileQuestion });
+      if (row.previews.shipping !== "-") items.push({ label: "Shipping", text: row.previews.shipping, Icon: MapPinned });
+      if (row.previews.audienceAmplifier !== "-") {
+        items.push({ label: "Audience Amplifier", text: row.previews.audienceAmplifier, Icon: Link2 });
+      }
+    }
+
+    return items;
+  };
+
   return (
-    <main className="min-h-screen bg-slate-100/80">
+    <main className="min-h-screen bg-slate-200/60">
       <header className="border-b bg-white">
         <div className="mx-auto flex w-full max-w-[1400px] items-center justify-between px-6 py-4">
           <BrandHeader title="Admin Back Office" subtitle="Submission operations center (one row = one purchased submission)." />
@@ -517,23 +602,39 @@ export default function AdminSubmissionsPageClient() {
       </header>
 
       <div className="mx-auto w-full max-w-[1400px] space-y-3 px-6 py-4">
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-300 bg-white p-3 shadow-sm">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Shield className="h-4 w-4" />
             Role: <span className="font-semibold text-foreground">{role}</span>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <div className="relative min-w-[320px]">
+            <label className="inline-flex h-9 items-center gap-2 rounded border px-2 text-sm">
+              <input type="checkbox" checked={allVisibleSelected} onChange={toggleSelectAllVisible} />
+              {allVisibleSelected ? "Deselect all" : "Select all"}
+            </label>
+            <div className="relative min-w-[280px]">
               <Search className="pointer-events-none absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input className="h-9 bg-white pl-8" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Quick search: order, company, email, title" />
             </div>
+            <select
+              className="h-9 rounded-md border px-2 text-sm"
+              value={String(pageSize)}
+              onChange={(event) => setPageSize(Number(event.target.value))}
+              title="Page size"
+            >
+              <option value="20">20</option>
+              <option value="40">40</option>
+              <option value="60">60</option>
+              <option value="80">80</option>
+              <option value="100">100</option>
+            </select>
             <Button variant="outline" className="h-9" onClick={() => setShowAdvancedFilters((prev) => !prev)}>
               <Funnel className="mr-1 h-4 w-4" />
               Filters
             </Button>
-            <Button variant="outline" className="h-9" onClick={() => download(`/api/admin/submissions/export?${queryString}`)}>
+            <Button variant="outline" className="h-9" onClick={exportCsv}>
               <Download className="mr-1 h-4 w-4" />
-              Export CSV
+              Export CSV {selectedRowIds.length > 0 ? `(${selectedRowIds.length} selected)` : ""}
             </Button>
             {legacyBookingToolsHref ? (
               <Link href={legacyBookingToolsHref} className={buttonVariants({ variant: "secondary", size: "sm" })}>Legacy Booking Tools</Link>
@@ -549,7 +650,7 @@ export default function AdminSubmissionsPageClient() {
         ) : null}
 
         {showAdvancedFilters ? (
-          <section className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+          <section className="rounded-lg border border-slate-300 bg-white p-3 shadow-sm">
             <div className="grid gap-2 md:grid-cols-3 xl:grid-cols-6">
               <div>
                 <Label className="mb-1 block text-xs uppercase">Product type</Label>
@@ -618,7 +719,7 @@ export default function AdminSubmissionsPageClient() {
           </section>
         ) : null}
 
-        <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+        <section className="overflow-hidden rounded-lg border border-slate-300 bg-white shadow-sm">
           {loading ? (
             <div className="flex min-h-[220px] items-center justify-center"><Loader2 className="h-5 w-5 animate-spin" /></div>
           ) : (
@@ -626,13 +727,14 @@ export default function AdminSubmissionsPageClient() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="whitespace-nowrap px-2 py-2 text-xs">Select</TableHead>
                     <TableHead className="whitespace-nowrap px-2 py-2 text-xs">Open</TableHead>
                     <TableHead className="whitespace-nowrap px-2 py-2"><SortHeader label="Order #" sortKey="orderNumber" activeSortKey={sortKey} sortDir={sortDir} onClick={handleSort} /></TableHead>
+                    <TableHead className="whitespace-nowrap px-2 py-2"><SortHeader label="Urgency" sortKey="urgency" activeSortKey={sortKey} sortDir={sortDir} onClick={handleSort} /></TableHead>
                     <TableHead className="whitespace-nowrap px-2 py-2"><SortHeader label="Product" sortKey="productType" activeSortKey={sortKey} sortDir={sortDir} onClick={handleSort} /></TableHead>
                     <TableHead className="whitespace-nowrap px-2 py-2"><SortHeader label="Company" sortKey="company" activeSortKey={sortKey} sortDir={sortDir} onClick={handleSort} /></TableHead>
                     <TableHead className="whitespace-nowrap px-2 py-2 text-xs">Contact</TableHead>
                     <TableHead className="whitespace-nowrap px-2 py-2"><SortHeader label="Reserved slot" sortKey="reservedSlot" activeSortKey={sortKey} sortDir={sortDir} onClick={handleSort} /></TableHead>
-                    <TableHead className="whitespace-nowrap px-2 py-2"><SortHeader label="Urgency" sortKey="urgency" activeSortKey={sortKey} sortDir={sortDir} onClick={handleSort} /></TableHead>
                     <TableHead className="whitespace-nowrap px-2 py-2"><SortHeader label="Created" sortKey="createdAt" activeSortKey={sortKey} sortDir={sortDir} onClick={handleSort} /></TableHead>
                     <TableHead className="whitespace-nowrap px-2 py-2"><SortHeader label="Updated" sortKey="updatedAt" activeSortKey={sortKey} sortDir={sortDir} onClick={handleSort} /></TableHead>
                     <TableHead className="whitespace-nowrap px-2 py-2"><SortHeader label="Payment" sortKey="paymentStatus" activeSortKey={sortKey} sortDir={sortDir} onClick={handleSort} /></TableHead>
@@ -648,42 +750,89 @@ export default function AdminSubmissionsPageClient() {
                 <TableBody>
                   {sortedRows.map((row) => {
                     const urgency = urgencyFromCreated(row.createdAt);
-                    const isNew = row.editorialStatus === "SUBMITTED" && urgency.minutes < 120;
+                    const isNew = row.editorialStatus === "SUBMITTED" && !viewedSubmissionIds.includes(row.id);
+                    const previewItems = previewItemsForRow(row);
                     return (
                       <TableRow key={row.id}>
+                        <TableCell className="whitespace-nowrap px-2 py-2">
+                          <input
+                            type="checkbox"
+                            checked={selectedRowIds.includes(row.id)}
+                            onChange={() => toggleRowSelection(row.id)}
+                            aria-label={`Select ${row.orderNumber !== "-" ? row.orderNumber : row.submissionId}`}
+                          />
+                        </TableCell>
                         <TableCell className="whitespace-nowrap px-2 py-2">
                           <Button size="sm" variant="outline" className="h-8 w-8 p-0" onClick={() => void openDetail(row.id)} title="View" aria-label="View">
                             <Eye className="h-3.5 w-3.5" />
                           </Button>
                         </TableCell>
                         <TableCell className="whitespace-nowrap px-2 py-2">{row.orderNumber !== "-" ? row.orderNumber : row.linkedOrderId}</TableCell>
-                        <TableCell className="whitespace-nowrap px-2 py-2"><Badge variant="outline">{row.productType.toUpperCase()}</Badge></TableCell>
-                        <TableCell className="whitespace-nowrap px-2 py-2" title={row.company}>{compactText(row.company, 18)}</TableCell>
-                        <TableCell className="whitespace-nowrap px-2 py-2" title={row.contactEmail}>{compactText(row.contactEmail, 20)}</TableCell>
-                        <TableCell className="whitespace-nowrap px-2 py-2" title={row.reservedSlot}>{compactText(row.reservedSlot, 24)}</TableCell>
                         <TableCell className="whitespace-nowrap px-2 py-2">
                           <span className={`inline-flex rounded border px-2 py-0.5 text-xs font-medium ${urgency.className}`}>{urgency.label}</span>
                           {isNew ? <Badge className="ml-1" variant="secondary">NEW</Badge> : null}
                         </TableCell>
+                        <TableCell className="whitespace-nowrap px-2 py-2"><Badge variant="outline">{row.productType.toUpperCase()}</Badge></TableCell>
+                        <TableCell className="whitespace-nowrap px-2 py-2" title={row.company}>{compactText(row.company, 20)}</TableCell>
+                        <TableCell className="whitespace-nowrap px-2 py-2" title={row.contactEmail}>
+                          {isEmail(row.contactEmail) ? (
+                            <a href={`mailto:${row.contactEmail}`} className="text-blue-700 hover:underline">
+                              {compactText(row.contactEmail, 20)}
+                            </a>
+                          ) : (
+                            compactText(row.contactEmail, 20)
+                          )}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap px-2 py-2" title={row.reservedSlot}>{compactText(row.reservedSlot, 24)}</TableCell>
                         <TableCell className="whitespace-nowrap px-2 py-2 text-xs">{iso(row.createdAt)}</TableCell>
                         <TableCell className="whitespace-nowrap px-2 py-2 text-xs">{iso(row.updatedAt)}</TableCell>
                         <TableCell className="whitespace-nowrap px-2 py-2">{statusPill("payment", row.paymentStatus)}</TableCell>
-                        <TableCell className="whitespace-nowrap px-2 py-2">{statusPill("editorial", row.editorialStatus)}</TableCell>
-                        <TableCell className="whitespace-nowrap px-2 py-2">{statusPill("publication", row.publicationStatus)}</TableCell>
-                        <TableCell className="whitespace-nowrap px-2 py-2" title={row.reviewerAssignee}>{compactText(row.reviewerAssignee, 14)}</TableCell>
+                        <TableCell className="whitespace-nowrap px-2 py-2">
+                          {roleCanEdit.canUpdateEditorial ? (
+                            <select
+                              className="h-8 rounded border px-1 text-xs"
+                              value={row.editorialStatus}
+                              onChange={(event) => void updateInlineStatus(row.id, { editorialStatus: event.target.value as ListRow["editorialStatus"] })}
+                              aria-label="Edit editorial status"
+                            >
+                              <option>SUBMITTED</option>
+                              <option>UNDER_REVIEW</option>
+                              <option>CHANGES_REQUESTED</option>
+                              <option>APPROVED</option>
+                              <option>REJECTED</option>
+                            </select>
+                          ) : (
+                            statusPill("editorial", row.editorialStatus)
+                          )}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap px-2 py-2">
+                          {roleCanEdit.canUpdatePublication ? (
+                            <select
+                              className="h-8 rounded border px-1 text-xs"
+                              value={row.publicationStatus}
+                              onChange={(event) => void updateInlineStatus(row.id, { publicationStatus: event.target.value as ListRow["publicationStatus"] })}
+                              aria-label="Edit publication status"
+                            >
+                              <option>NOT_SCHEDULED</option>
+                              <option>SCHEDULED</option>
+                              <option>PUBLISHED</option>
+                              <option>ARCHIVED</option>
+                            </select>
+                          ) : (
+                            statusPill("publication", row.publicationStatus)
+                          )}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap px-2 py-2" title={row.reviewerAssignee}>{compactText(row.reviewerAssignee, 16)}</TableCell>
                         <TableCell className="px-2 py-2">
                           <div className="space-y-1">
                             <div className="flex items-center gap-1 text-xs text-muted-foreground" title={row.purchasedOptionsSummary}>
                               <FileText className="h-3.5 w-3.5" />
-                              {compactText(row.purchasedOptionsSummary, 26)}
+                              {compactText(row.purchasedOptionsSummary, 24)}
                             </div>
                             <div className="flex flex-wrap gap-1">
-                              <PreviewHint label="Title" text={row.previews.title} Icon={Tag} />
-                              <PreviewHint label="Short description" text={row.previews.shortDescription} Icon={FileText} />
-                              <PreviewHint label="Body" text={row.previews.body} Icon={AlignLeft} />
-                              <PreviewHint label="Quiz" text={row.previews.quiz} Icon={FileQuestion} />
-                              <PreviewHint label="Shipping" text={row.previews.shipping} Icon={MapPinned} />
-                              <PreviewHint label="Audience Amplifier" text={row.previews.audienceAmplifier} Icon={Link2} />
+                              {previewItems.map((item) => (
+                                <PreviewHint key={item.label} label={item.label} text={item.text} Icon={item.Icon} />
+                              ))}
                             </div>
                           </div>
                         </TableCell>
@@ -694,14 +843,9 @@ export default function AdminSubmissionsPageClient() {
                           </div>
                         </TableCell>
                         <TableCell className="px-2 py-2">
-                          <div className="flex items-center gap-1">
-                            <Button size="sm" variant="outline" className="h-8 w-8 p-0" onClick={() => download(`/api/admin/submissions/${row.id}/assets?mode=zip`)} title="Download assets ZIP" aria-label="Download assets ZIP">
-                              <Download className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button size="sm" variant="outline" className="h-8 w-8 p-0" onClick={() => download(`/api/admin/submissions/${row.id}/export?format=package`)} title="Export package" aria-label="Export package">
-                              <Package className="h-3.5 w-3.5" />
-                            </Button>
-                          </div>
+                          <Button size="sm" variant="outline" className="h-8 w-8 p-0" onClick={() => download(`/api/admin/submissions/${row.id}/export?format=package`)} title="Export package" aria-label="Export package">
+                            <Package className="h-3.5 w-3.5" />
+                          </Button>
                         </TableCell>
                         <TableCell className="whitespace-nowrap px-2 py-2 font-mono text-xs">{compactText(row.submissionId, 20)}</TableCell>
                       </TableRow>
@@ -741,7 +885,7 @@ export default function AdminSubmissionsPageClient() {
 
               <section className="rounded-md border p-4">
                 <h3 className="text-sm font-semibold uppercase">Workflow</h3>
-                <p className="mb-2 text-xs text-muted-foreground">Publication status is an internal workflow flag in admin (manual process, no automatic WordPress sync from this field).</p>
+                <p className="mb-2 text-xs text-muted-foreground">Publication status is an internal workflow status managed in admin. It does not automatically sync WordPress publication state.</p>
                 <div className="mt-3 grid gap-3 md:grid-cols-2">
                   {detailPermissions.canUpdatePayment ? (
                     <div>
@@ -788,7 +932,7 @@ export default function AdminSubmissionsPageClient() {
                   <div>
                     <Label className="mb-1 block text-xs">REVIEWER / ASSIGNEE</Label>
                     <Input list="reviewer-options" disabled={!detailPermissions.canUpdateNotes} value={workflow.reviewerAssignee} onChange={(event) => setWorkflow((prev) => ({ ...prev, reviewerAssignee: event.target.value }))} />
-                    <p className="mt-1 text-xs text-muted-foreground">Free text today, prepared for future predefined reviewer assignment.</p>
+                    <p className="mt-1 text-xs text-muted-foreground">Free text today, prepared for later evolution to a predefined reviewer list.</p>
                     <datalist id="reviewer-options">
                       {reviewerSuggestions.map((name) => <option key={name} value={name} />)}
                     </datalist>

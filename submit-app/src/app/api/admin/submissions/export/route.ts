@@ -27,6 +27,13 @@ export async function GET(request: NextRequest) {
 
   const productType = request.nextUrl.searchParams.get("productType")?.trim().toLowerCase() || null;
   const editorialStatusRaw = request.nextUrl.searchParams.get("editorialStatus")?.trim().toUpperCase() || null;
+  const idsRaw = request.nextUrl.searchParams.get("ids")?.trim() || "";
+  const selectedIds = idsRaw
+    ? idsRaw
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean)
+    : [];
   const editorialStatus =
     editorialStatusRaw && editorialStatusRaw in EditorialStatus ? (editorialStatusRaw as EditorialStatus) : null;
 
@@ -34,6 +41,7 @@ export async function GET(request: NextRequest) {
     where: {
       AND: [
         buildSubmissionScopeWhere(auth),
+        ...(selectedIds.length ? [{ id: { in: selectedIds } }] : []),
         ...(productType ? [{ productType: { equals: productType, mode: "insensitive" as const } }] : []),
         ...(editorialStatus
           ? [{ ops: { is: { editorialStatus } } }]
