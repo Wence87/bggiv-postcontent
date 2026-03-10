@@ -4,10 +4,14 @@ import Link from "next/link";
 import { type ComponentType, useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlignLeft,
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
   Download,
   Eye,
   FileQuestion,
   FileText,
+  Funnel,
   Globe2,
   Image as ImageIcon,
   Link2,
@@ -107,6 +111,21 @@ type DetailPayload = {
   }>;
 };
 
+type SortKey =
+  | "submissionId"
+  | "productType"
+  | "orderNumber"
+  | "company"
+  | "reservedSlot"
+  | "createdAt"
+  | "updatedAt"
+  | "paymentStatus"
+  | "editorialStatus"
+  | "publicationStatus"
+  | "reviewerAssignee";
+
+type SortDir = "asc" | "desc";
+
 function compactText(text: string, max = 44): string {
   const value = text || "-";
   return value.length <= max ? value : `${value.slice(0, max - 1)}…`;
@@ -148,6 +167,27 @@ function statusPill(group: "payment" | "editorial" | "publication", status: stri
   return <span className={`inline-flex rounded border px-2 py-0.5 text-xs font-medium ${statusClass(group, status)}`}>{status}</span>;
 }
 
+function urgencyFromCreated(createdAt: string): { label: string; className: string; minutes: number } {
+  const created = new Date(createdAt).getTime();
+  const now = Date.now();
+  const minutes = Math.max(0, Math.floor((now - created) / 60000));
+
+  if (minutes < 60) {
+    const label = `${minutes}m`;
+    if (minutes < 30) return { label, className: "bg-emerald-100 text-emerald-800 border-emerald-200", minutes };
+    return { label, className: "bg-amber-100 text-amber-800 border-amber-200", minutes };
+  }
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    const label = `${hours}h`;
+    if (hours < 2) return { label, className: "bg-amber-100 text-amber-800 border-amber-200", minutes };
+    if (hours < 6) return { label, className: "bg-orange-100 text-orange-800 border-orange-200", minutes };
+    return { label, className: "bg-red-100 text-red-800 border-red-200", minutes };
+  }
+  const days = Math.floor(hours / 24);
+  return { label: `${days}d`, className: "bg-red-100 text-red-800 border-red-200", minutes };
+}
+
 function getString(data: Record<string, unknown>, key: string): string {
   const value = data[key];
   return typeof value === "string" && value.trim() ? value.trim() : "-";
@@ -181,9 +221,40 @@ function summarizeAudienceAmplifier(formData: Record<string, unknown>): string {
 
 function PreviewHint({ label, text, Icon }: { label: string; text: string; Icon: ComponentType<{ className?: string }> }) {
   return (
-    <span className="inline-flex items-center rounded border px-1.5 py-1 text-[11px] text-muted-foreground" title={`${label}: ${text || "-"}`}>
+    <span
+      className="inline-flex items-center rounded border px-1.5 py-1 text-[11px] text-muted-foreground"
+      title={`${label}: ${text || "-"}`}
+      aria-label={`${label}: ${text || "-"}`}
+    >
       <Icon className="h-3 w-3" />
     </span>
+  );
+}
+
+function SortHeader({
+  label,
+  sortKey,
+  activeSortKey,
+  sortDir,
+  onClick,
+}: {
+  label: string;
+  sortKey: SortKey;
+  activeSortKey: SortKey;
+  sortDir: SortDir;
+  onClick: (key: SortKey) => void;
+}) {
+  const isActive = activeSortKey === sortKey;
+  return (
+    <button
+      type="button"
+      onClick={() => onClick(sortKey)}
+      className="inline-flex items-center gap-1 whitespace-nowrap text-left text-xs font-medium text-muted-foreground hover:text-foreground"
+      title={`Sort by ${label}`}
+    >
+      {label}
+      {isActive ? sortDir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" /> : <ArrowUpDown className="h-3 w-3" />}
+    </button>
   );
 }
 
@@ -208,6 +279,10 @@ export default function AdminSubmissionsPageClient() {
   const [createdTo, setCreatedTo] = useState("");
   const [reservedFrom, setReservedFrom] = useState("");
   const [reservedTo, setReservedTo] = useState("");
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+
+  const [sortKey, setSortKey] = useState<SortKey>("createdAt");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<DetailPayload | null>(null);
@@ -375,6 +450,36 @@ export default function AdminSubmissionsPageClient() {
     ["Wrong #4", getString(formData, "answer_wrong_4")],
   ] as const;
 
+  const handleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir((prev) => (prev === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setSortKey(key);
+    setSortDir("asc");
+  };
+
+  const sortedRows = useMemo(() => {
+    const copy = [...rows];
+    copy.sort((a, b) => {
+      const resolve = (row: ListRow) => {
+        if (sortKey === "orderNumber") return row.orderNumber === "-" ? row.linkedOrderId : row.orderNumber;
+        if (sortKey === "createdAt" || sortKey === "updatedAt") {
+          const t = new Date(row[sortKey]).getTime();
+          return Number.isFinite(t) ? t : 0;
+        }
+        return (row[sortKey] || "").toLowerCase();
+      };
+      const left = resolve(a);
+      const right = resolve(b);
+      if (typeof left === "number" && typeof right === "number") return sortDir === "asc" ? left - right : right - left;
+      if (left < right) return sortDir === "asc" ? -1 : 1;
+      if (left > right) return sortDir === "asc" ? 1 : -1;
+      return 0;
+    });
+    return copy;
+  }, [rows, sortDir, sortKey]);
+
   return (
     <main className="min-h-screen bg-muted/30">
       <header className="border-b bg-background">
@@ -387,20 +492,26 @@ export default function AdminSubmissionsPageClient() {
         </div>
       </header>
 
-      <div className="mx-auto w-full max-w-[1400px] space-y-4 px-6 py-6">
+      <div className="mx-auto w-full max-w-[1400px] space-y-3 px-6 py-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Shield className="h-4 w-4" />
             Role: <span className="font-semibold text-foreground">{role}</span>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={() => download(`/api/admin/submissions/export?${queryString}`)}>
-              <Download className="mr-2 h-4 w-4" />
-              Export filtered CSV
+            <div className="relative min-w-[280px]">
+              <Search className="pointer-events-none absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input className="h-9 pl-8" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Quick search: order, company, email, title" />
+            </div>
+            <Button variant="outline" className="h-9" onClick={() => setShowAdvancedFilters((prev) => !prev)}>
+              <Funnel className="mr-1 h-4 w-4" />
+              Filters
             </Button>
-            <Link href="./booking-tools" className={buttonVariants({ variant: "secondary" })}>
-              Open legacy booking tools
-            </Link>
+            <Button variant="outline" className="h-9" onClick={() => download(`/api/admin/submissions/export?${queryString}`)}>
+              <Download className="mr-1 h-4 w-4" />
+              Export CSV
+            </Button>
+            <Link href="./booking-tools" className={buttonVariants({ variant: "secondary", size: "sm" })}>Legacy Booking Tools</Link>
           </div>
         </div>
 
@@ -411,123 +522,75 @@ export default function AdminSubmissionsPageClient() {
           </Alert>
         ) : null}
 
-        <section className="rounded-lg border bg-background p-4">
-          <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
-            <div className="xl:col-span-2">
-              <Label className="mb-1 block text-xs uppercase">Quick search</Label>
-              <div className="relative">
-                <Search className="pointer-events-none absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input className="pl-8" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Order, company, email, title" />
+        {showAdvancedFilters ? (
+          <section className="rounded-lg border bg-background p-3">
+            <div className="grid gap-2 md:grid-cols-3 xl:grid-cols-6">
+              <div>
+                <Label className="mb-1 block text-xs uppercase">Product type</Label>
+                <select className="h-9 w-full rounded-md border px-2 text-sm" value={productType} onChange={(event) => setProductType(event.target.value)}>
+                  <option value="">All</option><option value="giveaway">Giveaway</option><option value="promo">Promo</option><option value="news">News</option><option value="ads">Ads</option><option value="sponsorship">Sponsorship</option>
+                </select>
+              </div>
+              <div>
+                <Label className="mb-1 block text-xs uppercase">Editorial</Label>
+                <select className="h-9 w-full rounded-md border px-2 text-sm" value={editorialStatus} onChange={(event) => setEditorialStatus(event.target.value)}>
+                  <option value="">All</option><option value="SUBMITTED">SUBMITTED</option><option value="UNDER_REVIEW">UNDER_REVIEW</option><option value="CHANGES_REQUESTED">CHANGES_REQUESTED</option><option value="APPROVED">APPROVED</option><option value="REJECTED">REJECTED</option>
+                </select>
+              </div>
+              <div>
+                <Label className="mb-1 block text-xs uppercase">Publication</Label>
+                <select className="h-9 w-full rounded-md border px-2 text-sm" value={publicationStatus} onChange={(event) => setPublicationStatus(event.target.value)}>
+                  <option value="">All</option><option value="NOT_SCHEDULED">NOT_SCHEDULED</option><option value="SCHEDULED">SCHEDULED</option><option value="PUBLISHED">PUBLISHED</option><option value="ARCHIVED">ARCHIVED</option>
+                </select>
+              </div>
+              <div>
+                <Label className="mb-1 block text-xs uppercase">Payment</Label>
+                <select className="h-9 w-full rounded-md border px-2 text-sm" value={paymentStatus} onChange={(event) => setPaymentStatus(event.target.value)}>
+                  <option value="">All</option><option value="PAID">PAID</option><option value="PENDING">PENDING</option><option value="FAILED">FAILED</option><option value="REFUNDED">REFUNDED</option>
+                </select>
+              </div>
+              <div><Label className="mb-1 block text-xs uppercase">Order #</Label><Input className="h-9" value={orderNumber} onChange={(event) => setOrderNumber(event.target.value)} /></div>
+              <div><Label className="mb-1 block text-xs uppercase">Company</Label><Input className="h-9" value={company} onChange={(event) => setCompany(event.target.value)} /></div>
+              <div><Label className="mb-1 block text-xs uppercase">Email</Label><Input className="h-9" value={contactEmail} onChange={(event) => setContactEmail(event.target.value)} /></div>
+              <div><Label className="mb-1 block text-xs uppercase">Reviewer</Label><Input className="h-9" value={reviewer} onChange={(event) => setReviewer(event.target.value)} /></div>
+              <div>
+                <Label className="mb-1 block text-xs uppercase">Assets</Label>
+                <select className="h-9 w-full rounded-md border px-2 text-sm" value={hasAssets} onChange={(event) => setHasAssets(event.target.value)}>
+                  <option value="">All</option><option value="true">Has assets</option><option value="false">Missing assets</option>
+                </select>
+              </div>
+              <div><Label className="mb-1 block text-xs uppercase">Reserved from</Label><Input className="h-9" type="date" value={reservedFrom} onChange={(event) => setReservedFrom(event.target.value)} /></div>
+              <div><Label className="mb-1 block text-xs uppercase">Reserved to</Label><Input className="h-9" type="date" value={reservedTo} onChange={(event) => setReservedTo(event.target.value)} /></div>
+              <div><Label className="mb-1 block text-xs uppercase">Created from</Label><Input className="h-9" type="date" value={createdFrom} onChange={(event) => setCreatedFrom(event.target.value)} /></div>
+              <div><Label className="mb-1 block text-xs uppercase">Created to</Label><Input className="h-9" type="date" value={createdTo} onChange={(event) => setCreatedTo(event.target.value)} /></div>
+              <div className="flex items-end gap-2 xl:col-span-2">
+                <Button className="h-9" onClick={() => void refresh()}>Apply filters</Button>
+                <Button
+                  className="h-9"
+                  variant="outline"
+                  onClick={() => {
+                    setQuery("");
+                    setProductType("");
+                    setEditorialStatus("");
+                    setPublicationStatus("");
+                    setPaymentStatus("");
+                    setCompany("");
+                    setContactEmail("");
+                    setOrderNumber("");
+                    setReviewer("");
+                    setHasAssets("");
+                    setReservedFrom("");
+                    setReservedTo("");
+                    setCreatedFrom("");
+                    setCreatedTo("");
+                  }}
+                >
+                  Reset
+                </Button>
               </div>
             </div>
-            <div>
-              <Label className="mb-1 block text-xs uppercase">Product type</Label>
-              <select className="h-10 w-full rounded-md border px-3 text-sm" value={productType} onChange={(event) => setProductType(event.target.value)}>
-                <option value="">All</option>
-                <option value="giveaway">Giveaway</option>
-                <option value="promo">Promo</option>
-                <option value="news">News</option>
-                <option value="ads">Ads</option>
-                <option value="sponsorship">Sponsorship</option>
-              </select>
-            </div>
-            <div>
-              <Label className="mb-1 block text-xs uppercase">Editorial</Label>
-              <select className="h-10 w-full rounded-md border px-3 text-sm" value={editorialStatus} onChange={(event) => setEditorialStatus(event.target.value)}>
-                <option value="">All</option>
-                <option value="SUBMITTED">SUBMITTED</option>
-                <option value="UNDER_REVIEW">UNDER_REVIEW</option>
-                <option value="CHANGES_REQUESTED">CHANGES_REQUESTED</option>
-                <option value="APPROVED">APPROVED</option>
-                <option value="REJECTED">REJECTED</option>
-              </select>
-            </div>
-            <div>
-              <Label className="mb-1 block text-xs uppercase">Publication</Label>
-              <select className="h-10 w-full rounded-md border px-3 text-sm" value={publicationStatus} onChange={(event) => setPublicationStatus(event.target.value)}>
-                <option value="">All</option>
-                <option value="NOT_SCHEDULED">NOT_SCHEDULED</option>
-                <option value="SCHEDULED">SCHEDULED</option>
-                <option value="PUBLISHED">PUBLISHED</option>
-                <option value="ARCHIVED">ARCHIVED</option>
-              </select>
-            </div>
-            <div>
-              <Label className="mb-1 block text-xs uppercase">Payment</Label>
-              <select className="h-10 w-full rounded-md border px-3 text-sm" value={paymentStatus} onChange={(event) => setPaymentStatus(event.target.value)}>
-                <option value="">All</option>
-                <option value="PAID">PAID</option>
-                <option value="PENDING">PENDING</option>
-                <option value="FAILED">FAILED</option>
-                <option value="REFUNDED">REFUNDED</option>
-              </select>
-            </div>
-            <div>
-              <Label className="mb-1 block text-xs uppercase">Order #</Label>
-              <Input value={orderNumber} onChange={(event) => setOrderNumber(event.target.value)} placeholder="100234" />
-            </div>
-            <div>
-              <Label className="mb-1 block text-xs uppercase">Company</Label>
-              <Input value={company} onChange={(event) => setCompany(event.target.value)} placeholder="Studio" />
-            </div>
-            <div>
-              <Label className="mb-1 block text-xs uppercase">Email</Label>
-              <Input value={contactEmail} onChange={(event) => setContactEmail(event.target.value)} placeholder="contact@" />
-            </div>
-            <div>
-              <Label className="mb-1 block text-xs uppercase">Reviewer</Label>
-              <Input value={reviewer} onChange={(event) => setReviewer(event.target.value)} placeholder="assignee" />
-            </div>
-            <div>
-              <Label className="mb-1 block text-xs uppercase">Assets</Label>
-              <select className="h-10 w-full rounded-md border px-3 text-sm" value={hasAssets} onChange={(event) => setHasAssets(event.target.value)}>
-                <option value="">All</option>
-                <option value="true">Has assets</option>
-                <option value="false">Missing assets</option>
-              </select>
-            </div>
-            <div>
-              <Label className="mb-1 block text-xs uppercase">Reserved from</Label>
-              <Input type="date" value={reservedFrom} onChange={(event) => setReservedFrom(event.target.value)} />
-            </div>
-            <div>
-              <Label className="mb-1 block text-xs uppercase">Reserved to</Label>
-              <Input type="date" value={reservedTo} onChange={(event) => setReservedTo(event.target.value)} />
-            </div>
-            <div>
-              <Label className="mb-1 block text-xs uppercase">Created from</Label>
-              <Input type="date" value={createdFrom} onChange={(event) => setCreatedFrom(event.target.value)} />
-            </div>
-            <div>
-              <Label className="mb-1 block text-xs uppercase">Created to</Label>
-              <Input type="date" value={createdTo} onChange={(event) => setCreatedTo(event.target.value)} />
-            </div>
-            <div className="flex items-end gap-2">
-              <Button onClick={() => void refresh()}>Apply filters</Button>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setQuery("");
-                  setProductType("");
-                  setEditorialStatus("");
-                  setPublicationStatus("");
-                  setPaymentStatus("");
-                  setCompany("");
-                  setContactEmail("");
-                  setOrderNumber("");
-                  setReviewer("");
-                  setHasAssets("");
-                  setReservedFrom("");
-                  setReservedTo("");
-                  setCreatedFrom("");
-                  setCreatedTo("");
-                }}
-              >
-                Reset
-              </Button>
-            </div>
-          </div>
-        </section>
+          </section>
+        ) : null}
 
         <section className="overflow-hidden rounded-lg border bg-background">
           {loading ? (
@@ -537,78 +600,84 @@ export default function AdminSubmissionsPageClient() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Submission ID</TableHead>
-                    <TableHead>Product</TableHead>
-                    <TableHead>Order #</TableHead>
-                    <TableHead>Company</TableHead>
-                    <TableHead>Contact</TableHead>
-                    <TableHead>Reserved slot</TableHead>
-                    <TableHead>Created</TableHead>
-                    <TableHead>Updated</TableHead>
-                    <TableHead>Payment</TableHead>
-                    <TableHead>Editorial</TableHead>
-                    <TableHead>Publication</TableHead>
-                    <TableHead>Reviewer</TableHead>
-                    <TableHead>Purchased options</TableHead>
-                    <TableHead>Assets</TableHead>
-                    <TableHead>Actions</TableHead>
+                    <TableHead className="whitespace-nowrap px-2 py-2"><SortHeader label="Submission ID" sortKey="submissionId" activeSortKey={sortKey} sortDir={sortDir} onClick={handleSort} /></TableHead>
+                    <TableHead className="whitespace-nowrap px-2 py-2"><SortHeader label="Product" sortKey="productType" activeSortKey={sortKey} sortDir={sortDir} onClick={handleSort} /></TableHead>
+                    <TableHead className="whitespace-nowrap px-2 py-2"><SortHeader label="Order #" sortKey="orderNumber" activeSortKey={sortKey} sortDir={sortDir} onClick={handleSort} /></TableHead>
+                    <TableHead className="whitespace-nowrap px-2 py-2"><SortHeader label="Company" sortKey="company" activeSortKey={sortKey} sortDir={sortDir} onClick={handleSort} /></TableHead>
+                    <TableHead className="whitespace-nowrap px-2 py-2">Contact</TableHead>
+                    <TableHead className="whitespace-nowrap px-2 py-2"><SortHeader label="Reserved slot" sortKey="reservedSlot" activeSortKey={sortKey} sortDir={sortDir} onClick={handleSort} /></TableHead>
+                    <TableHead className="whitespace-nowrap px-2 py-2">Urgency</TableHead>
+                    <TableHead className="whitespace-nowrap px-2 py-2"><SortHeader label="Created" sortKey="createdAt" activeSortKey={sortKey} sortDir={sortDir} onClick={handleSort} /></TableHead>
+                    <TableHead className="whitespace-nowrap px-2 py-2"><SortHeader label="Updated" sortKey="updatedAt" activeSortKey={sortKey} sortDir={sortDir} onClick={handleSort} /></TableHead>
+                    <TableHead className="whitespace-nowrap px-2 py-2"><SortHeader label="Payment" sortKey="paymentStatus" activeSortKey={sortKey} sortDir={sortDir} onClick={handleSort} /></TableHead>
+                    <TableHead className="whitespace-nowrap px-2 py-2"><SortHeader label="Editorial" sortKey="editorialStatus" activeSortKey={sortKey} sortDir={sortDir} onClick={handleSort} /></TableHead>
+                    <TableHead className="whitespace-nowrap px-2 py-2"><SortHeader label="Publication" sortKey="publicationStatus" activeSortKey={sortKey} sortDir={sortDir} onClick={handleSort} /></TableHead>
+                    <TableHead className="whitespace-nowrap px-2 py-2"><SortHeader label="Reviewer" sortKey="reviewerAssignee" activeSortKey={sortKey} sortDir={sortDir} onClick={handleSort} /></TableHead>
+                    <TableHead className="whitespace-nowrap px-2 py-2">Purchased options</TableHead>
+                    <TableHead className="whitespace-nowrap px-2 py-2">Assets</TableHead>
+                    <TableHead className="whitespace-nowrap px-2 py-2">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {rows.map((row) => (
-                    <TableRow key={row.id}>
-                      <TableCell className="font-mono text-xs">{compactText(row.submissionId, 20)}</TableCell>
-                      <TableCell><Badge variant="outline">{row.productType.toUpperCase()}</Badge></TableCell>
-                      <TableCell>{row.orderNumber !== "-" ? row.orderNumber : row.linkedOrderId}</TableCell>
-                      <TableCell title={row.company}>{compactText(row.company)}</TableCell>
-                      <TableCell title={row.contactEmail}>{compactText(row.contactEmail, 24)}</TableCell>
-                      <TableCell title={row.reservedSlot}>{compactText(row.reservedSlot, 20)}</TableCell>
-                      <TableCell>{iso(row.createdAt)}</TableCell>
-                      <TableCell>{iso(row.updatedAt)}</TableCell>
-                      <TableCell>{statusPill("payment", row.paymentStatus)}</TableCell>
-                      <TableCell>{statusPill("editorial", row.editorialStatus)}</TableCell>
-                      <TableCell>{statusPill("publication", row.publicationStatus)}</TableCell>
-                      <TableCell title={row.reviewerAssignee}>{compactText(row.reviewerAssignee, 14)}</TableCell>
-                      <TableCell>
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-1 text-xs text-muted-foreground" title={row.purchasedOptionsSummary}>
-                            <FileText className="h-3.5 w-3.5" />
-                            {compactText(row.purchasedOptionsSummary, 28)}
+                  {sortedRows.map((row) => {
+                    const urgency = urgencyFromCreated(row.createdAt);
+                    const isNew = row.editorialStatus === "SUBMITTED" && urgency.minutes < 120;
+                    return (
+                      <TableRow key={row.id}>
+                        <TableCell className="whitespace-nowrap px-2 py-2 font-mono text-xs">{compactText(row.submissionId, 20)}</TableCell>
+                        <TableCell className="whitespace-nowrap px-2 py-2"><Badge variant="outline">{row.productType.toUpperCase()}</Badge></TableCell>
+                        <TableCell className="whitespace-nowrap px-2 py-2">{row.orderNumber !== "-" ? row.orderNumber : row.linkedOrderId}</TableCell>
+                        <TableCell className="whitespace-nowrap px-2 py-2" title={row.company}>{compactText(row.company, 18)}</TableCell>
+                        <TableCell className="whitespace-nowrap px-2 py-2" title={row.contactEmail}>{compactText(row.contactEmail, 20)}</TableCell>
+                        <TableCell className="whitespace-nowrap px-2 py-2" title={row.reservedSlot}>{compactText(row.reservedSlot, 18)}</TableCell>
+                        <TableCell className="whitespace-nowrap px-2 py-2">
+                          <span className={`inline-flex rounded border px-2 py-0.5 text-xs font-medium ${urgency.className}`}>{urgency.label}</span>
+                          {isNew ? <Badge className="ml-1" variant="secondary">NEW</Badge> : null}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap px-2 py-2 text-xs">{iso(row.createdAt)}</TableCell>
+                        <TableCell className="whitespace-nowrap px-2 py-2 text-xs">{iso(row.updatedAt)}</TableCell>
+                        <TableCell className="whitespace-nowrap px-2 py-2">{statusPill("payment", row.paymentStatus)}</TableCell>
+                        <TableCell className="whitespace-nowrap px-2 py-2">{statusPill("editorial", row.editorialStatus)}</TableCell>
+                        <TableCell className="whitespace-nowrap px-2 py-2">{statusPill("publication", row.publicationStatus)}</TableCell>
+                        <TableCell className="whitespace-nowrap px-2 py-2" title={row.reviewerAssignee}>{compactText(row.reviewerAssignee, 12)}</TableCell>
+                        <TableCell className="px-2 py-2">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1 text-xs text-muted-foreground" title={row.purchasedOptionsSummary}>
+                              <FileText className="h-3.5 w-3.5" />
+                              {compactText(row.purchasedOptionsSummary, 26)}
+                            </div>
+                            <div className="flex flex-wrap gap-1">
+                              <PreviewHint label="Title" text={row.previews.title} Icon={Tag} />
+                              <PreviewHint label="Short description" text={row.previews.shortDescription} Icon={FileText} />
+                              <PreviewHint label="Body" text={row.previews.body} Icon={AlignLeft} />
+                              <PreviewHint label="Quiz" text={row.previews.quiz} Icon={FileQuestion} />
+                              <PreviewHint label="Shipping" text={row.previews.shipping} Icon={MapPinned} />
+                              <PreviewHint label="Audience Amplifier" text={row.previews.audienceAmplifier} Icon={Link2} />
+                            </div>
                           </div>
-                          <div className="flex flex-wrap gap-1">
-                            <PreviewHint label="Title" text={row.previews.title} Icon={Tag} />
-                            <PreviewHint label="Short description" text={row.previews.shortDescription} Icon={FileText} />
-                            <PreviewHint label="Body" text={row.previews.body} Icon={AlignLeft} />
-                            <PreviewHint label="Quiz" text={row.previews.quiz} Icon={FileQuestion} />
-                            <PreviewHint label="Shipping" text={row.previews.shipping} Icon={MapPinned} />
-                            <PreviewHint label="Audience Amplifier" text={row.previews.audienceAmplifier} Icon={Link2} />
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap px-2 py-2">
+                          <div className="flex items-center gap-1 text-xs text-muted-foreground" title={row.assetsSummary}>
+                            <ImageIcon className="h-3.5 w-3.5" />
+                            {row.assetsSummary}
                           </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1 text-xs text-muted-foreground" title={row.assetsSummary}>
-                          <ImageIcon className="h-3.5 w-3.5" />
-                          {row.assetsSummary}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1">
-                          <Button size="sm" variant="outline" onClick={() => void openDetail(row.id)} title="View detail" aria-label="View detail">
-                            <Eye className="h-3.5 w-3.5" />
-                            <span className="hidden xl:inline">View</span>
-                          </Button>
-                          <Button size="sm" variant="outline" onClick={() => download(`/api/admin/submissions/${row.id}/assets?mode=zip`)} title="Download assets ZIP" aria-label="Download assets ZIP">
-                            <Download className="h-3.5 w-3.5" />
-                            <span className="hidden xl:inline">Assets</span>
-                          </Button>
-                          <Button size="sm" variant="outline" onClick={() => download(`/api/admin/submissions/${row.id}/export?format=package`)} title="Export submission package" aria-label="Export submission package">
-                            <Globe2 className="h-3.5 w-3.5" />
-                            <span className="hidden xl:inline">Package</span>
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                        </TableCell>
+                        <TableCell className="px-2 py-2">
+                          <div className="grid grid-cols-3 gap-1">
+                            <Button size="sm" variant="outline" className="h-8 w-8 p-0" onClick={() => void openDetail(row.id)} title="View" aria-label="View">
+                              <Eye className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button size="sm" variant="outline" className="h-8 w-8 p-0" onClick={() => download(`/api/admin/submissions/${row.id}/assets?mode=zip`)} title="Download assets ZIP" aria-label="Download assets ZIP">
+                              <Download className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button size="sm" variant="outline" className="h-8 w-8 p-0" onClick={() => download(`/api/admin/submissions/${row.id}/export?format=package`)} title="Export package" aria-label="Export package">
+                              <Globe2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>
@@ -720,50 +789,25 @@ export default function AdminSubmissionsPageClient() {
               <section className="rounded-md border p-4">
                 <h3 className="text-sm font-semibold uppercase">Client submission data</h3>
                 <div className="mt-3 space-y-3 text-sm">
-                  <div className="rounded border p-3">
-                    <p className="text-xs uppercase text-muted-foreground">Title</p>
-                    <p>{getString(formData, "title")}</p>
-                  </div>
-                  <div className="rounded border p-3">
-                    <p className="text-xs uppercase text-muted-foreground">Short product description</p>
-                    <p className="whitespace-pre-wrap">{getString(formData, "short_product_description")}</p>
-                  </div>
-                  <div className="rounded border p-3">
-                    <p className="text-xs uppercase text-muted-foreground">Body</p>
-                    <p className="whitespace-pre-wrap">{getString(formData, "body")}</p>
-                  </div>
-                  <div className="rounded border p-3">
-                    <p className="text-xs uppercase text-muted-foreground">Notes to admin</p>
-                    <p className="whitespace-pre-wrap">{getString(formData, "notes")}</p>
-                  </div>
+                  <div className="rounded border p-3"><p className="text-xs uppercase text-muted-foreground">Title</p><p>{getString(formData, "title")}</p></div>
+                  <div className="rounded border p-3"><p className="text-xs uppercase text-muted-foreground">Short product description</p><p className="whitespace-pre-wrap">{getString(formData, "short_product_description")}</p></div>
+                  <div className="rounded border p-3"><p className="text-xs uppercase text-muted-foreground">Body</p><p className="whitespace-pre-wrap">{getString(formData, "body")}</p></div>
+                  <div className="rounded border p-3"><p className="text-xs uppercase text-muted-foreground">Notes to admin</p><p className="whitespace-pre-wrap">{getString(formData, "notes")}</p></div>
 
                   {detail.submission.productType === "giveaway" ? (
                     <>
                       <div className="rounded border p-3">
                         <p className="text-xs uppercase text-muted-foreground">Giveaway details</p>
                         <div className="grid gap-1 md:grid-cols-2">
-                          <p>Prize: {getString(formData, "prize_name")}</p>
-                          <p>Category: {getString(formData, "giveaway_category")}</p>
-                          <p>Units: {getString(formData, "prize_units_count")}</p>
-                          <p>Unit value (USD): {getString(formData, "prize_unit_value_usd")}</p>
+                          <p>Prize: {getString(formData, "prize_name")}</p><p>Category: {getString(formData, "giveaway_category")}</p><p>Units: {getString(formData, "prize_units_count")}</p><p>Unit value (USD): {getString(formData, "prize_unit_value_usd")}</p>
                         </div>
                       </div>
                       <div className="rounded border p-3">
                         <p className="text-xs uppercase text-muted-foreground">Quiz question and answers</p>
-                        <div className="grid gap-1">
-                          {quizFields.map(([label, value]) => (
-                            <p key={label}><span className="text-muted-foreground">{label}:</span> {value}</p>
-                          ))}
-                        </div>
+                        <div className="grid gap-1">{quizFields.map(([label, value]) => (<p key={label}><span className="text-muted-foreground">{label}:</span> {value}</p>))}</div>
                       </div>
-                      <div className="rounded border p-3">
-                        <p className="text-xs uppercase text-muted-foreground">Shipping configuration</p>
-                        <p>{shipping.length ? shipping.join(", ") : "-"}</p>
-                      </div>
-                      <div className="rounded border p-3">
-                        <p className="text-xs uppercase text-muted-foreground">Audience Amplifier configuration</p>
-                        <pre className="whitespace-pre-wrap text-xs">{summarizeAudienceAmplifier(formData)}</pre>
-                      </div>
+                      <div className="rounded border p-3"><p className="text-xs uppercase text-muted-foreground">Shipping configuration</p><p>{shipping.length ? shipping.join(", ") : "-"}</p></div>
+                      <div className="rounded border p-3"><p className="text-xs uppercase text-muted-foreground">Audience Amplifier configuration</p><pre className="whitespace-pre-wrap text-xs">{summarizeAudienceAmplifier(formData)}</pre></div>
                     </>
                   ) : null}
                 </div>
