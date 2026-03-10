@@ -1,31 +1,31 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Download, Eye, FileText, Globe2, Image as ImageIcon, Loader2, Search, Shield } from "lucide-react";
+import { type ComponentType, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  AlignLeft,
+  Download,
+  Eye,
+  FileQuestion,
+  FileText,
+  Globe2,
+  Image as ImageIcon,
+  Link2,
+  Loader2,
+  MapPinned,
+  Search,
+  Shield,
+  Tag,
+} from "lucide-react";
 
 import { BrandHeader } from "@/components/BrandHeader";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { buttonVariants } from "@/components/ui/button";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 const ADMIN_TOKEN_KEY = "adminToken";
 
@@ -47,10 +47,24 @@ type ListRow = {
   purchasedOptionsSummary: string;
   assetsSummary: string;
   hasAssets: boolean;
+  previews: {
+    title: string;
+    shortDescription: string;
+    body: string;
+    quiz: string;
+    shipping: string;
+    audienceAmplifier: string;
+  };
 };
 
 type DetailPayload = {
   role: string;
+  permissions: {
+    canUpdateEditorial: boolean;
+    canUpdatePublication: boolean;
+    canUpdatePayment: boolean;
+    canUpdateNotes: boolean;
+  };
   submission: {
     id: string;
     productType: string;
@@ -93,13 +107,6 @@ type DetailPayload = {
   }>;
 };
 
-function statusBadgeVariant(status: string): "default" | "secondary" | "destructive" | "outline" {
-  if (status === "REJECTED" || status === "FAILED") return "destructive";
-  if (status === "PUBLISHED" || status === "APPROVED" || status === "PAID") return "default";
-  if (status === "CHANGES_REQUESTED" || status === "REFUNDED" || status === "ARCHIVED") return "outline";
-  return "secondary";
-}
-
 function compactText(text: string, max = 44): string {
   const value = text || "-";
   return value.length <= max ? value : `${value.slice(0, max - 1)}…`;
@@ -115,6 +122,69 @@ function iso(value: string): string {
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
+}
+
+function statusClass(group: "payment" | "editorial" | "publication", status: string): string {
+  if (group === "editorial") {
+    if (status === "SUBMITTED") return "bg-slate-100 text-slate-700 border-slate-200";
+    if (status === "UNDER_REVIEW") return "bg-blue-100 text-blue-800 border-blue-200";
+    if (status === "CHANGES_REQUESTED") return "bg-amber-100 text-amber-800 border-amber-200";
+    if (status === "APPROVED") return "bg-emerald-100 text-emerald-800 border-emerald-200";
+    return "bg-red-100 text-red-800 border-red-200";
+  }
+  if (group === "publication") {
+    if (status === "NOT_SCHEDULED") return "bg-slate-100 text-slate-700 border-slate-200";
+    if (status === "SCHEDULED") return "bg-violet-100 text-violet-800 border-violet-200";
+    if (status === "PUBLISHED") return "bg-emerald-100 text-emerald-800 border-emerald-200";
+    return "bg-transparent text-slate-600 border-slate-300";
+  }
+  if (status === "PAID") return "bg-emerald-700 text-white border-emerald-700";
+  if (status === "PENDING") return "bg-amber-100 text-amber-800 border-amber-200";
+  if (status === "FAILED") return "bg-red-100 text-red-800 border-red-200";
+  return "bg-transparent text-slate-600 border-slate-300";
+}
+
+function statusPill(group: "payment" | "editorial" | "publication", status: string) {
+  return <span className={`inline-flex rounded border px-2 py-0.5 text-xs font-medium ${statusClass(group, status)}`}>{status}</span>;
+}
+
+function getString(data: Record<string, unknown>, key: string): string {
+  const value = data[key];
+  return typeof value === "string" && value.trim() ? value.trim() : "-";
+}
+
+function getStringList(data: Record<string, unknown>, key: string): string[] {
+  const value = data[key];
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+}
+
+function summarizeAudienceAmplifier(formData: Record<string, unknown>): string {
+  const raw = formData.audience_amplifier_actions;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return "Not configured";
+  const actionMap = raw as Record<string, unknown>;
+  const labels: string[] = [];
+  for (const [key, value] of Object.entries(actionMap)) {
+    if (typeof value === "string" && value.trim()) {
+      labels.push(`${key}: ${value}`);
+      continue;
+    }
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      const nested = Object.entries(value as Record<string, unknown>)
+        .filter(([, nestedValue]) => typeof nestedValue === "string" && nestedValue.trim().length > 0)
+        .map(([nestedKey, nestedValue]) => `${key}.${nestedKey}: ${nestedValue as string}`);
+      labels.push(...nested);
+    }
+  }
+  return labels.length ? labels.join("\n") : "Not configured";
+}
+
+function PreviewHint({ label, text, Icon }: { label: string; text: string; Icon: ComponentType<{ className?: string }> }) {
+  return (
+    <span className="inline-flex items-center rounded border px-1.5 py-1 text-[11px] text-muted-foreground" title={`${label}: ${text || "-"}`}>
+      <Icon className="h-3 w-3" />
+    </span>
+  );
 }
 
 export default function AdminSubmissionsPageClient() {
@@ -180,9 +250,7 @@ export default function AdminSubmissionsPageClient() {
           ...(init?.headers ?? {}),
         },
       });
-      if (response.status === 401) {
-        setUnauthorized(true);
-      }
+      if (response.status === 401) setUnauthorized(true);
       return response;
     },
     [token]
@@ -206,7 +274,7 @@ export default function AdminSubmissionsPageClient() {
     if (reservedTo) params.set("reservedTo", reservedTo);
     params.set("limit", "120");
     return params.toString();
-  }, [company, contactEmail, createdFrom, createdTo, editorialStatus, hasAssets, orderNumber, paymentStatus, productType, publicationStatus, query, reservedFrom, reservedTo, reviewer]);
+  }, [query, productType, editorialStatus, publicationStatus, paymentStatus, company, contactEmail, orderNumber, reviewer, hasAssets, createdFrom, createdTo, reservedFrom, reservedTo]);
 
   const refresh = useCallback(async () => {
     if (!token.trim()) return;
@@ -224,7 +292,7 @@ export default function AdminSubmissionsPageClient() {
     } finally {
       setLoading(false);
     }
-  }, [adminFetch, queryString, token]);
+  }, [token, adminFetch, queryString]);
 
   useEffect(() => {
     void refresh();
@@ -276,19 +344,44 @@ export default function AdminSubmissionsPageClient() {
     window.open(url, "_blank", "noopener,noreferrer");
   };
 
+  const roleCanEdit = useMemo(() => {
+    const isSuper = role === "SUPER_ADMIN";
+    const isContent = role === "CONTENT_ADMIN";
+    const isOps = role === "OPS_ADMIN";
+    return {
+      canUpdatePayment: isSuper,
+      canUpdateEditorial: isSuper || isContent,
+      canUpdatePublication: isSuper || isOps,
+      canUpdateNotes: isSuper || isContent || isOps,
+      canSeeInternalNotes: role !== "PUBLISHER" && role !== "CLIENT_PRO",
+    };
+  }, [role]);
+
+  const detailPermissions = detail?.permissions ?? {
+    canUpdatePayment: roleCanEdit.canUpdatePayment,
+    canUpdateEditorial: roleCanEdit.canUpdateEditorial,
+    canUpdatePublication: roleCanEdit.canUpdatePublication,
+    canUpdateNotes: roleCanEdit.canUpdateNotes,
+  };
+
+  const formData = detail?.submission.formData ?? {};
+  const shipping = getStringList(formData, "shipping_countries");
+  const quizFields = [
+    ["Question", getString(formData, "giveaway_question")],
+    ["Correct", getString(formData, "answer_correct")],
+    ["Wrong #1", getString(formData, "answer_wrong_1")],
+    ["Wrong #2", getString(formData, "answer_wrong_2")],
+    ["Wrong #3", getString(formData, "answer_wrong_3")],
+    ["Wrong #4", getString(formData, "answer_wrong_4")],
+  ] as const;
+
   return (
     <main className="min-h-screen bg-muted/30">
       <header className="border-b bg-background">
         <div className="mx-auto flex w-full max-w-[1400px] items-center justify-between px-6 py-4">
           <BrandHeader title="Admin Back Office" subtitle="Submission operations center (one row = one purchased submission)." />
           <div className="flex items-center gap-2">
-            <Input
-              type="password"
-              placeholder="Admin token"
-              value={token}
-              onChange={(event) => updateToken(event.target.value)}
-              className="w-64"
-            />
+            <Input type="password" placeholder="Admin token" value={token} onChange={(event) => updateToken(event.target.value)} className="w-64" />
             <Button type="button" variant="outline" onClick={clearToken}>Clear</Button>
           </div>
         </div>
@@ -438,9 +531,7 @@ export default function AdminSubmissionsPageClient() {
 
         <section className="overflow-hidden rounded-lg border bg-background">
           {loading ? (
-            <div className="flex min-h-[220px] items-center justify-center">
-              <Loader2 className="h-5 w-5 animate-spin" />
-            </div>
+            <div className="flex min-h-[220px] items-center justify-center"><Loader2 className="h-5 w-5 animate-spin" /></div>
           ) : (
             <div className="overflow-x-auto">
               <Table>
@@ -466,48 +557,53 @@ export default function AdminSubmissionsPageClient() {
                 <TableBody>
                   {rows.map((row) => (
                     <TableRow key={row.id}>
-                      <TableCell className="font-mono text-xs">{row.submissionId}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline">{row.productType.toUpperCase()}</Badge>
-                      </TableCell>
+                      <TableCell className="font-mono text-xs">{compactText(row.submissionId, 20)}</TableCell>
+                      <TableCell><Badge variant="outline">{row.productType.toUpperCase()}</Badge></TableCell>
                       <TableCell>{row.orderNumber !== "-" ? row.orderNumber : row.linkedOrderId}</TableCell>
                       <TableCell title={row.company}>{compactText(row.company)}</TableCell>
-                      <TableCell title={row.contactEmail}>{compactText(row.contactEmail, 28)}</TableCell>
-                      <TableCell title={row.reservedSlot}>{compactText(row.reservedSlot, 24)}</TableCell>
+                      <TableCell title={row.contactEmail}>{compactText(row.contactEmail, 24)}</TableCell>
+                      <TableCell title={row.reservedSlot}>{compactText(row.reservedSlot, 20)}</TableCell>
                       <TableCell>{iso(row.createdAt)}</TableCell>
                       <TableCell>{iso(row.updatedAt)}</TableCell>
+                      <TableCell>{statusPill("payment", row.paymentStatus)}</TableCell>
+                      <TableCell>{statusPill("editorial", row.editorialStatus)}</TableCell>
+                      <TableCell>{statusPill("publication", row.publicationStatus)}</TableCell>
+                      <TableCell title={row.reviewerAssignee}>{compactText(row.reviewerAssignee, 14)}</TableCell>
                       <TableCell>
-                        <Badge variant={statusBadgeVariant(row.paymentStatus)}>{row.paymentStatus}</Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={statusBadgeVariant(row.editorialStatus)}>{row.editorialStatus}</Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={statusBadgeVariant(row.publicationStatus)}>{row.publicationStatus}</Badge>
-                      </TableCell>
-                      <TableCell title={row.reviewerAssignee}>{compactText(row.reviewerAssignee, 16)}</TableCell>
-                      <TableCell title={row.purchasedOptionsSummary}>
-                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                          <FileText className="h-3.5 w-3.5" />
-                          {compactText(row.purchasedOptionsSummary, 30)}
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-1 text-xs text-muted-foreground" title={row.purchasedOptionsSummary}>
+                            <FileText className="h-3.5 w-3.5" />
+                            {compactText(row.purchasedOptionsSummary, 28)}
+                          </div>
+                          <div className="flex flex-wrap gap-1">
+                            <PreviewHint label="Title" text={row.previews.title} Icon={Tag} />
+                            <PreviewHint label="Short description" text={row.previews.shortDescription} Icon={FileText} />
+                            <PreviewHint label="Body" text={row.previews.body} Icon={AlignLeft} />
+                            <PreviewHint label="Quiz" text={row.previews.quiz} Icon={FileQuestion} />
+                            <PreviewHint label="Shipping" text={row.previews.shipping} Icon={MapPinned} />
+                            <PreviewHint label="Audience Amplifier" text={row.previews.audienceAmplifier} Icon={Link2} />
+                          </div>
                         </div>
                       </TableCell>
-                      <TableCell title={row.assetsSummary}>
-                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <TableCell>
+                        <div className="flex items-center gap-1 text-xs text-muted-foreground" title={row.assetsSummary}>
                           <ImageIcon className="h-3.5 w-3.5" />
                           {row.assetsSummary}
                         </div>
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1">
-                          <Button size="sm" variant="outline" onClick={() => void openDetail(row.id)}>
+                          <Button size="sm" variant="outline" onClick={() => void openDetail(row.id)} title="View detail" aria-label="View detail">
                             <Eye className="h-3.5 w-3.5" />
+                            <span className="hidden xl:inline">View</span>
                           </Button>
-                          <Button size="sm" variant="outline" onClick={() => download(`/api/admin/submissions/${row.id}/assets?mode=zip`)}>
+                          <Button size="sm" variant="outline" onClick={() => download(`/api/admin/submissions/${row.id}/assets?mode=zip`)} title="Download assets ZIP" aria-label="Download assets ZIP">
                             <Download className="h-3.5 w-3.5" />
+                            <span className="hidden xl:inline">Assets</span>
                           </Button>
-                          <Button size="sm" variant="outline" onClick={() => download(`/api/admin/submissions/${row.id}/export?format=package`)}>
+                          <Button size="sm" variant="outline" onClick={() => download(`/api/admin/submissions/${row.id}/export?format=package`)} title="Export submission package" aria-label="Export submission package">
                             <Globe2 className="h-3.5 w-3.5" />
+                            <span className="hidden xl:inline">Package</span>
                           </Button>
                         </div>
                       </TableCell>
@@ -521,16 +617,14 @@ export default function AdminSubmissionsPageClient() {
       </div>
 
       <Sheet open={Boolean(selectedId)} onOpenChange={(open) => (!open ? setSelectedId(null) : undefined)}>
-        <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-3xl">
+        <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-4xl">
           <SheetHeader>
             <SheetTitle>Submission detail</SheetTitle>
-            <SheetDescription>Order/customer info, content payload, workflow, notes, and audit trail.</SheetDescription>
+            <SheetDescription>Order/customer info, workflow, client submission data, and audit history.</SheetDescription>
           </SheetHeader>
 
           {detailLoading ? (
-            <div className="mt-8 flex items-center justify-center">
-              <Loader2 className="h-5 w-5 animate-spin" />
-            </div>
+            <div className="mt-8 flex items-center justify-center"><Loader2 className="h-5 w-5 animate-spin" /></div>
           ) : null}
 
           {detail ? (
@@ -550,64 +644,128 @@ export default function AdminSubmissionsPageClient() {
               <section className="rounded-md border p-4">
                 <h3 className="text-sm font-semibold uppercase">Workflow</h3>
                 <div className="mt-3 grid gap-3 md:grid-cols-2">
-                  <div>
-                    <Label className="mb-1 block text-xs">ORDER/PAYMENT STATUS</Label>
-                    <select className="h-10 w-full rounded-md border px-3 text-sm" value={workflow.orderPaymentStatus} onChange={(event) => setWorkflow((prev) => ({ ...prev, orderPaymentStatus: event.target.value }))}>
-                      <option>PAID</option>
-                      <option>PENDING</option>
-                      <option>FAILED</option>
-                      <option>REFUNDED</option>
-                    </select>
-                  </div>
-                  <div>
-                    <Label className="mb-1 block text-xs">EDITORIAL STATUS</Label>
-                    <select className="h-10 w-full rounded-md border px-3 text-sm" value={workflow.editorialStatus} onChange={(event) => setWorkflow((prev) => ({ ...prev, editorialStatus: event.target.value }))}>
-                      <option>SUBMITTED</option>
-                      <option>UNDER_REVIEW</option>
-                      <option>CHANGES_REQUESTED</option>
-                      <option>APPROVED</option>
-                      <option>REJECTED</option>
-                    </select>
-                  </div>
-                  <div>
-                    <Label className="mb-1 block text-xs">PUBLICATION STATUS</Label>
-                    <select className="h-10 w-full rounded-md border px-3 text-sm" value={workflow.publicationStatus} onChange={(event) => setWorkflow((prev) => ({ ...prev, publicationStatus: event.target.value }))}>
-                      <option>NOT_SCHEDULED</option>
-                      <option>SCHEDULED</option>
-                      <option>PUBLISHED</option>
-                      <option>ARCHIVED</option>
-                    </select>
-                  </div>
+                  {detailPermissions.canUpdatePayment ? (
+                    <div>
+                      <Label className="mb-1 block text-xs">ORDER/PAYMENT STATUS</Label>
+                      <select className="h-10 w-full rounded-md border px-3 text-sm" value={workflow.orderPaymentStatus} onChange={(event) => setWorkflow((prev) => ({ ...prev, orderPaymentStatus: event.target.value }))}>
+                        <option>PAID</option><option>PENDING</option><option>FAILED</option><option>REFUNDED</option>
+                      </select>
+                    </div>
+                  ) : (
+                    <div>
+                      <Label className="mb-1 block text-xs">ORDER/PAYMENT STATUS</Label>
+                      <div>{statusPill("payment", workflow.orderPaymentStatus)}</div>
+                    </div>
+                  )}
+
+                  {detailPermissions.canUpdateEditorial ? (
+                    <div>
+                      <Label className="mb-1 block text-xs">EDITORIAL STATUS</Label>
+                      <select className="h-10 w-full rounded-md border px-3 text-sm" value={workflow.editorialStatus} onChange={(event) => setWorkflow((prev) => ({ ...prev, editorialStatus: event.target.value }))}>
+                        <option>SUBMITTED</option><option>UNDER_REVIEW</option><option>CHANGES_REQUESTED</option><option>APPROVED</option><option>REJECTED</option>
+                      </select>
+                    </div>
+                  ) : (
+                    <div>
+                      <Label className="mb-1 block text-xs">EDITORIAL STATUS</Label>
+                      <div>{statusPill("editorial", workflow.editorialStatus)}</div>
+                    </div>
+                  )}
+
+                  {detailPermissions.canUpdatePublication ? (
+                    <div>
+                      <Label className="mb-1 block text-xs">PUBLICATION STATUS</Label>
+                      <select className="h-10 w-full rounded-md border px-3 text-sm" value={workflow.publicationStatus} onChange={(event) => setWorkflow((prev) => ({ ...prev, publicationStatus: event.target.value }))}>
+                        <option>NOT_SCHEDULED</option><option>SCHEDULED</option><option>PUBLISHED</option><option>ARCHIVED</option>
+                      </select>
+                    </div>
+                  ) : (
+                    <div>
+                      <Label className="mb-1 block text-xs">PUBLICATION STATUS</Label>
+                      <div>{statusPill("publication", workflow.publicationStatus)}</div>
+                    </div>
+                  )}
+
                   <div>
                     <Label className="mb-1 block text-xs">REVIEWER / ASSIGNEE</Label>
-                    <Input value={workflow.reviewerAssignee} onChange={(event) => setWorkflow((prev) => ({ ...prev, reviewerAssignee: event.target.value }))} />
+                    <Input disabled={!detailPermissions.canUpdateNotes} value={workflow.reviewerAssignee} onChange={(event) => setWorkflow((prev) => ({ ...prev, reviewerAssignee: event.target.value }))} />
                   </div>
+
                   <div className="md:col-span-2">
                     <Label className="mb-1 block text-xs">CLIENT-VISIBLE NOTES / FEEDBACK</Label>
-                    <textarea className="min-h-20 w-full rounded-md border px-3 py-2 text-sm" value={workflow.clientVisibleNote} onChange={(event) => setWorkflow((prev) => ({ ...prev, clientVisibleNote: event.target.value }))} />
+                    <textarea disabled={!detailPermissions.canUpdateNotes} className="min-h-20 w-full rounded-md border px-3 py-2 text-sm" value={workflow.clientVisibleNote} onChange={(event) => setWorkflow((prev) => ({ ...prev, clientVisibleNote: event.target.value }))} />
                   </div>
-                  <div className="md:col-span-2">
-                    <Label className="mb-1 block text-xs">INTERNAL NOTES</Label>
-                    <textarea className="min-h-20 w-full rounded-md border px-3 py-2 text-sm" value={workflow.internalNote} onChange={(event) => setWorkflow((prev) => ({ ...prev, internalNote: event.target.value }))} />
-                  </div>
-                  <div className="md:col-span-2">
-                    <Label className="mb-1 block text-xs">AUDIT COMMENT (OPTIONAL)</Label>
-                    <Input value={workflow.comment} onChange={(event) => setWorkflow((prev) => ({ ...prev, comment: event.target.value }))} />
-                  </div>
+
+                  {roleCanEdit.canSeeInternalNotes ? (
+                    <div className="md:col-span-2">
+                      <Label className="mb-1 block text-xs">INTERNAL NOTES</Label>
+                      <textarea disabled={!detailPermissions.canUpdateNotes} className="min-h-20 w-full rounded-md border px-3 py-2 text-sm" value={workflow.internalNote} onChange={(event) => setWorkflow((prev) => ({ ...prev, internalNote: event.target.value }))} />
+                    </div>
+                  ) : null}
+
+                  {detailPermissions.canUpdateNotes || detailPermissions.canUpdateEditorial || detailPermissions.canUpdatePublication || detailPermissions.canUpdatePayment ? (
+                    <div className="md:col-span-2">
+                      <Label className="mb-1 block text-xs">AUDIT COMMENT (OPTIONAL)</Label>
+                      <Input value={workflow.comment} onChange={(event) => setWorkflow((prev) => ({ ...prev, comment: event.target.value }))} />
+                    </div>
+                  ) : null}
                 </div>
-                <div className="mt-3 flex justify-end">
-                  <Button onClick={() => void saveWorkflow()} disabled={savingDetail}>
-                    {savingDetail ? "Saving..." : "Save workflow"}
-                  </Button>
-                </div>
+                {detailPermissions.canUpdateNotes || detailPermissions.canUpdateEditorial || detailPermissions.canUpdatePublication || detailPermissions.canUpdatePayment ? (
+                  <div className="mt-3 flex justify-end">
+                    <Button onClick={() => void saveWorkflow()} disabled={savingDetail}>{savingDetail ? "Saving..." : "Save workflow"}</Button>
+                  </div>
+                ) : null}
               </section>
 
               <section className="rounded-md border p-4">
-                <h3 className="text-sm font-semibold uppercase">Main content preview</h3>
-                <div className="mt-3 space-y-2 text-sm">
-                  <p className="flex items-start gap-2"><FileText className="mt-0.5 h-4 w-4" /> <span>{compactText(String(detail.submission.formData.title || "-"), 160)}</span></p>
-                  <p className="flex items-start gap-2"><FileText className="mt-0.5 h-4 w-4" /> <span>{compactText(String(detail.submission.formData.body || "-"), 220)}</span></p>
-                  <p className="flex items-start gap-2"><Globe2 className="mt-0.5 h-4 w-4" /> <span>{compactText(String(detail.submission.formData.short_product_description || "-"), 180)}</span></p>
+                <h3 className="text-sm font-semibold uppercase">Client submission data</h3>
+                <div className="mt-3 space-y-3 text-sm">
+                  <div className="rounded border p-3">
+                    <p className="text-xs uppercase text-muted-foreground">Title</p>
+                    <p>{getString(formData, "title")}</p>
+                  </div>
+                  <div className="rounded border p-3">
+                    <p className="text-xs uppercase text-muted-foreground">Short product description</p>
+                    <p className="whitespace-pre-wrap">{getString(formData, "short_product_description")}</p>
+                  </div>
+                  <div className="rounded border p-3">
+                    <p className="text-xs uppercase text-muted-foreground">Body</p>
+                    <p className="whitespace-pre-wrap">{getString(formData, "body")}</p>
+                  </div>
+                  <div className="rounded border p-3">
+                    <p className="text-xs uppercase text-muted-foreground">Notes to admin</p>
+                    <p className="whitespace-pre-wrap">{getString(formData, "notes")}</p>
+                  </div>
+
+                  {detail.submission.productType === "giveaway" ? (
+                    <>
+                      <div className="rounded border p-3">
+                        <p className="text-xs uppercase text-muted-foreground">Giveaway details</p>
+                        <div className="grid gap-1 md:grid-cols-2">
+                          <p>Prize: {getString(formData, "prize_name")}</p>
+                          <p>Category: {getString(formData, "giveaway_category")}</p>
+                          <p>Units: {getString(formData, "prize_units_count")}</p>
+                          <p>Unit value (USD): {getString(formData, "prize_unit_value_usd")}</p>
+                        </div>
+                      </div>
+                      <div className="rounded border p-3">
+                        <p className="text-xs uppercase text-muted-foreground">Quiz question and answers</p>
+                        <div className="grid gap-1">
+                          {quizFields.map(([label, value]) => (
+                            <p key={label}><span className="text-muted-foreground">{label}:</span> {value}</p>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="rounded border p-3">
+                        <p className="text-xs uppercase text-muted-foreground">Shipping configuration</p>
+                        <p>{shipping.length ? shipping.join(", ") : "-"}</p>
+                      </div>
+                      <div className="rounded border p-3">
+                        <p className="text-xs uppercase text-muted-foreground">Audience Amplifier configuration</p>
+                        <pre className="whitespace-pre-wrap text-xs">{summarizeAudienceAmplifier(formData)}</pre>
+                      </div>
+                    </>
+                  ) : null}
                 </div>
               </section>
 
@@ -618,13 +776,14 @@ export default function AdminSubmissionsPageClient() {
                     <p className="text-muted-foreground">No events yet.</p>
                   ) : (
                     detail.audit.map((event) => (
-                      <div key={event.id} className="rounded border p-2">
-                        <p className="font-medium">{event.eventType} {event.fieldName ? `• ${event.fieldName}` : ""}</p>
-                        <p className="text-muted-foreground">{iso(event.createdAt)} • {event.actorRole} ({event.actorIdentifier || "-"})</p>
-                        {(event.fromValue || event.toValue) ? (
-                          <p className="text-muted-foreground">{event.fromValue || "-"} → {event.toValue || "-"}</p>
-                        ) : null}
-                        {event.comment ? <p>{event.comment}</p> : null}
+                      <div key={event.id} className="rounded border p-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="font-medium">{event.eventType}{event.fieldName ? ` • ${event.fieldName}` : ""}</p>
+                          <p className="text-muted-foreground">{iso(event.createdAt)}</p>
+                        </div>
+                        <p className="text-muted-foreground">Actor: {event.actorRole} ({event.actorIdentifier || "-"})</p>
+                        <p className="text-muted-foreground">Change: {event.fromValue || "-"} → {event.toValue || "-"}</p>
+                        {event.comment ? <p className="mt-1">Comment: {event.comment}</p> : null}
                       </div>
                     ))
                   )}

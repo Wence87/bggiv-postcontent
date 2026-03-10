@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { EditorialStatus } from "@prisma/client";
 
 import { authenticateAdminRequest, buildSubmissionScopeWhere, canDownloadExports } from "@/lib/adminAuth";
+import { formatReservedSlot, summarizePurchasedOptions } from "@/lib/adminSubmissions";
 import { prisma } from "@/lib/prisma";
 
 function unauthorized() {
@@ -55,12 +56,21 @@ export async function GET(request: NextRequest) {
     "editorial_status",
     "publication_status",
     "assignee",
+    "reserved_slot",
+    "title",
+    "short_description",
+    "purchased_options_summary",
     "created_at",
     "updated_at",
   ]);
 
-  const csvRows = rows.map((row) =>
-    toCsvRow([
+  const csvRows = rows.map((row) => {
+    const form = row.formDataJson && typeof row.formDataJson === "object"
+      ? (row.formDataJson as Record<string, unknown>)
+      : {};
+    const title = typeof form.title === "string" ? form.title : "";
+    const shortDescription = typeof form.short_product_description === "string" ? form.short_product_description : "";
+    return toCsvRow([
       row.id,
       row.orderNumber || "",
       row.linkedOrderId || "",
@@ -71,10 +81,14 @@ export async function GET(request: NextRequest) {
       row.ops?.editorialStatus || "SUBMITTED",
       row.ops?.publicationStatus || "NOT_SCHEDULED",
       row.ops?.reviewerAssignee || "",
+      formatReservedSlot(row),
+      title,
+      shortDescription,
+      summarizePurchasedOptions(row),
       row.createdAt.toISOString(),
       row.updatedAt.toISOString(),
-    ])
-  );
+    ]);
+  });
 
   const payload = [header, ...csvRows].join("\n");
   return new NextResponse(`${payload}\n`, {

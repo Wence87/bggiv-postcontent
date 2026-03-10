@@ -65,6 +65,10 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
 
   const assets = summarizeAssets(submission);
   const hideInternal = auth.role === "PUBLISHER" || auth.role === "CLIENT_PRO";
+  const canUpdateEditorial = canEditEditorial(auth.role);
+  const canUpdatePublication = canEditPublication(auth.role);
+  const canUpdatePayment = canEditPayment(auth.role);
+  const canUpdateNotes = canEditNotes(auth.role);
 
   return NextResponse.json({
     id: submission.id,
@@ -111,6 +115,12 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
       createdAt: event.createdAt.toISOString(),
     })),
     role: auth.role,
+    permissions: {
+      canUpdateEditorial,
+      canUpdatePublication,
+      canUpdatePayment,
+      canUpdateNotes,
+    },
   });
 }
 
@@ -190,22 +200,34 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     });
 
     const changes: Array<{ field: string; from: string | null; to: string | null }> = [];
-    if (orderPaymentStatus) {
-      changes.push({ field: "orderPaymentStatus", from: existingOps?.orderPaymentStatus ?? OrderPaymentStatus.PAID, to: orderPaymentStatus });
+    if (orderPaymentStatus && (existingOps?.orderPaymentStatus ?? OrderPaymentStatus.PAID) !== orderPaymentStatus) {
+      changes.push({
+        field: "orderPaymentStatus",
+        from: existingOps?.orderPaymentStatus ?? OrderPaymentStatus.PAID,
+        to: orderPaymentStatus,
+      });
     }
-    if (editorialStatus) {
-      changes.push({ field: "editorialStatus", from: existingOps?.editorialStatus ?? EditorialStatus.SUBMITTED, to: editorialStatus });
+    if (editorialStatus && (existingOps?.editorialStatus ?? EditorialStatus.SUBMITTED) !== editorialStatus) {
+      changes.push({
+        field: "editorialStatus",
+        from: existingOps?.editorialStatus ?? EditorialStatus.SUBMITTED,
+        to: editorialStatus,
+      });
     }
-    if (publicationStatus) {
-      changes.push({ field: "publicationStatus", from: existingOps?.publicationStatus ?? PublicationStatus.NOT_SCHEDULED, to: publicationStatus });
+    if (publicationStatus && (existingOps?.publicationStatus ?? PublicationStatus.NOT_SCHEDULED) !== publicationStatus) {
+      changes.push({
+        field: "publicationStatus",
+        from: existingOps?.publicationStatus ?? PublicationStatus.NOT_SCHEDULED,
+        to: publicationStatus,
+      });
     }
-    if (reviewerAssignee !== null) {
+    if (reviewerAssignee !== null && (existingOps?.reviewerAssignee ?? null) !== (reviewerAssignee || null)) {
       changes.push({ field: "reviewerAssignee", from: existingOps?.reviewerAssignee ?? null, to: reviewerAssignee || null });
     }
-    if (clientVisibleNote !== null) {
+    if (clientVisibleNote !== null && (existingOps?.clientVisibleNote ?? null) !== (clientVisibleNote || null)) {
       changes.push({ field: "clientVisibleNote", from: existingOps?.clientVisibleNote ?? null, to: clientVisibleNote || null });
     }
-    if (internalNote !== null) {
+    if (internalNote !== null && (existingOps?.internalNote ?? null) !== (internalNote || null)) {
       changes.push({ field: "internalNote", from: existingOps?.internalNote ?? null, to: internalNote || null });
     }
 

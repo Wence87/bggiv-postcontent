@@ -721,6 +721,14 @@ export async function POST(request: NextRequest) {
           size: file.size,
           data: imageBuffer,
         },
+        additionalImages: await Promise.all(
+          additionalFiles.slice(0, 3).map(async (image) => ({
+            name: image.name || "image",
+            mimeType: image.type,
+            size: image.size,
+            data: await image.arrayBuffer(),
+          }))
+        ),
         formData: {
           ...formData,
           title: title || undefined,

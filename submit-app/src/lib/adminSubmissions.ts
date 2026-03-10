@@ -18,6 +18,14 @@ export type SubmissionListRow = {
   purchasedOptionsSummary: string;
   assetsSummary: string;
   hasAssets: boolean;
+  previews: {
+    title: string;
+    shortDescription: string;
+    body: string;
+    quiz: string;
+    shipping: string;
+    audienceAmplifier: string;
+  };
 };
 
 export function normalizeProductEnum(productType: string): Product {
@@ -63,23 +71,71 @@ export function summarizePurchasedOptions(submission: {
 
 export function countAssetFiles(formDataJson: Prisma.JsonValue): number {
   const form = safeJsonObject(formDataJson);
-  const keys = ["additional_image_1", "additional_image_2", "additional_image_3"];
-  let count = 1;
-  for (const key of keys) {
+  const assets = [
+    "banner_image_upload",
+    "cover_image_upload",
+    "additional_image_1",
+    "additional_image_2",
+    "additional_image_3",
+  ];
+  return assets.reduce((count, key) => {
     const value = form[key];
-    if (typeof value === "string" && value.trim()) count += 1;
-  }
-  return count;
+    if (typeof value === "string" && value.trim()) return count + 1;
+    return count;
+  }, 0);
 }
 
 export function summarizeAssets(submission: {
   bannerImageName: string;
+  additionalImage1Name?: string | null;
+  additionalImage2Name?: string | null;
+  additionalImage3Name?: string | null;
   formDataJson: Prisma.JsonValue;
 }): { summary: string; hasAssets: boolean; count: number } {
-  const count = countAssetFiles(submission.formDataJson);
+  const fallbackCount = countAssetFiles(submission.formDataJson);
+  const persistedAdditional = [
+    submission.additionalImage1Name,
+    submission.additionalImage2Name,
+    submission.additionalImage3Name,
+  ].filter((value) => typeof value === "string" && value.trim().length > 0).length;
+  const count = Math.max(fallbackCount, (submission.bannerImageName ? 1 : 0) + persistedAdditional);
   const hasAssets = Boolean(submission.bannerImageName);
   if (!hasAssets) return { summary: "Missing", hasAssets: false, count: 0 };
   return { summary: `${count} file${count > 1 ? "s" : ""}`, hasAssets: true, count };
+}
+
+function summarizeQuiz(form: Record<string, unknown>): string {
+  const question = typeof form.giveaway_question === "string" ? form.giveaway_question.trim() : "";
+  if (!question) return "-";
+  const answers = [
+    form.answer_correct,
+    form.answer_wrong_1,
+    form.answer_wrong_2,
+    form.answer_wrong_3,
+    form.answer_wrong_4,
+  ].filter((entry) => typeof entry === "string" && entry.trim().length > 0).length;
+  return `${question}${answers ? ` (${answers} answers)` : ""}`;
+}
+
+function summarizeShipping(form: Record<string, unknown>): string {
+  const raw = form.shipping_countries;
+  if (!Array.isArray(raw)) return "-";
+  const countries = raw.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0);
+  if (!countries.length) return "-";
+  if (countries.length <= 3) return countries.join(", ");
+  return `${countries.slice(0, 3).join(", ")} +${countries.length - 3}`;
+}
+
+function summarizeAudienceAmplifier(form: Record<string, unknown>): string {
+  const raw = form.audience_amplifier_actions;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return "-";
+  const map = raw as Record<string, unknown>;
+  const filled = Object.values(map).filter((value) => {
+    if (typeof value === "string") return value.trim().length > 0;
+    if (!value || typeof value !== "object") return false;
+    return Object.values(value as Record<string, unknown>).some((nested) => typeof nested === "string" && nested.trim().length > 0);
+  }).length;
+  return filled ? `${filled} configured actions` : "-";
 }
 
 export function formatReservedSlot(submission: {
@@ -108,6 +164,9 @@ export function toListRow(submission: {
   createdAt: Date;
   updatedAt: Date;
   bannerImageName: string;
+  additionalImage1Name: string | null;
+  additionalImage2Name: string | null;
+  additionalImage3Name: string | null;
   formDataJson: Prisma.JsonValue;
   orderContextJson: Prisma.JsonValue | null;
   ops: {
@@ -117,7 +176,11 @@ export function toListRow(submission: {
     reviewerAssignee: string | null;
   } | null;
 }): SubmissionListRow {
+  const form = safeJsonObject(submission.formDataJson);
   const assets = summarizeAssets(submission);
+  const title = typeof form.title === "string" ? form.title.trim() : "-";
+  const shortDescription = typeof form.short_product_description === "string" ? form.short_product_description.trim() : "-";
+  const body = typeof form.body === "string" ? form.body.trim() : "-";
   return {
     id: submission.id,
     submissionId: submission.id,
@@ -136,5 +199,13 @@ export function toListRow(submission: {
     purchasedOptionsSummary: summarizePurchasedOptions(submission),
     assetsSummary: assets.summary,
     hasAssets: assets.hasAssets,
+    previews: {
+      title,
+      shortDescription,
+      body,
+      quiz: summarizeQuiz(form),
+      shipping: summarizeShipping(form),
+      audienceAmplifier: summarizeAudienceAmplifier(form),
+    },
   };
 }

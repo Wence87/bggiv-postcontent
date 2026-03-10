@@ -28,6 +28,12 @@ export type AdsSubmissionInput = {
     size: number;
     data: ArrayBuffer;
   };
+  additionalImages?: Array<{
+    name: string;
+    mimeType: string;
+    size: number;
+    data: ArrayBuffer;
+  }>;
   formData: Record<string, unknown>;
 };
 
@@ -57,6 +63,15 @@ export async function saveAdsSubmissionWithDb(
 
   const hashedToken = tokenHash(input.token);
   const imageBuffer = Buffer.from(input.bannerImage.data);
+  const additionalImageBuffers = (input.additionalImages ?? []).slice(0, 3).map((image) => ({
+    name: image.name,
+    mimeType: image.mimeType,
+    size: image.size,
+    data: Buffer.from(image.data),
+  }));
+  const additional1 = additionalImageBuffers[0];
+  const additional2 = additionalImageBuffers[1];
+  const additional3 = additionalImageBuffers[2];
   const formDataJson = JSON.parse(JSON.stringify(input.formData)) as Prisma.InputJsonValue;
 
   return db.submitFormSubmission.upsert({
@@ -80,6 +95,18 @@ export async function saveAdsSubmissionWithDb(
       bannerImageMimeType: input.bannerImage.mimeType,
       bannerImageSize: input.bannerImage.size,
       bannerImageData: imageBuffer,
+      additionalImage1Name: additional1?.name ?? null,
+      additionalImage1MimeType: additional1?.mimeType ?? null,
+      additionalImage1Size: additional1?.size ?? null,
+      additionalImage1Data: additional1?.data ?? null,
+      additionalImage2Name: additional2?.name ?? null,
+      additionalImage2MimeType: additional2?.mimeType ?? null,
+      additionalImage2Size: additional2?.size ?? null,
+      additionalImage2Data: additional2?.data ?? null,
+      additionalImage3Name: additional3?.name ?? null,
+      additionalImage3MimeType: additional3?.mimeType ?? null,
+      additionalImage3Size: additional3?.size ?? null,
+      additionalImage3Data: additional3?.data ?? null,
       reservationMonthKey: input.reservation?.monthKey || null,
       reservationWeekKey: input.reservation?.weekKey || null,
       reservationStartsAt: parsedReservationStartsAt,
@@ -104,6 +131,18 @@ export async function saveAdsSubmissionWithDb(
       bannerImageMimeType: input.bannerImage.mimeType,
       bannerImageSize: input.bannerImage.size,
       bannerImageData: imageBuffer,
+      additionalImage1Name: additional1?.name ?? null,
+      additionalImage1MimeType: additional1?.mimeType ?? null,
+      additionalImage1Size: additional1?.size ?? null,
+      additionalImage1Data: additional1?.data ?? null,
+      additionalImage2Name: additional2?.name ?? null,
+      additionalImage2MimeType: additional2?.mimeType ?? null,
+      additionalImage2Size: additional2?.size ?? null,
+      additionalImage2Data: additional2?.data ?? null,
+      additionalImage3Name: additional3?.name ?? null,
+      additionalImage3MimeType: additional3?.mimeType ?? null,
+      additionalImage3Size: additional3?.size ?? null,
+      additionalImage3Data: additional3?.data ?? null,
       reservationMonthKey: input.reservation?.monthKey || null,
       reservationWeekKey: input.reservation?.weekKey || null,
       reservationStartsAt: parsedReservationStartsAt,

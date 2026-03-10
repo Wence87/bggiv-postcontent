@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { authenticateAdminRequest, buildSubmissionScopeWhere, canDownloadExports } from "@/lib/adminAuth";
+import { formatReservedSlot, summarizePurchasedOptions } from "@/lib/adminSubmissions";
 import { prisma } from "@/lib/prisma";
 import { createZip } from "@/lib/zip";
 
@@ -59,6 +60,13 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
     formData: submission.formDataJson,
     orderContext: submission.orderContextJson,
   };
+  const form = submission.formDataJson && typeof submission.formDataJson === "object"
+    ? (submission.formDataJson as Record<string, unknown>)
+    : {};
+  const title = typeof form.title === "string" ? form.title : "";
+  const shortDescription = typeof form.short_product_description === "string" ? form.short_product_description : "";
+  const purchasedOptionsSummary = summarizePurchasedOptions(submission);
+  const reservedSlot = formatReservedSlot(submission);
 
   if (format === "csv") {
     const header = toCsvRow([
@@ -75,6 +83,10 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
       "editorial_status",
       "publication_status",
       "assignee",
+      "reserved_slot",
+      "title",
+      "short_description",
+      "purchased_options_summary",
       "created_at",
       "updated_at",
     ]);
@@ -92,6 +104,10 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
       submission.ops?.editorialStatus || "SUBMITTED",
       submission.ops?.publicationStatus || "NOT_SCHEDULED",
       submission.ops?.reviewerAssignee || "",
+      reservedSlot,
+      title,
+      shortDescription,
+      purchasedOptionsSummary,
       submission.createdAt.toISOString(),
       submission.updatedAt.toISOString(),
     ]);
@@ -117,6 +133,33 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
         data: new Uint8Array(submission.bannerImageData),
         modifiedAt: submission.updatedAt,
       },
+      ...(submission.additionalImage1Data
+        ? [
+            {
+              name: `${orderPrefix}-image1-${sanitizeFilename(submission.additionalImage1Name || "image1")}`,
+              data: new Uint8Array(submission.additionalImage1Data),
+              modifiedAt: submission.updatedAt,
+            },
+          ]
+        : []),
+      ...(submission.additionalImage2Data
+        ? [
+            {
+              name: `${orderPrefix}-image2-${sanitizeFilename(submission.additionalImage2Name || "image2")}`,
+              data: new Uint8Array(submission.additionalImage2Data),
+              modifiedAt: submission.updatedAt,
+            },
+          ]
+        : []),
+      ...(submission.additionalImage3Data
+        ? [
+            {
+              name: `${orderPrefix}-image3-${sanitizeFilename(submission.additionalImage3Name || "image3")}`,
+              data: new Uint8Array(submission.additionalImage3Data),
+              modifiedAt: submission.updatedAt,
+            },
+          ]
+        : []),
     ]);
 
     return new NextResponse(Buffer.from(zip), {

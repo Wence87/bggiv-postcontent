@@ -137,6 +137,18 @@ model SubmitFormSubmission {
   bannerImageMimeType String
   bannerImageSize     Int
   bannerImageData     Bytes
+  additionalImage1Name String?
+  additionalImage1MimeType String?
+  additionalImage1Size Int?
+  additionalImage1Data Bytes?
+  additionalImage2Name String?
+  additionalImage2MimeType String?
+  additionalImage2Size Int?
+  additionalImage2Data Bytes?
+  additionalImage3Name String?
+  additionalImage3MimeType String?
+  additionalImage3Size Int?
+  additionalImage3Data Bytes?
   reservationMonthKey String?
   reservationWeekKey  String?
   reservationStartsAt DateTime?
