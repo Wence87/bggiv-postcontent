@@ -145,9 +145,36 @@ export function formatReservedSlot(submission: {
   reservationStartsAt: Date | null;
 }): string {
   const product = normalizeProductEnum(submission.productType);
-  if (product === Product.SPONSORSHIP) return submission.reservationMonthKey ?? "-";
-  if (product === Product.ADS) return submission.reservationWeekKey ?? "-";
-  if (submission.reservationStartsAt) return submission.reservationStartsAt.toISOString();
+  if (product === Product.SPONSORSHIP) {
+    if (!submission.reservationMonthKey) return "-";
+    const match = /^(\d{4})-(\d{2})$/.exec(submission.reservationMonthKey);
+    if (!match) return submission.reservationMonthKey;
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    if (month < 1 || month > 12) return submission.reservationMonthKey;
+    return new Intl.DateTimeFormat("en-GB", {
+      month: "short",
+      year: "numeric",
+      timeZone: "Europe/Brussels",
+    }).format(new Date(Date.UTC(year, month - 1, 1)));
+  }
+  if (product === Product.ADS) {
+    if (!submission.reservationWeekKey) return "-";
+    const match = /^(\d{4})-W(\d{2})$/.exec(submission.reservationWeekKey);
+    if (!match) return submission.reservationWeekKey;
+    return `Week ${Number(match[2])}, ${match[1]}`;
+  }
+  if (submission.reservationStartsAt) {
+    return new Intl.DateTimeFormat("en-GB", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+      timeZone: "Europe/Brussels",
+    }).format(submission.reservationStartsAt);
+  }
   return "-";
 }
 

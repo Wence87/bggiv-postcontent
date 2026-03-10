@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { type ComponentType, useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlignLeft,
@@ -12,11 +13,11 @@ import {
   FileQuestion,
   FileText,
   Funnel,
-  Globe2,
   Image as ImageIcon,
   Link2,
   Loader2,
   MapPinned,
+  Package,
   Search,
   Shield,
   Tag,
@@ -112,17 +113,18 @@ type DetailPayload = {
 };
 
 type SortKey =
-  | "submissionId"
-  | "productType"
   | "orderNumber"
+  | "productType"
   | "company"
   | "reservedSlot"
+  | "urgency"
   | "createdAt"
   | "updatedAt"
   | "paymentStatus"
   | "editorialStatus"
   | "publicationStatus"
-  | "reviewerAssignee";
+  | "reviewerAssignee"
+  | "submissionId";
 
 type SortDir = "asc" | "desc";
 
@@ -167,22 +169,23 @@ function statusPill(group: "payment" | "editorial" | "publication", status: stri
   return <span className={`inline-flex rounded border px-2 py-0.5 text-xs font-medium ${statusClass(group, status)}`}>{status}</span>;
 }
 
-function urgencyFromCreated(createdAt: string): { label: string; className: string; minutes: number } {
+function getUrgencyMinutes(createdAt: string): number {
   const created = new Date(createdAt).getTime();
   const now = Date.now();
-  const minutes = Math.max(0, Math.floor((now - created) / 60000));
+  return Math.max(0, Math.floor((now - created) / 60000));
+}
 
+function urgencyFromCreated(createdAt: string): { label: string; className: string; minutes: number } {
+  const minutes = getUrgencyMinutes(createdAt);
   if (minutes < 60) {
-    const label = `${minutes}m`;
-    if (minutes < 30) return { label, className: "bg-emerald-100 text-emerald-800 border-emerald-200", minutes };
-    return { label, className: "bg-amber-100 text-amber-800 border-amber-200", minutes };
+    if (minutes < 30) return { label: `${minutes}m`, className: "bg-emerald-100 text-emerald-800 border-emerald-200", minutes };
+    return { label: `${minutes}m`, className: "bg-amber-100 text-amber-800 border-amber-200", minutes };
   }
   const hours = Math.floor(minutes / 60);
   if (hours < 24) {
-    const label = `${hours}h`;
-    if (hours < 2) return { label, className: "bg-amber-100 text-amber-800 border-amber-200", minutes };
-    if (hours < 6) return { label, className: "bg-orange-100 text-orange-800 border-orange-200", minutes };
-    return { label, className: "bg-red-100 text-red-800 border-red-200", minutes };
+    if (hours < 2) return { label: `${hours}h`, className: "bg-amber-100 text-amber-800 border-amber-200", minutes };
+    if (hours < 6) return { label: `${hours}h`, className: "bg-orange-100 text-orange-800 border-orange-200", minutes };
+    return { label: `${hours}h`, className: "bg-red-100 text-red-800 border-red-200", minutes };
   }
   const days = Math.floor(hours / 24);
   return { label: `${days}d`, className: "bg-red-100 text-red-800 border-red-200", minutes };
@@ -221,12 +224,17 @@ function summarizeAudienceAmplifier(formData: Record<string, unknown>): string {
 
 function PreviewHint({ label, text, Icon }: { label: string; text: string; Icon: ComponentType<{ className?: string }> }) {
   return (
-    <span
-      className="inline-flex items-center rounded border px-1.5 py-1 text-[11px] text-muted-foreground"
-      title={`${label}: ${text || "-"}`}
-      aria-label={`${label}: ${text || "-"}`}
-    >
-      <Icon className="h-3 w-3" />
+    <span className="group relative inline-flex">
+      <span
+        className="inline-flex min-h-6 min-w-6 items-center justify-center rounded border px-1.5 py-1 text-[11px] text-muted-foreground"
+        title={`${label}: ${text || "-"}`}
+        aria-label={`${label}: ${text || "-"}`}
+      >
+        <Icon className="h-3 w-3" />
+      </span>
+      <span className="pointer-events-none absolute -top-9 left-1/2 z-20 hidden -translate-x-1/2 whitespace-nowrap rounded bg-slate-900 px-2 py-1 text-[11px] text-white shadow-md group-hover:block group-focus-within:block">
+        {label}
+      </span>
     </span>
   );
 }
@@ -259,6 +267,7 @@ function SortHeader({
 }
 
 export default function AdminSubmissionsPageClient() {
+  const pathname = usePathname();
   const [token, setToken] = useState("");
   const [unauthorized, setUnauthorized] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -450,58 +459,73 @@ export default function AdminSubmissionsPageClient() {
     ["Wrong #4", getString(formData, "answer_wrong_4")],
   ] as const;
 
+  const reviewerSuggestions = useMemo(() => {
+    const set = new Set<string>();
+    for (const row of rows) {
+      const value = row.reviewerAssignee.trim();
+      if (value && value !== "-") set.add(value);
+    }
+    return Array.from(set).sort();
+  }, [rows]);
+
+  const legacyBookingToolsHref = useMemo(() => {
+    const match = /^\/admin\/([^/]+)/.exec(pathname || "");
+    if (!match) return null;
+    return `/admin/${match[1]}/booking-tools`;
+  }, [pathname]);
+
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
       setSortDir((prev) => (prev === "asc" ? "desc" : "asc"));
       return;
     }
     setSortKey(key);
-    setSortDir("asc");
+    setSortDir(key === "urgency" ? "desc" : "asc");
   };
 
   const sortedRows = useMemo(() => {
     const copy = [...rows];
     copy.sort((a, b) => {
-      const resolve = (row: ListRow) => {
-        if (sortKey === "orderNumber") return row.orderNumber === "-" ? row.linkedOrderId : row.orderNumber;
-        if (sortKey === "createdAt" || sortKey === "updatedAt") {
-          const t = new Date(row[sortKey]).getTime();
-          return Number.isFinite(t) ? t : 0;
-        }
+      const resolve = (row: ListRow): string | number => {
+        if (sortKey === "orderNumber") return (row.orderNumber === "-" ? row.linkedOrderId : row.orderNumber).toLowerCase();
+        if (sortKey === "createdAt" || sortKey === "updatedAt") return new Date(row[sortKey]).getTime();
+        if (sortKey === "urgency") return getUrgencyMinutes(row.createdAt);
         return (row[sortKey] || "").toLowerCase();
       };
       const left = resolve(a);
       const right = resolve(b);
-      if (typeof left === "number" && typeof right === "number") return sortDir === "asc" ? left - right : right - left;
+      if (typeof left === "number" && typeof right === "number") {
+        return sortDir === "asc" ? left - right : right - left;
+      }
       if (left < right) return sortDir === "asc" ? -1 : 1;
       if (left > right) return sortDir === "asc" ? 1 : -1;
       return 0;
     });
     return copy;
-  }, [rows, sortDir, sortKey]);
+  }, [rows, sortKey, sortDir]);
 
   return (
-    <main className="min-h-screen bg-muted/30">
-      <header className="border-b bg-background">
+    <main className="min-h-screen bg-slate-100/80">
+      <header className="border-b bg-white">
         <div className="mx-auto flex w-full max-w-[1400px] items-center justify-between px-6 py-4">
           <BrandHeader title="Admin Back Office" subtitle="Submission operations center (one row = one purchased submission)." />
           <div className="flex items-center gap-2">
-            <Input type="password" placeholder="Admin token" value={token} onChange={(event) => updateToken(event.target.value)} className="w-64" />
+            <Input type="password" placeholder="Admin token" value={token} onChange={(event) => updateToken(event.target.value)} className="w-64 bg-white" />
             <Button type="button" variant="outline" onClick={clearToken}>Clear</Button>
           </div>
         </div>
       </header>
 
       <div className="mx-auto w-full max-w-[1400px] space-y-3 px-6 py-4">
-        <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Shield className="h-4 w-4" />
             Role: <span className="font-semibold text-foreground">{role}</span>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="relative min-w-[280px]">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative min-w-[320px]">
               <Search className="pointer-events-none absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input className="h-9 pl-8" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Quick search: order, company, email, title" />
+              <Input className="h-9 bg-white pl-8" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Quick search: order, company, email, title" />
             </div>
             <Button variant="outline" className="h-9" onClick={() => setShowAdvancedFilters((prev) => !prev)}>
               <Funnel className="mr-1 h-4 w-4" />
@@ -511,7 +535,9 @@ export default function AdminSubmissionsPageClient() {
               <Download className="mr-1 h-4 w-4" />
               Export CSV
             </Button>
-            <Link href="./booking-tools" className={buttonVariants({ variant: "secondary", size: "sm" })}>Legacy Booking Tools</Link>
+            {legacyBookingToolsHref ? (
+              <Link href={legacyBookingToolsHref} className={buttonVariants({ variant: "secondary", size: "sm" })}>Legacy Booking Tools</Link>
+            ) : null}
           </div>
         </div>
 
@@ -523,7 +549,7 @@ export default function AdminSubmissionsPageClient() {
         ) : null}
 
         {showAdvancedFilters ? (
-          <section className="rounded-lg border bg-background p-3">
+          <section className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
             <div className="grid gap-2 md:grid-cols-3 xl:grid-cols-6">
               <div>
                 <Label className="mb-1 block text-xs uppercase">Product type</Label>
@@ -592,7 +618,7 @@ export default function AdminSubmissionsPageClient() {
           </section>
         ) : null}
 
-        <section className="overflow-hidden rounded-lg border bg-background">
+        <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
           {loading ? (
             <div className="flex min-h-[220px] items-center justify-center"><Loader2 className="h-5 w-5 animate-spin" /></div>
           ) : (
@@ -600,22 +626,23 @@ export default function AdminSubmissionsPageClient() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="whitespace-nowrap px-2 py-2"><SortHeader label="Submission ID" sortKey="submissionId" activeSortKey={sortKey} sortDir={sortDir} onClick={handleSort} /></TableHead>
-                    <TableHead className="whitespace-nowrap px-2 py-2"><SortHeader label="Product" sortKey="productType" activeSortKey={sortKey} sortDir={sortDir} onClick={handleSort} /></TableHead>
+                    <TableHead className="whitespace-nowrap px-2 py-2 text-xs">Open</TableHead>
                     <TableHead className="whitespace-nowrap px-2 py-2"><SortHeader label="Order #" sortKey="orderNumber" activeSortKey={sortKey} sortDir={sortDir} onClick={handleSort} /></TableHead>
+                    <TableHead className="whitespace-nowrap px-2 py-2"><SortHeader label="Product" sortKey="productType" activeSortKey={sortKey} sortDir={sortDir} onClick={handleSort} /></TableHead>
                     <TableHead className="whitespace-nowrap px-2 py-2"><SortHeader label="Company" sortKey="company" activeSortKey={sortKey} sortDir={sortDir} onClick={handleSort} /></TableHead>
-                    <TableHead className="whitespace-nowrap px-2 py-2">Contact</TableHead>
+                    <TableHead className="whitespace-nowrap px-2 py-2 text-xs">Contact</TableHead>
                     <TableHead className="whitespace-nowrap px-2 py-2"><SortHeader label="Reserved slot" sortKey="reservedSlot" activeSortKey={sortKey} sortDir={sortDir} onClick={handleSort} /></TableHead>
-                    <TableHead className="whitespace-nowrap px-2 py-2">Urgency</TableHead>
+                    <TableHead className="whitespace-nowrap px-2 py-2"><SortHeader label="Urgency" sortKey="urgency" activeSortKey={sortKey} sortDir={sortDir} onClick={handleSort} /></TableHead>
                     <TableHead className="whitespace-nowrap px-2 py-2"><SortHeader label="Created" sortKey="createdAt" activeSortKey={sortKey} sortDir={sortDir} onClick={handleSort} /></TableHead>
                     <TableHead className="whitespace-nowrap px-2 py-2"><SortHeader label="Updated" sortKey="updatedAt" activeSortKey={sortKey} sortDir={sortDir} onClick={handleSort} /></TableHead>
                     <TableHead className="whitespace-nowrap px-2 py-2"><SortHeader label="Payment" sortKey="paymentStatus" activeSortKey={sortKey} sortDir={sortDir} onClick={handleSort} /></TableHead>
                     <TableHead className="whitespace-nowrap px-2 py-2"><SortHeader label="Editorial" sortKey="editorialStatus" activeSortKey={sortKey} sortDir={sortDir} onClick={handleSort} /></TableHead>
                     <TableHead className="whitespace-nowrap px-2 py-2"><SortHeader label="Publication" sortKey="publicationStatus" activeSortKey={sortKey} sortDir={sortDir} onClick={handleSort} /></TableHead>
                     <TableHead className="whitespace-nowrap px-2 py-2"><SortHeader label="Reviewer" sortKey="reviewerAssignee" activeSortKey={sortKey} sortDir={sortDir} onClick={handleSort} /></TableHead>
-                    <TableHead className="whitespace-nowrap px-2 py-2">Purchased options</TableHead>
-                    <TableHead className="whitespace-nowrap px-2 py-2">Assets</TableHead>
-                    <TableHead className="whitespace-nowrap px-2 py-2">Actions</TableHead>
+                    <TableHead className="whitespace-nowrap px-2 py-2 text-xs">Purchased options</TableHead>
+                    <TableHead className="whitespace-nowrap px-2 py-2 text-xs">Assets</TableHead>
+                    <TableHead className="whitespace-nowrap px-2 py-2 text-xs">Actions</TableHead>
+                    <TableHead className="whitespace-nowrap px-2 py-2"><SortHeader label="Submission ID" sortKey="submissionId" activeSortKey={sortKey} sortDir={sortDir} onClick={handleSort} /></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -624,12 +651,16 @@ export default function AdminSubmissionsPageClient() {
                     const isNew = row.editorialStatus === "SUBMITTED" && urgency.minutes < 120;
                     return (
                       <TableRow key={row.id}>
-                        <TableCell className="whitespace-nowrap px-2 py-2 font-mono text-xs">{compactText(row.submissionId, 20)}</TableCell>
-                        <TableCell className="whitespace-nowrap px-2 py-2"><Badge variant="outline">{row.productType.toUpperCase()}</Badge></TableCell>
+                        <TableCell className="whitespace-nowrap px-2 py-2">
+                          <Button size="sm" variant="outline" className="h-8 w-8 p-0" onClick={() => void openDetail(row.id)} title="View" aria-label="View">
+                            <Eye className="h-3.5 w-3.5" />
+                          </Button>
+                        </TableCell>
                         <TableCell className="whitespace-nowrap px-2 py-2">{row.orderNumber !== "-" ? row.orderNumber : row.linkedOrderId}</TableCell>
+                        <TableCell className="whitespace-nowrap px-2 py-2"><Badge variant="outline">{row.productType.toUpperCase()}</Badge></TableCell>
                         <TableCell className="whitespace-nowrap px-2 py-2" title={row.company}>{compactText(row.company, 18)}</TableCell>
                         <TableCell className="whitespace-nowrap px-2 py-2" title={row.contactEmail}>{compactText(row.contactEmail, 20)}</TableCell>
-                        <TableCell className="whitespace-nowrap px-2 py-2" title={row.reservedSlot}>{compactText(row.reservedSlot, 18)}</TableCell>
+                        <TableCell className="whitespace-nowrap px-2 py-2" title={row.reservedSlot}>{compactText(row.reservedSlot, 24)}</TableCell>
                         <TableCell className="whitespace-nowrap px-2 py-2">
                           <span className={`inline-flex rounded border px-2 py-0.5 text-xs font-medium ${urgency.className}`}>{urgency.label}</span>
                           {isNew ? <Badge className="ml-1" variant="secondary">NEW</Badge> : null}
@@ -639,7 +670,7 @@ export default function AdminSubmissionsPageClient() {
                         <TableCell className="whitespace-nowrap px-2 py-2">{statusPill("payment", row.paymentStatus)}</TableCell>
                         <TableCell className="whitespace-nowrap px-2 py-2">{statusPill("editorial", row.editorialStatus)}</TableCell>
                         <TableCell className="whitespace-nowrap px-2 py-2">{statusPill("publication", row.publicationStatus)}</TableCell>
-                        <TableCell className="whitespace-nowrap px-2 py-2" title={row.reviewerAssignee}>{compactText(row.reviewerAssignee, 12)}</TableCell>
+                        <TableCell className="whitespace-nowrap px-2 py-2" title={row.reviewerAssignee}>{compactText(row.reviewerAssignee, 14)}</TableCell>
                         <TableCell className="px-2 py-2">
                           <div className="space-y-1">
                             <div className="flex items-center gap-1 text-xs text-muted-foreground" title={row.purchasedOptionsSummary}>
@@ -663,18 +694,16 @@ export default function AdminSubmissionsPageClient() {
                           </div>
                         </TableCell>
                         <TableCell className="px-2 py-2">
-                          <div className="grid grid-cols-3 gap-1">
-                            <Button size="sm" variant="outline" className="h-8 w-8 p-0" onClick={() => void openDetail(row.id)} title="View" aria-label="View">
-                              <Eye className="h-3.5 w-3.5" />
-                            </Button>
+                          <div className="flex items-center gap-1">
                             <Button size="sm" variant="outline" className="h-8 w-8 p-0" onClick={() => download(`/api/admin/submissions/${row.id}/assets?mode=zip`)} title="Download assets ZIP" aria-label="Download assets ZIP">
                               <Download className="h-3.5 w-3.5" />
                             </Button>
                             <Button size="sm" variant="outline" className="h-8 w-8 p-0" onClick={() => download(`/api/admin/submissions/${row.id}/export?format=package`)} title="Export package" aria-label="Export package">
-                              <Globe2 className="h-3.5 w-3.5" />
+                              <Package className="h-3.5 w-3.5" />
                             </Button>
                           </div>
                         </TableCell>
+                        <TableCell className="whitespace-nowrap px-2 py-2 font-mono text-xs">{compactText(row.submissionId, 20)}</TableCell>
                       </TableRow>
                     );
                   })}
@@ -712,6 +741,7 @@ export default function AdminSubmissionsPageClient() {
 
               <section className="rounded-md border p-4">
                 <h3 className="text-sm font-semibold uppercase">Workflow</h3>
+                <p className="mb-2 text-xs text-muted-foreground">Publication status is an internal workflow flag in admin (manual process, no automatic WordPress sync from this field).</p>
                 <div className="mt-3 grid gap-3 md:grid-cols-2">
                   {detailPermissions.canUpdatePayment ? (
                     <div>
@@ -757,7 +787,11 @@ export default function AdminSubmissionsPageClient() {
 
                   <div>
                     <Label className="mb-1 block text-xs">REVIEWER / ASSIGNEE</Label>
-                    <Input disabled={!detailPermissions.canUpdateNotes} value={workflow.reviewerAssignee} onChange={(event) => setWorkflow((prev) => ({ ...prev, reviewerAssignee: event.target.value }))} />
+                    <Input list="reviewer-options" disabled={!detailPermissions.canUpdateNotes} value={workflow.reviewerAssignee} onChange={(event) => setWorkflow((prev) => ({ ...prev, reviewerAssignee: event.target.value }))} />
+                    <p className="mt-1 text-xs text-muted-foreground">Free text today, prepared for future predefined reviewer assignment.</p>
+                    <datalist id="reviewer-options">
+                      {reviewerSuggestions.map((name) => <option key={name} value={name} />)}
+                    </datalist>
                   </div>
 
                   <div className="md:col-span-2">
