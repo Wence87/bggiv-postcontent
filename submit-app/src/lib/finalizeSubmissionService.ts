@@ -5,6 +5,8 @@ import type { PrismaClient } from "@prisma/client";
 
 export type AdsSubmissionInput = {
   token: string;
+  linkedOrderId?: string;
+  orderNumber?: string;
   productKey: string;
   productType: string;
   companyName: string;
@@ -19,6 +21,7 @@ export type AdsSubmissionInput = {
     weekKey?: string;
     startsAtUtc?: string;
   };
+  orderContext?: Record<string, unknown>;
   bannerImage: {
     name: string;
     mimeType: string;
@@ -62,6 +65,8 @@ export async function saveAdsSubmissionWithDb(
     },
     create: {
       tokenHash: hashedToken,
+      linkedOrderId: input.linkedOrderId || null,
+      orderNumber: input.orderNumber || null,
       productKey: input.productKey,
       productType: input.productType,
       companyName: input.companyName,
@@ -78,9 +83,14 @@ export async function saveAdsSubmissionWithDb(
       reservationMonthKey: input.reservation?.monthKey || null,
       reservationWeekKey: input.reservation?.weekKey || null,
       reservationStartsAt: parsedReservationStartsAt,
+      orderContextJson: input.orderContext
+        ? (JSON.parse(JSON.stringify(input.orderContext)) as Prisma.InputJsonValue)
+        : Prisma.JsonNull,
       formDataJson,
     },
     update: {
+      linkedOrderId: input.linkedOrderId || null,
+      orderNumber: input.orderNumber || null,
       productKey: input.productKey,
       productType: input.productType,
       companyName: input.companyName,
@@ -97,6 +107,9 @@ export async function saveAdsSubmissionWithDb(
       reservationMonthKey: input.reservation?.monthKey || null,
       reservationWeekKey: input.reservation?.weekKey || null,
       reservationStartsAt: parsedReservationStartsAt,
+      orderContextJson: input.orderContext
+        ? (JSON.parse(JSON.stringify(input.orderContext)) as Prisma.InputJsonValue)
+        : Prisma.JsonNull,
       formDataJson,
     },
   });

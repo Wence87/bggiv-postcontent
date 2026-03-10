@@ -1,10 +1,10 @@
 import { notFound } from "next/navigation";
 
-import AdminSubmissionsPageClient from "@/app/admin/AdminSubmissionsPageClient";
+import AdminPageClient from "@/app/admin/AdminPageClient";
 
 export const dynamic = "force-dynamic";
 
-export default async function AdminSlugPage({
+export default async function AdminBookingToolsPage({
   params,
 }: {
   params: Promise<{ slug: string }>;
@@ -16,5 +16,5 @@ export default async function AdminSlugPage({
     notFound();
   }
 
-  return <AdminSubmissionsPageClient />;
+  return <AdminPageClient />;
 }

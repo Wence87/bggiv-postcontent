@@ -10,7 +10,7 @@ if (!defined('ABSPATH')) {
 }
 
 if (!defined('BGGIV_SUBMIT_BASE_URL')) {
-    define('BGGIV_SUBMIT_BASE_URL', 'https://calendar.boardgamegiveaways.com/submit');
+    define('BGGIV_SUBMIT_BASE_URL', 'https://submit.boardgamegiveaways.com/submit');
 }
 
 if (!defined('BGGIV_TOKEN_SECRET')) {

@@ -695,6 +695,11 @@ export async function POST(request: NextRequest) {
     const submission = await prisma.$transaction(async (tx) => {
       const saved = await saveAdsSubmissionWithDb(tx, {
         token,
+        linkedOrderId,
+        orderNumber:
+          typeof (context as { order_number?: unknown }).order_number === "string"
+            ? (context as { order_number?: string }).order_number
+            : undefined,
         productKey,
         productType: context.product.product_type,
         companyName: effectiveCompanyName,
@@ -709,6 +714,7 @@ export async function POST(request: NextRequest) {
           weekKey: reservationWeekKey || undefined,
           startsAtUtc: reservationStartsAt || undefined,
         },
+        orderContext: context as unknown as Record<string, unknown>,
         bannerImage: {
           name: file.name || "banner-image",
           mimeType: file.type,

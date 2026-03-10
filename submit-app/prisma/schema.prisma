@@ -37,6 +37,36 @@ enum SubmissionDraftStatus {
   CANCELLED
 }
 
+enum AdminRole {
+  SUPER_ADMIN
+  CONTENT_ADMIN
+  OPS_ADMIN
+  PUBLISHER
+  CLIENT_PRO
+}
+
+enum OrderPaymentStatus {
+  PAID
+  PENDING
+  FAILED
+  REFUNDED
+}
+
+enum EditorialStatus {
+  SUBMITTED
+  UNDER_REVIEW
+  CHANGES_REQUESTED
+  APPROVED
+  REJECTED
+}
+
+enum PublicationStatus {
+  NOT_SCHEDULED
+  SCHEDULED
+  PUBLISHED
+  ARCHIVED
+}
+
 model Booking {
   id            String   @id @default(cuid())
   product       Product
@@ -92,6 +122,8 @@ model SubmissionDraft {
 model SubmitFormSubmission {
   id                  String   @id @default(cuid())
   tokenHash           String   @unique
+  linkedOrderId       String?
+  orderNumber         String?
   productKey          String
   productType         String
   companyName         String
@@ -108,11 +140,56 @@ model SubmitFormSubmission {
   reservationMonthKey String?
   reservationWeekKey  String?
   reservationStartsAt DateTime?
+  orderContextJson    Json?
   formDataJson        Json
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
+  ops                 SubmissionOps?
+  auditEvents         SubmissionAuditEvent[]
 
+  @@index([linkedOrderId])
+  @@index([orderNumber])
   @@index([productKey])
   @@index([productType])
+  @@index([contactEmail])
+  @@index([companyName])
   @@index([createdAt])
+}
+
+model SubmissionOps {
+  id                  String            @id @default(cuid())
+  submissionId        String            @unique
+  orderPaymentStatus  OrderPaymentStatus @default(PAID)
+  editorialStatus     EditorialStatus    @default(SUBMITTED)
+  publicationStatus   PublicationStatus  @default(NOT_SCHEDULED)
+  reviewerAssignee    String?
+  clientVisibleNote   String?
+  internalNote        String?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  submission          SubmitFormSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@index([editorialStatus])
+  @@index([publicationStatus])
+  @@index([orderPaymentStatus])
+  @@index([reviewerAssignee])
+  @@index([updatedAt])
+}
+
+model SubmissionAuditEvent {
+  id              String    @id @default(cuid())
+  submissionId    String
+  actorRole       AdminRole
+  actorIdentifier String?
+  eventType       String
+  fieldName       String?
+  fromValue       String?
+  toValue         String?
+  comment         String?
+  createdAt       DateTime  @default(now())
+
+  submission      SubmitFormSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@index([submissionId, createdAt])
 }

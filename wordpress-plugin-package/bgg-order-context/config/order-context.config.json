@@ -504,6 +504,39 @@
       "notes": "Le giveaway impose de poser une question à la laquelle les participants doivent répondre. C’est un QCM avec 5 proposition dont une seule est correcte.\nLe participant au concours ne sait pas s’il a bien répondu avant que la fin du concours soit arrivée.\nSi l’option a été achetée, une série d’action marketing s’affiche après que la réponse (correcte ou erronée) à la question a été donnée.\nPrincipe du concours: répondre à la question et toute action octroie des tickets. Au terme du concours, un tirage au sort a lieu: chaque ticket peut ainsi permettre de gagner. Pour chaque ticket tiré au sort, le système vérifie si la réponse à la question est correcte; si oui, le participant gagne; si non, un nouveau ticket est tiré au sort.\nSi Audience Amplifier est activé, des URLs d’actions supplémentaires doivent être fournies.\nCe post requiert une image de couverture, un titre (120 signes max.), un body text (1000 signes max. sauf si l’option Extended Text Limit est activée), un lien/URL vers le site de l’éditeur.\nToute givevaway doit avoir une date et heure de début. Il ne peut y avoir que deux concours maximum par jour.\nLes giveaways sont limités dans le temps. par défaut, un giveaway dure 1 semaine, mais le client peut acheter jusqu’à trois semaines supplémentaires de visibilité (option).\nDans le body, on ne peut pas insérer d’images ni de lien, ni de video embedded.\nSi Embedded Video est activé, une vidéo peut être intégrée dans le texte.\nSi Additional Images est acheté, 3 images supplémentaires maximum peuvent être uploadées.\nEntre le titre et le body, est insérer le bloc concours, composé de: le nom du produit, le nombre d’unités proposées (de 2 à 20), le prix public d’une unité, une featured image du produit, un court descriptif (200 signes max.) la catégorie du giveaway, la liste des pays élligibles, l’âge minimum pour participer.\nLe contenu doit être validé avant publication.\nAjouter description courte (160 signes max.).\nAjouter un champ de commentaire pour l’admin.",
       "options": [
         {
+          "option_key": "audience_amplifier",
+          "option_name": "Audience Amplifier / Multi-Action Entry",
+          "technical_slug": "multi_action_entry",
+          "business_type": "toggle",
+          "source": {
+            "purchased_raw": "Audience Amplifier (+$ 9.00)\nMulti-Action Entry (+$ 9.00)\nAudience Amplifier / Multi-Action Entry (+$ 9.00)",
+            "possible_values": "Audience Amplifier / Multi-Action Entry",
+            "wc_raw_example": "Audience Amplifier / Multi-Action Entry (+$ 9.00)"
+          },
+          "rules": {
+            "derive_rule": "Expose Audience Amplifier configuration fields in submit form",
+            "asks_additional_info": true,
+            "collect_info": "Audience Amplifier configuration URLs/messages",
+            "fields_count": "10 actions",
+            "field_type": "URLs and text fields",
+            "required": "yes",
+            "business_rule": "Enabled only when this paid option is purchased",
+            "values": {
+              "base_included": "0",
+              "purchased": "1",
+              "paid_additional": "1",
+              "final": "1"
+            }
+          },
+          "activated_block": {
+            "name": "audience_amplifier_block",
+            "condition": "if Audience Amplifier / Multi-Action Entry is enabled",
+            "fields": "audience_amplifier_actions",
+            "validation": "Require configured URLs/messages for Audience Amplifier actions"
+          },
+          "derived": null
+        },
+        {
           "option_key": "social_boost",
           "option_name": "Social Boost",
           "technical_slug": "lkf4u",

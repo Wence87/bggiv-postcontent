@@ -468,6 +468,7 @@ final class BGG_Order_Context_Resolver {
         foreach ($candidates as $normalized) {
             if ($normalized === '') continue;
             if (strpos($normalized, 'audienceamplifier') !== false) return 'audience_amplifier';
+            if (strpos($normalized, 'multiactionentry') !== false) return 'audience_amplifier';
             if (strpos($normalized, 'duration') !== false) return 'duration';
             if (strpos($normalized, 'socialboost') !== false) return 'social_boost';
             if (strpos($normalized, 'herogrid') !== false || strpos($normalized, 'featuredspot') !== false) return 'hero_grid';
