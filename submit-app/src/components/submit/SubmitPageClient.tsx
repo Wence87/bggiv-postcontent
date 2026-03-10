@@ -201,7 +201,7 @@ type SubmitPageClientProps = {
 };
 
 const WP_BASE_URL = (process.env.NEXT_PUBLIC_WP_BASE_URL || "https://boardgamegiveaways.com").replace(/\/$/, "");
-const FRONTEND_TREE_MARKER = "root-src";
+const FRONTEND_TREE_MARKER = "submit-app";
 const FRONTEND_BUILD_MARKER = process.env.NEXT_PUBLIC_BUILD_STAMP || "build-stamp-missing";
 const GIVEAWAY_FREE_HIGHLIGHT_OPTIONS: GiveawayFreeHighlightOption[] = [
   { key: "audience_amplifier", label: "Audience Amplifier", level: "Multi-Action Entry" },
