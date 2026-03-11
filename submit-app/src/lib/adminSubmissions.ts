@@ -12,12 +12,15 @@ export type SubmissionListRow = {
   createdAt: string;
   updatedAt: string;
   paymentStatus: OrderPaymentStatus;
+  totalPaid: string;
+  vatPaid: string;
   editorialStatus: EditorialStatus;
   publicationStatus: PublicationStatus;
   reviewerAssignee: string;
   purchasedOptionsSummary: string;
   assetsSummary: string;
   hasAssets: boolean;
+  orderedOptionKeys: string[];
   previews: {
     title: string;
     shortDescription: string;
@@ -27,6 +30,89 @@ export type SubmissionListRow = {
     audienceAmplifier: string;
   };
 };
+
+const OPTION_KEY_ALIASES: Record<string, string> = {
+  audienceamplifier: "audience_amplifier",
+  multi_action_entry: "audience_amplifier",
+  multiactionentry: "audience_amplifier",
+  audience_amplifier: "audience_amplifier",
+  quiz: "quiz",
+  shipping: "shipping",
+  social_boost: "social_boost",
+  socialboost: "social_boost",
+};
+
+function canonicalizeOptionKey(value: string): string {
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/&amp;/g, "and")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return OPTION_KEY_ALIASES[normalized] ?? normalized;
+}
+
+function extractOrderedOptionKeys(orderContextJson: Prisma.JsonValue | null): string[] {
+  const context = safeJsonObject(orderContextJson);
+  const keys = new Set<string>();
+
+  const enabled = Array.isArray(context.enabled_options)
+    ? context.enabled_options.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    : [];
+  for (const entry of enabled) {
+    keys.add(canonicalizeOptionKey(entry));
+  }
+
+  const options = Array.isArray(context.options)
+    ? context.options.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item))
+    : [];
+  for (const option of options) {
+    const enabledFlag = option.enabled;
+    if (enabledFlag === false || enabledFlag === "false" || enabledFlag === 0 || enabledFlag === "0") continue;
+
+    const rawKey = [option.key, option.code, option.slug, option.value, option.label, option.name].find(
+      (value) => typeof value === "string" && value.trim().length > 0
+    ) as string | undefined;
+    if (!rawKey) continue;
+    keys.add(canonicalizeOptionKey(rawKey));
+  }
+
+  return Array.from(keys);
+}
+
+function findNumericInMap(map: Record<string, unknown>, keys: string[]): number | null {
+  for (const key of keys) {
+    const value = map[key];
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value === "string") {
+      const normalized = value.replace(",", ".").replace(/[^\d.-]/g, "");
+      const parsed = Number.parseFloat(normalized);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+  }
+  return null;
+}
+
+function resolvePaymentValues(orderContextJson: Prisma.JsonValue | null): { totalPaid: string; vatPaid: string } {
+  const context = safeJsonObject(orderContextJson);
+  const order = safeJsonObject(context.order);
+  const payment = safeJsonObject(context.payment);
+  const totals = safeJsonObject(context.totals);
+
+  const total = findNumericInMap(
+    { ...context, ...order, ...payment, ...totals },
+    ["total_ex_vat", "subtotal_ex_tax", "total_without_tax", "total_paid_ex_vat", "total"]
+  );
+  const vat = findNumericInMap(
+    { ...context, ...order, ...payment, ...totals },
+    ["vat", "vat_amount", "tax", "tax_amount", "total_tax", "tax_total"]
+  );
+
+  return {
+    totalPaid: total != null ? total.toFixed(2) : "-",
+    vatPaid: vat != null ? vat.toFixed(2) : "-",
+  };
+}
 
 export function normalizeProductEnum(productType: string): Product {
   const upper = productType.toUpperCase();
@@ -45,12 +131,8 @@ export function summarizePurchasedOptions(submission: {
   formDataJson: Prisma.JsonValue;
   orderContextJson: Prisma.JsonValue | null;
 }): string {
-  const context = safeJsonObject(submission.orderContextJson);
   const form = safeJsonObject(submission.formDataJson);
-
-  const enabled = Array.isArray(context.enabled_options)
-    ? context.enabled_options.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
-    : [];
+  const enabled = extractOrderedOptionKeys(submission.orderContextJson);
 
   const selectedHighlights = Array.isArray(form.selected_highlight_options)
     ? form.selected_highlight_options.filter((item): item is string => typeof item === "string")
@@ -205,6 +287,7 @@ export function toListRow(submission: {
 }): SubmissionListRow {
   const form = safeJsonObject(submission.formDataJson);
   const assets = summarizeAssets(submission);
+  const payment = resolvePaymentValues(submission.orderContextJson);
   const title = typeof form.title === "string" ? form.title.trim() : "-";
   const shortDescription = typeof form.short_product_description === "string" ? form.short_product_description.trim() : "-";
   const body = typeof form.body === "string" ? form.body.trim() : "-";
@@ -220,12 +303,15 @@ export function toListRow(submission: {
     createdAt: submission.createdAt.toISOString(),
     updatedAt: submission.updatedAt.toISOString(),
     paymentStatus: submission.ops?.orderPaymentStatus ?? OrderPaymentStatus.PAID,
+    totalPaid: payment.totalPaid,
+    vatPaid: payment.vatPaid,
     editorialStatus: submission.ops?.editorialStatus ?? EditorialStatus.SUBMITTED,
     publicationStatus: submission.ops?.publicationStatus ?? PublicationStatus.NOT_SCHEDULED,
     reviewerAssignee: submission.ops?.reviewerAssignee ?? "-",
     purchasedOptionsSummary: summarizePurchasedOptions(submission),
     assetsSummary: assets.summary,
     hasAssets: assets.hasAssets,
+    orderedOptionKeys: extractOrderedOptionKeys(submission.orderContextJson),
     previews: {
       title,
       shortDescription,

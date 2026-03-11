@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { authenticateAdminRequest, buildSubmissionScopeWhere, canDownloadExports } from "@/lib/adminAuth";
+import { authenticateAdminRequestWithCollaborators, buildSubmissionScopeWhere, canDownloadExports } from "@/lib/adminAuth";
 import { formatReservedSlot, summarizePurchasedOptions } from "@/lib/adminSubmissions";
 import { prisma } from "@/lib/prisma";
 import { createZip } from "@/lib/zip";
@@ -31,7 +31,7 @@ function asStringArray(value: unknown): string[] {
 }
 
 export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }) {
-  const auth = authenticateAdminRequest(request);
+  const auth = await authenticateAdminRequestWithCollaborators(request);
   if (!auth) return unauthorized();
   if (!canDownloadExports(auth.role)) {
     return NextResponse.json({ code: "FORBIDDEN" }, { status: 403 });
@@ -48,26 +48,9 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
   });
   if (!submission) return NextResponse.json({ code: "NOT_FOUND" }, { status: 404 });
 
-  const format = (request.nextUrl.searchParams.get("format") || "json").toLowerCase();
+  const format = (request.nextUrl.searchParams.get("format") || "package").toLowerCase();
   const orderPrefix = sanitizeFilename(submission.orderNumber || submission.linkedOrderId || submission.id);
 
-  const payload = {
-    submissionId: submission.id,
-    linkedOrderId: submission.linkedOrderId,
-    orderNumber: submission.orderNumber,
-    productType: submission.productType,
-    productKey: submission.productKey,
-    companyName: submission.companyName,
-    contactEmail: submission.contactEmail,
-    reservationMonthKey: submission.reservationMonthKey,
-    reservationWeekKey: submission.reservationWeekKey,
-    reservationStartsAt: submission.reservationStartsAt?.toISOString() ?? null,
-    createdAt: submission.createdAt.toISOString(),
-    updatedAt: submission.updatedAt.toISOString(),
-    workflow: submission.ops,
-    formData: submission.formDataJson,
-    orderContext: submission.orderContextJson,
-  };
   const form = submission.formDataJson && typeof submission.formDataJson === "object"
     ? (submission.formDataJson as Record<string, unknown>)
     : {};
@@ -226,11 +209,6 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
         modifiedAt: submission.updatedAt,
       },
       {
-        name: `${orderPrefix}-submission.json`,
-        data: new TextEncoder().encode(JSON.stringify(payload, null, 2)),
-        modifiedAt: submission.updatedAt,
-      },
-      {
         name: `${orderPrefix}-cover-${sanitizeFilename(submission.bannerImageName || "asset.jpg")}`,
         data: new Uint8Array(submission.bannerImageData),
         modifiedAt: submission.updatedAt,
@@ -273,11 +251,5 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
     });
   }
 
-  return new NextResponse(JSON.stringify(payload, null, 2), {
-    status: 200,
-    headers: {
-      "Content-Type": "application/json; charset=utf-8",
-      "Content-Disposition": `attachment; filename=\"${orderPrefix}-submission.json\"`,
-    },
-  });
+  return NextResponse.json({ code: "BAD_REQUEST", message: "Supported formats: csv, package" }, { status: 400 });
 }

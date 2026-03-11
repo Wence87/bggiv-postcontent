@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { EditorialStatus } from "@prisma/client";
 
-import { authenticateAdminRequest, buildSubmissionScopeWhere, canDownloadExports } from "@/lib/adminAuth";
+import { authenticateAdminRequestWithCollaborators, buildSubmissionScopeWhere, canDownloadExports } from "@/lib/adminAuth";
 import { formatReservedSlot, summarizePurchasedOptions } from "@/lib/adminSubmissions";
 import { prisma } from "@/lib/prisma";
 
@@ -19,7 +19,7 @@ function toCsvRow(values: string[]): string {
 }
 
 export async function GET(request: NextRequest) {
-  const auth = authenticateAdminRequest(request);
+  const auth = await authenticateAdminRequestWithCollaborators(request);
   if (!auth) return unauthorized();
   if (!canDownloadExports(auth.role)) {
     return NextResponse.json({ code: "FORBIDDEN" }, { status: 403 });

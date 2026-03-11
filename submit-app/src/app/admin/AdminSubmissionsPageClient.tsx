@@ -33,7 +33,6 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 const ADMIN_TOKEN_KEY = "adminToken";
-const VIEWED_SUBMISSIONS_KEY = "adminViewedSubmissionIds";
 
 type ListRow = {
   id: string;
@@ -47,12 +46,15 @@ type ListRow = {
   createdAt: string;
   updatedAt: string;
   paymentStatus: string;
+  totalPaid: string;
+  vatPaid: string;
   editorialStatus: string;
   publicationStatus: string;
   reviewerAssignee: string;
   purchasedOptionsSummary: string;
   assetsSummary: string;
   hasAssets: boolean;
+  orderedOptionKeys: string[];
   previews: {
     title: string;
     shortDescription: string;
@@ -97,8 +99,22 @@ type DetailPayload = {
     editorialStatus: string;
     publicationStatus: string;
     reviewerAssignee: string;
+    reviewerCollaboratorId: string;
     clientVisibleNote: string;
     internalNote: string;
+  };
+  collaborators: Array<{
+    id: string;
+    firstName: string;
+    lastName: string;
+    displayName: string;
+    email: string;
+    role: string;
+  }>;
+  pendingAction: {
+    key: string;
+    label: string;
+    owner: "ADMIN" | "CLIENT" | "OPS";
   };
   audit: Array<{
     id: string;
@@ -122,12 +138,16 @@ type SortKey =
   | "createdAt"
   | "updatedAt"
   | "paymentStatus"
+  | "totalPaid"
+  | "vatPaid"
   | "editorialStatus"
   | "publicationStatus"
   | "reviewerAssignee"
   | "submissionId";
 
 type SortDir = "asc" | "desc";
+
+type PreviewItem = { label: string; text: string; Icon: ComponentType<{ className?: string }> };
 
 function compactText(text: string, max = 44): string {
   const value = text || "-";
@@ -178,18 +198,12 @@ function getUrgencyMinutes(createdAt: string): number {
 
 function urgencyFromCreated(createdAt: string): { label: string; className: string; minutes: number } {
   const minutes = getUrgencyMinutes(createdAt);
-  if (minutes < 60) {
-    if (minutes < 30) return { label: `${minutes}m`, className: "bg-emerald-100 text-emerald-800 border-emerald-200", minutes };
-    return { label: `${minutes}m`, className: "bg-amber-100 text-amber-800 border-amber-200", minutes };
-  }
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) {
-    if (hours < 2) return { label: `${hours}h`, className: "bg-amber-100 text-amber-800 border-amber-200", minutes };
-    if (hours < 6) return { label: `${hours}h`, className: "bg-orange-100 text-orange-800 border-orange-200", minutes };
-    return { label: `${hours}h`, className: "bg-red-100 text-red-800 border-red-200", minutes };
-  }
-  const days = Math.floor(hours / 24);
-  return { label: `${days}d`, className: "bg-red-100 text-red-800 border-red-200", minutes };
+  const label = minutes < 60 ? `${minutes}m` : minutes < 24 * 60 ? `${Math.floor(minutes / 60)}h` : `${Math.floor(minutes / (24 * 60))}d`;
+
+  if (minutes <= 12 * 60) return { label, className: "bg-emerald-100 text-emerald-800 border-emerald-200", minutes };
+  if (minutes <= 24 * 60) return { label, className: "bg-amber-100 text-amber-800 border-amber-200", minutes };
+  if (minutes <= 36 * 60) return { label, className: "bg-orange-100 text-orange-800 border-orange-200", minutes };
+  return { label, className: "bg-red-100 text-red-800 border-red-200", minutes };
 }
 
 function isEmail(value: string): boolean {
@@ -205,6 +219,13 @@ function getStringList(data: Record<string, unknown>, key: string): string[] {
   const value = data[key];
   if (!Array.isArray(value)) return [];
   return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+}
+
+function formatMoney(value: string): string {
+  if (!value || value === "-") return "-";
+  const amount = Number.parseFloat(value);
+  if (!Number.isFinite(amount)) return "-";
+  return amount.toFixed(2);
 }
 
 function summarizeAudienceAmplifier(formData: Record<string, unknown>): string {
@@ -229,16 +250,13 @@ function summarizeAudienceAmplifier(formData: Record<string, unknown>): string {
 
 function PreviewHint({ label, text, Icon }: { label: string; text: string; Icon: ComponentType<{ className?: string }> }) {
   return (
-    <span className="group relative inline-flex">
+    <span className="inline-flex">
       <span
-        className="inline-flex min-h-6 min-w-6 items-center justify-center rounded border px-1.5 py-1 text-[11px] text-muted-foreground"
+        className="inline-flex h-7 w-7 items-center justify-center rounded border text-[11px] text-muted-foreground"
         title={`${label}: ${text || "-"}`}
         aria-label={`${label}: ${text || "-"}`}
       >
         <Icon className="h-3 w-3" />
-      </span>
-      <span className="pointer-events-none absolute -top-9 left-1/2 z-20 hidden -translate-x-1/2 whitespace-nowrap rounded bg-slate-900 px-2 py-1 text-[11px] text-white shadow-md group-hover:block group-focus-within:block">
-        {label}
       </span>
     </span>
   );
@@ -300,7 +318,6 @@ export default function AdminSubmissionsPageClient() {
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
   const [selectedRowIds, setSelectedRowIds] = useState<string[]>([]);
-  const [viewedSubmissionIds, setViewedSubmissionIds] = useState<string[]>([]);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<DetailPayload | null>(null);
@@ -312,6 +329,7 @@ export default function AdminSubmissionsPageClient() {
     editorialStatus: "SUBMITTED",
     publicationStatus: "NOT_SCHEDULED",
     reviewerAssignee: "",
+    reviewerCollaboratorId: "",
     clientVisibleNote: "",
     internalNote: "",
     comment: "",
@@ -320,17 +338,6 @@ export default function AdminSubmissionsPageClient() {
   useEffect(() => {
     const stored = window.localStorage.getItem(ADMIN_TOKEN_KEY) ?? "";
     setToken(stored);
-
-    const viewedRaw = window.localStorage.getItem(VIEWED_SUBMISSIONS_KEY);
-    if (!viewedRaw) return;
-    try {
-      const parsed = JSON.parse(viewedRaw) as unknown;
-      if (Array.isArray(parsed)) {
-        setViewedSubmissionIds(parsed.filter((item): item is string => typeof item === "string"));
-      }
-    } catch {
-      setViewedSubmissionIds([]);
-    }
   }, []);
 
   const updateToken = (value: string) => {
@@ -343,15 +350,6 @@ export default function AdminSubmissionsPageClient() {
     setToken("");
     window.localStorage.removeItem(ADMIN_TOKEN_KEY);
     setUnauthorized(false);
-  };
-
-  const markViewed = (id: string) => {
-    setViewedSubmissionIds((prev) => {
-      if (prev.includes(id)) return prev;
-      const next = [...prev, id];
-      window.localStorage.setItem(VIEWED_SUBMISSIONS_KEY, JSON.stringify(next));
-      return next;
-    });
   };
 
   const adminFetch = useCallback(
@@ -422,12 +420,12 @@ export default function AdminSubmissionsPageClient() {
       if (!response.ok) return;
       const payload = (await response.json()) as DetailPayload;
       setDetail(payload);
-      markViewed(id);
       setWorkflow({
         orderPaymentStatus: payload.workflow.orderPaymentStatus,
         editorialStatus: payload.workflow.editorialStatus,
         publicationStatus: payload.workflow.publicationStatus,
         reviewerAssignee: payload.workflow.reviewerAssignee || "",
+        reviewerCollaboratorId: payload.workflow.reviewerCollaboratorId || "",
         clientVisibleNote: payload.workflow.clientVisibleNote || "",
         internalNote: payload.workflow.internalNote || "",
         comment: "",
@@ -488,6 +486,13 @@ export default function AdminSubmissionsPageClient() {
   };
 
   const formData = detail?.submission.formData ?? {};
+  const collaboratorById = useMemo(() => {
+    const map = new Map<string, DetailPayload["collaborators"][number]>();
+    for (const collaborator of detail?.collaborators ?? []) {
+      map.set(collaborator.id, collaborator);
+    }
+    return map;
+  }, [detail?.collaborators]);
   const shipping = getStringList(formData, "shipping_countries");
   const quizFields = [
     ["Question", getString(formData, "giveaway_question")],
@@ -497,15 +502,6 @@ export default function AdminSubmissionsPageClient() {
     ["Wrong #3", getString(formData, "answer_wrong_3")],
     ["Wrong #4", getString(formData, "answer_wrong_4")],
   ] as const;
-
-  const reviewerSuggestions = useMemo(() => {
-    const set = new Set<string>();
-    for (const row of rows) {
-      const value = row.reviewerAssignee.trim();
-      if (value && value !== "-") set.add(value);
-    }
-    return Array.from(set).sort();
-  }, [rows]);
 
   const legacyBookingToolsHref = useMemo(() => {
     const match = /^\/admin\/([^/]+)/.exec(pathname || "");
@@ -529,6 +525,10 @@ export default function AdminSubmissionsPageClient() {
         if (sortKey === "orderNumber") return (row.orderNumber === "-" ? row.linkedOrderId : row.orderNumber).toLowerCase();
         if (sortKey === "createdAt" || sortKey === "updatedAt") return new Date(row[sortKey]).getTime();
         if (sortKey === "urgency") return getUrgencyMinutes(row.createdAt);
+        if (sortKey === "totalPaid" || sortKey === "vatPaid") {
+          const amount = Number.parseFloat(row[sortKey]);
+          return Number.isFinite(amount) ? amount : -1;
+        }
         return (row[sortKey] || "").toLowerCase();
       };
       const left = resolve(a);
@@ -571,18 +571,50 @@ export default function AdminSubmissionsPageClient() {
     }
     download(`/api/admin/submissions/export?${params.toString()}`);
   };
+  const previewItemsForRow = (row: ListRow): PreviewItem[] => {
+    const product = row.productType.trim().toLowerCase();
+    const items: PreviewItem[] = [];
+    const seen = new Set<string>();
 
-  const previewItemsForRow = (row: ListRow): Array<{ label: string; text: string; Icon: ComponentType<{ className?: string }> }> => {
-    const items: Array<{ label: string; text: string; Icon: ComponentType<{ className?: string }> }> = [];
-    if (row.previews.title !== "-") items.push({ label: "Title", text: row.previews.title, Icon: Tag });
-    if (row.previews.shortDescription !== "-") items.push({ label: "Short description", text: row.previews.shortDescription, Icon: FileText });
-    if (row.previews.body !== "-") items.push({ label: "Body", text: row.previews.body, Icon: AlignLeft });
+    const push = (item: PreviewItem) => {
+      const key = item.label.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      items.push(item);
+    };
 
-    if (row.productType.toLowerCase() === "giveaway") {
-      if (row.previews.quiz !== "-") items.push({ label: "Quiz", text: row.previews.quiz, Icon: FileQuestion });
-      if (row.previews.shipping !== "-") items.push({ label: "Shipping", text: row.previews.shipping, Icon: MapPinned });
-      if (row.previews.audienceAmplifier !== "-") {
-        items.push({ label: "Audience Amplifier", text: row.previews.audienceAmplifier, Icon: Link2 });
+    if (row.previews.title !== "-") push({ label: "Title", text: row.previews.title, Icon: Tag });
+    if (row.previews.shortDescription !== "-") push({ label: "Short description", text: row.previews.shortDescription, Icon: FileText });
+    if (row.previews.body !== "-") push({ label: "Body", text: row.previews.body, Icon: AlignLeft });
+
+    if (product === "giveaway" && row.previews.quiz !== "-") push({ label: "Quiz", text: row.previews.quiz, Icon: FileQuestion });
+    if (product === "giveaway" && row.previews.shipping !== "-") push({ label: "Shipping", text: row.previews.shipping, Icon: MapPinned });
+    if (product === "giveaway" && row.previews.audienceAmplifier !== "-") {
+      push({ label: "Audience Amplifier", text: row.previews.audienceAmplifier, Icon: Link2 });
+    }
+
+    for (const key of row.orderedOptionKeys) {
+      const optionKey = key.toLowerCase();
+      if (optionKey === "audience_amplifier" && product === "giveaway" && row.previews.audienceAmplifier !== "-") {
+        push({ label: "Audience Amplifier", text: "Ordered and configured", Icon: Link2 });
+      } else if (optionKey === "social_boost") {
+        push({ label: "Social Boost", text: "Ordered option", Icon: Link2 });
+      } else if (optionKey === "duration") {
+        push({ label: "Duration", text: "Ordered option", Icon: FileText });
+      } else if (optionKey === "featured_spot_in_the_hero_grid" || optionKey === "hero_grid") {
+        push({ label: "Hero Grid", text: "Ordered option", Icon: Tag });
+      } else if (optionKey === "sticky_post") {
+        push({ label: "Sticky Post", text: "Ordered option", Icon: Tag });
+      } else if (optionKey === "sidebar_spotlight") {
+        push({ label: "Sidebar Spotlight", text: "Ordered option", Icon: Tag });
+      } else if (optionKey === "extended_text_limit") {
+        push({ label: "Extended Text Limit", text: "Ordered option", Icon: AlignLeft });
+      } else if (optionKey === "additional_images") {
+        push({ label: "Additional Images", text: "Ordered option", Icon: ImageIcon });
+      } else if (optionKey === "embedded_video") {
+        push({ label: "Embedded Video", text: "Ordered option", Icon: Package });
+      } else if (optionKey === "weekly_newsletter_feature") {
+        push({ label: "Weekly Newsletter Feature", text: "Ordered option", Icon: FileText });
       }
     }
 
@@ -612,6 +644,10 @@ export default function AdminSubmissionsPageClient() {
               <input type="checkbox" checked={allVisibleSelected} onChange={toggleSelectAllVisible} />
               {allVisibleSelected ? "Deselect all" : "Select all"}
             </label>
+            <Button variant="outline" className="h-9 min-w-[210px] justify-start" onClick={exportCsv}>
+              <Download className="mr-1 h-4 w-4" />
+              Export CSV {selectedRowIds.length > 0 ? `(${selectedRowIds.length} selected)` : ""}
+            </Button>
             <div className="relative min-w-[280px]">
               <Search className="pointer-events-none absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input className="h-9 bg-white pl-8" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Quick search: order, company, email, title" />
@@ -631,10 +667,6 @@ export default function AdminSubmissionsPageClient() {
             <Button variant="outline" className="h-9" onClick={() => setShowAdvancedFilters((prev) => !prev)}>
               <Funnel className="mr-1 h-4 w-4" />
               Filters
-            </Button>
-            <Button variant="outline" className="h-9" onClick={exportCsv}>
-              <Download className="mr-1 h-4 w-4" />
-              Export CSV {selectedRowIds.length > 0 ? `(${selectedRowIds.length} selected)` : ""}
             </Button>
             {legacyBookingToolsHref ? (
               <Link href={legacyBookingToolsHref} className={buttonVariants({ variant: "secondary", size: "sm" })}>Legacy Booking Tools</Link>
@@ -738,6 +770,8 @@ export default function AdminSubmissionsPageClient() {
                     <TableHead className="whitespace-nowrap px-2 py-2"><SortHeader label="Created" sortKey="createdAt" activeSortKey={sortKey} sortDir={sortDir} onClick={handleSort} /></TableHead>
                     <TableHead className="whitespace-nowrap px-2 py-2"><SortHeader label="Updated" sortKey="updatedAt" activeSortKey={sortKey} sortDir={sortDir} onClick={handleSort} /></TableHead>
                     <TableHead className="whitespace-nowrap px-2 py-2"><SortHeader label="Payment" sortKey="paymentStatus" activeSortKey={sortKey} sortDir={sortDir} onClick={handleSort} /></TableHead>
+                    <TableHead className="whitespace-nowrap px-2 py-2"><SortHeader label="Total paid" sortKey="totalPaid" activeSortKey={sortKey} sortDir={sortDir} onClick={handleSort} /></TableHead>
+                    <TableHead className="whitespace-nowrap px-2 py-2"><SortHeader label="VAT paid" sortKey="vatPaid" activeSortKey={sortKey} sortDir={sortDir} onClick={handleSort} /></TableHead>
                     <TableHead className="whitespace-nowrap px-2 py-2"><SortHeader label="Editorial" sortKey="editorialStatus" activeSortKey={sortKey} sortDir={sortDir} onClick={handleSort} /></TableHead>
                     <TableHead className="whitespace-nowrap px-2 py-2"><SortHeader label="Publication" sortKey="publicationStatus" activeSortKey={sortKey} sortDir={sortDir} onClick={handleSort} /></TableHead>
                     <TableHead className="whitespace-nowrap px-2 py-2"><SortHeader label="Reviewer" sortKey="reviewerAssignee" activeSortKey={sortKey} sortDir={sortDir} onClick={handleSort} /></TableHead>
@@ -750,10 +784,9 @@ export default function AdminSubmissionsPageClient() {
                 <TableBody>
                   {sortedRows.map((row) => {
                     const urgency = urgencyFromCreated(row.createdAt);
-                    const isNew = row.editorialStatus === "SUBMITTED" && !viewedSubmissionIds.includes(row.id);
                     const previewItems = previewItemsForRow(row);
                     return (
-                      <TableRow key={row.id}>
+                      <TableRow key={row.id} className="text-xs">
                         <TableCell className="whitespace-nowrap px-2 py-2">
                           <input
                             type="checkbox"
@@ -770,7 +803,6 @@ export default function AdminSubmissionsPageClient() {
                         <TableCell className="whitespace-nowrap px-2 py-2">{row.orderNumber !== "-" ? row.orderNumber : row.linkedOrderId}</TableCell>
                         <TableCell className="whitespace-nowrap px-2 py-2">
                           <span className={`inline-flex rounded border px-2 py-0.5 text-xs font-medium ${urgency.className}`}>{urgency.label}</span>
-                          {isNew ? <Badge className="ml-1" variant="secondary">NEW</Badge> : null}
                         </TableCell>
                         <TableCell className="whitespace-nowrap px-2 py-2"><Badge variant="outline">{row.productType.toUpperCase()}</Badge></TableCell>
                         <TableCell className="whitespace-nowrap px-2 py-2" title={row.company}>{compactText(row.company, 20)}</TableCell>
@@ -784,9 +816,11 @@ export default function AdminSubmissionsPageClient() {
                           )}
                         </TableCell>
                         <TableCell className="whitespace-nowrap px-2 py-2" title={row.reservedSlot}>{compactText(row.reservedSlot, 24)}</TableCell>
-                        <TableCell className="whitespace-nowrap px-2 py-2 text-xs">{iso(row.createdAt)}</TableCell>
-                        <TableCell className="whitespace-nowrap px-2 py-2 text-xs">{iso(row.updatedAt)}</TableCell>
+                        <TableCell className="whitespace-nowrap px-2 py-2">{iso(row.createdAt)}</TableCell>
+                        <TableCell className="whitespace-nowrap px-2 py-2">{iso(row.updatedAt)}</TableCell>
                         <TableCell className="whitespace-nowrap px-2 py-2">{statusPill("payment", row.paymentStatus)}</TableCell>
+                        <TableCell className="whitespace-nowrap px-2 py-2">{formatMoney(row.totalPaid)}</TableCell>
+                        <TableCell className="whitespace-nowrap px-2 py-2">{formatMoney(row.vatPaid)}</TableCell>
                         <TableCell className="whitespace-nowrap px-2 py-2">
                           {roleCanEdit.canUpdateEditorial ? (
                             <select
@@ -824,16 +858,10 @@ export default function AdminSubmissionsPageClient() {
                         </TableCell>
                         <TableCell className="whitespace-nowrap px-2 py-2" title={row.reviewerAssignee}>{compactText(row.reviewerAssignee, 16)}</TableCell>
                         <TableCell className="px-2 py-2">
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-1 text-xs text-muted-foreground" title={row.purchasedOptionsSummary}>
-                              <FileText className="h-3.5 w-3.5" />
-                              {compactText(row.purchasedOptionsSummary, 24)}
-                            </div>
-                            <div className="flex flex-wrap gap-1">
-                              {previewItems.map((item) => (
-                                <PreviewHint key={item.label} label={item.label} text={item.text} Icon={item.Icon} />
-                              ))}
-                            </div>
+                          <div className="flex flex-wrap gap-1" title={row.purchasedOptionsSummary}>
+                            {previewItems.map((item) => (
+                              <PreviewHint key={item.label} label={item.label} text={item.text} Icon={item.Icon} />
+                            ))}
                           </div>
                         </TableCell>
                         <TableCell className="whitespace-nowrap px-2 py-2">
@@ -886,6 +914,9 @@ export default function AdminSubmissionsPageClient() {
               <section className="rounded-md border p-4">
                 <h3 className="text-sm font-semibold uppercase">Workflow</h3>
                 <p className="mb-2 text-xs text-muted-foreground">Publication status is an internal workflow status managed in admin. It does not automatically sync WordPress publication state.</p>
+                <div className="mb-3 rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
+                  <span className="font-medium">Pending action:</span> {detail.pendingAction.label} ({detail.pendingAction.owner})
+                </div>
                 <div className="mt-3 grid gap-3 md:grid-cols-2">
                   {detailPermissions.canUpdatePayment ? (
                     <div>
@@ -931,11 +962,30 @@ export default function AdminSubmissionsPageClient() {
 
                   <div>
                     <Label className="mb-1 block text-xs">REVIEWER / ASSIGNEE</Label>
-                    <Input list="reviewer-options" disabled={!detailPermissions.canUpdateNotes} value={workflow.reviewerAssignee} onChange={(event) => setWorkflow((prev) => ({ ...prev, reviewerAssignee: event.target.value }))} />
-                    <p className="mt-1 text-xs text-muted-foreground">Free text today, prepared for later evolution to a predefined reviewer list.</p>
-                    <datalist id="reviewer-options">
-                      {reviewerSuggestions.map((name) => <option key={name} value={name} />)}
-                    </datalist>
+                    <select
+                      className="h-10 w-full rounded-md border px-3 text-sm"
+                      disabled={!detailPermissions.canUpdateNotes}
+                      value={workflow.reviewerCollaboratorId}
+                      onChange={(event) => {
+                        const collaboratorId = event.target.value;
+                        const collaborator = collaboratorById.get(collaboratorId);
+                        setWorkflow((prev) => ({
+                          ...prev,
+                          reviewerCollaboratorId: collaboratorId,
+                          reviewerAssignee: collaborator?.displayName ?? "",
+                        }));
+                      }}
+                    >
+                      <option value="">Unassigned</option>
+                      {(detail.collaborators ?? []).map((collaborator) => (
+                        <option key={collaborator.id} value={collaborator.id}>
+                          {collaborator.displayName} ({collaborator.role})
+                        </option>
+                      ))}
+                    </select>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Assignment uses active collaborators (SUPER_ADMIN, CONTENT_ADMIN, OPS_ADMIN) only.
+                    </p>
                   </div>
 
                   <div className="md:col-span-2">

@@ -2,7 +2,7 @@ import { EditorialStatus, OrderPaymentStatus, PublicationStatus, type Prisma } f
 import { NextRequest, NextResponse } from "next/server";
 
 import { prisma } from "@/lib/prisma";
-import { authenticateAdminRequest, buildSubmissionScopeWhere, canViewAllSubmissions } from "@/lib/adminAuth";
+import { authenticateAdminRequestWithCollaborators, buildSubmissionScopeWhere, canViewAllSubmissions } from "@/lib/adminAuth";
 import { toListRow } from "@/lib/adminSubmissions";
 
 function unauthorized() {
@@ -42,7 +42,7 @@ function parsePublicationStatus(value: string | null): PublicationStatus | null 
 }
 
 export async function GET(request: NextRequest) {
-  const auth = authenticateAdminRequest(request);
+  const auth = await authenticateAdminRequestWithCollaborators(request);
   if (!auth) return unauthorized();
 
   const params = request.nextUrl.searchParams;

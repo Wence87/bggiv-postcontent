@@ -1,5 +1,7 @@
 import type { NextRequest } from "next/server";
 import type { Prisma } from "@prisma/client";
+import crypto from "crypto";
+import { prisma } from "@/lib/prisma";
 
 export type AdminRole = "SUPER_ADMIN" | "CONTENT_ADMIN" | "OPS_ADMIN" | "PUBLISHER" | "CLIENT_PRO";
 
@@ -8,6 +10,7 @@ export type AdminAuthContext = {
   actor: string;
   scopedEmail: string | null;
   scopedCompany: string | null;
+  collaboratorId: string | null;
 };
 
 type TokenConfigEntry = {
@@ -89,6 +92,42 @@ export function authenticateAdminRequest(request: NextRequest): AdminAuthContext
     actor: tokenConfig.actor || tokenConfig.email || tokenConfig.company || tokenConfig.role,
     scopedEmail: tokenConfig.email ?? null,
     scopedCompany: tokenConfig.company ?? null,
+    collaboratorId: null,
+  };
+}
+
+function tokenHash(token: string): string {
+  return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+export async function authenticateAdminRequestWithCollaborators(request: NextRequest): Promise<AdminAuthContext | null> {
+  const staticAuth = authenticateAdminRequest(request);
+  if (staticAuth) return staticAuth;
+
+  const provided = getProvidedAdminToken(request);
+  if (!provided) return null;
+
+  const collaborator = await prisma.collaborator.findUnique({
+    where: { apiTokenHash: tokenHash(provided.trim()) },
+    select: {
+      id: true,
+      displayName: true,
+      email: true,
+      role: true,
+      isActive: true,
+      companyScope: true,
+    },
+  });
+  if (!collaborator || !collaborator.isActive) return null;
+
+  return {
+    role: collaborator.role,
+    actor: collaborator.displayName || collaborator.email || collaborator.role,
+    scopedEmail: collaborator.role === "PUBLISHER" || collaborator.role === "CLIENT_PRO" ? collaborator.email.toLowerCase() : null,
+    scopedCompany: collaborator.role === "PUBLISHER" || collaborator.role === "CLIENT_PRO"
+      ? (collaborator.companyScope?.toLowerCase() ?? null)
+      : null,
+    collaboratorId: collaborator.id,
   };
 }
 
@@ -117,6 +156,16 @@ export function canDownloadExports(role: AdminRole): boolean {
 }
 
 export function buildSubmissionScopeWhere(auth: AdminAuthContext): Prisma.SubmitFormSubmissionWhereInput {
+  if (auth.collaboratorId && (auth.role === "CONTENT_ADMIN" || auth.role === "OPS_ADMIN")) {
+    return {
+      ops: {
+        is: {
+          reviewerCollaboratorId: auth.collaboratorId,
+        },
+      },
+    };
+  }
+
   if (canViewAllSubmissions(auth.role)) {
     return {};
   }

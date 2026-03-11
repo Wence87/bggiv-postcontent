@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { prisma } from "@/lib/prisma";
 import {
-  authenticateAdminRequest,
+  authenticateAdminRequestWithCollaborators,
   buildSubmissionScopeWhere,
   canEditEditorial,
   canEditNotes,
@@ -26,16 +26,33 @@ function parseEnum<T extends string>(value: unknown, allowed: readonly T[]): T |
   return allowed.includes(normalized) ? normalized : null;
 }
 
+function derivePendingAction(editorialStatus: EditorialStatus, publicationStatus: PublicationStatus): {
+  key: "ADMIN_REVIEW" | "CLIENT_FEEDBACK" | "READY_PUBLICATION" | "PUBLISHED" | "REJECTED";
+  label: string;
+  owner: "ADMIN" | "CLIENT" | "OPS";
+} {
+  if (editorialStatus === EditorialStatus.REJECTED) {
+    return { key: "REJECTED", label: "Rejected", owner: "ADMIN" };
+  }
+  if (editorialStatus === EditorialStatus.CHANGES_REQUESTED) {
+    return { key: "CLIENT_FEEDBACK", label: "Waiting for client updates", owner: "CLIENT" };
+  }
+  if (editorialStatus === EditorialStatus.APPROVED && publicationStatus !== PublicationStatus.PUBLISHED) {
+    return { key: "READY_PUBLICATION", label: "Ready for publication workflow", owner: "OPS" };
+  }
+  if (publicationStatus === PublicationStatus.PUBLISHED) {
+    return { key: "PUBLISHED", label: "Published", owner: "OPS" };
+  }
+  return { key: "ADMIN_REVIEW", label: "Pending admin review", owner: "ADMIN" };
+}
+
 async function loadScopedSubmission(id: string, request: NextRequest) {
-  const auth = authenticateAdminRequest(request);
+  const auth = await authenticateAdminRequestWithCollaborators(request);
   if (!auth) return { auth: null, submission: null };
 
   const submission = await prisma.submitFormSubmission.findFirst({
     where: {
-      AND: [
-        { id },
-        buildSubmissionScopeWhere(auth),
-      ],
+      AND: [{ id }, buildSubmissionScopeWhere(auth)],
     },
     include: {
       ops: true,
@@ -47,6 +64,24 @@ async function loadScopedSubmission(id: string, request: NextRequest) {
   });
 
   return { auth, submission };
+}
+
+async function listReviewerCollaborators() {
+  return prisma.collaborator.findMany({
+    where: {
+      isActive: true,
+      role: { in: ["SUPER_ADMIN", "CONTENT_ADMIN", "OPS_ADMIN"] },
+    },
+    orderBy: [{ displayName: "asc" }],
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      displayName: true,
+      email: true,
+      role: true,
+    },
+  });
 }
 
 export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }) {
@@ -69,6 +104,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
   const canUpdatePublication = canEditPublication(auth.role);
   const canUpdatePayment = canEditPayment(auth.role);
   const canUpdateNotes = canEditNotes(auth.role);
+  const collaborators = canUpdateNotes ? await listReviewerCollaborators() : [];
 
   return NextResponse.json({
     id: submission.id,
@@ -98,22 +134,28 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
       editorialStatus: submission.ops?.editorialStatus ?? EditorialStatus.SUBMITTED,
       publicationStatus: submission.ops?.publicationStatus ?? PublicationStatus.NOT_SCHEDULED,
       reviewerAssignee: submission.ops?.reviewerAssignee ?? "",
+      reviewerCollaboratorId: submission.ops?.reviewerCollaboratorId ?? "",
       clientVisibleNote: submission.ops?.clientVisibleNote ?? "",
       internalNote: hideInternal ? "" : submission.ops?.internalNote ?? "",
     },
+    collaborators,
+    pendingAction: derivePendingAction(
+      submission.ops?.editorialStatus ?? EditorialStatus.SUBMITTED,
+      submission.ops?.publicationStatus ?? PublicationStatus.NOT_SCHEDULED
+    ),
     audit: submission.auditEvents
       .filter((event) => !(hideInternal && event.fieldName === "internalNote"))
       .map((event) => ({
-      id: event.id,
-      actorRole: event.actorRole,
-      actorIdentifier: event.actorIdentifier,
-      eventType: event.eventType,
-      fieldName: event.fieldName,
-      fromValue: event.fromValue,
-      toValue: event.toValue,
-      comment: event.comment,
-      createdAt: event.createdAt.toISOString(),
-    })),
+        id: event.id,
+        actorRole: event.actorRole,
+        actorIdentifier: event.actorIdentifier,
+        eventType: event.eventType,
+        fieldName: event.fieldName,
+        fromValue: event.fromValue,
+        toValue: event.toValue,
+        comment: event.comment,
+        createdAt: event.createdAt.toISOString(),
+      })),
     role: auth.role,
     permissions: {
       canUpdateEditorial,
@@ -147,6 +189,8 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
   const orderPaymentStatus = parseEnum(payload.orderPaymentStatus, ["PAID", "PENDING", "FAILED", "REFUNDED"] as const);
 
   const reviewerAssignee = typeof payload.reviewerAssignee === "string" ? payload.reviewerAssignee.trim() : null;
+  const reviewerCollaboratorId =
+    typeof payload.reviewerCollaboratorId === "string" ? payload.reviewerCollaboratorId.trim() : null;
   const clientVisibleNote = typeof payload.clientVisibleNote === "string" ? payload.clientVisibleNote.trim() : null;
   const internalNote = typeof payload.internalNote === "string" ? payload.internalNote.trim() : null;
   const comment = typeof payload.comment === "string" ? payload.comment.trim() : null;
@@ -160,8 +204,8 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
   if (orderPaymentStatus && !canEditPayment(auth.role)) {
     return forbidden("Role cannot update payment status");
   }
-  if ((clientVisibleNote !== null || internalNote !== null) && !canEditNotes(auth.role)) {
-    return forbidden("Role cannot edit notes");
+  if ((clientVisibleNote !== null || internalNote !== null || reviewerAssignee !== null || reviewerCollaboratorId !== null) && !canEditNotes(auth.role)) {
+    return forbidden("Role cannot edit reviewer or notes");
   }
 
   const existingOps = submission.ops;
@@ -171,6 +215,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     editorialStatus?: EditorialStatus;
     publicationStatus?: PublicationStatus;
     reviewerAssignee?: string | null;
+    reviewerCollaboratorId?: string | null;
     clientVisibleNote?: string | null;
     internalNote?: string | null;
   } = {};
@@ -179,6 +224,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
   if (editorialStatus) nextOpsData.editorialStatus = editorialStatus;
   if (publicationStatus) nextOpsData.publicationStatus = publicationStatus;
   if (reviewerAssignee !== null) nextOpsData.reviewerAssignee = reviewerAssignee || null;
+  if (reviewerCollaboratorId !== null) nextOpsData.reviewerCollaboratorId = reviewerCollaboratorId || null;
   if (clientVisibleNote !== null) nextOpsData.clientVisibleNote = clientVisibleNote || null;
   if (internalNote !== null) nextOpsData.internalNote = internalNote || null;
 
@@ -187,79 +233,124 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     return NextResponse.json({ code: "BAD_REQUEST", message: "No changes provided" }, { status: 400 });
   }
 
-  const updated = await prisma.$transaction(async (tx) => {
-    const ops = await tx.submissionOps.upsert({
-      where: { submissionId: submission.id },
-      create: {
-        submissionId: submission.id,
-        ...nextOpsData,
-      },
-      update: {
-        ...nextOpsData,
-      },
+  try {
+    const updated = await prisma.$transaction(async (tx) => {
+      let resolvedReviewerDisplay: string | null = null;
+
+      if (reviewerCollaboratorId !== null) {
+        if (!reviewerCollaboratorId) {
+          nextOpsData.reviewerCollaboratorId = null;
+          nextOpsData.reviewerAssignee = null;
+        } else {
+          const collaborator = await tx.collaborator.findFirst({
+            where: {
+              id: reviewerCollaboratorId,
+              isActive: true,
+              role: { in: ["SUPER_ADMIN", "CONTENT_ADMIN", "OPS_ADMIN"] },
+            },
+            select: { displayName: true },
+          });
+          if (!collaborator) {
+            throw new Error("INVALID_REVIEWER_COLLABORATOR");
+          }
+          resolvedReviewerDisplay = collaborator.displayName;
+          nextOpsData.reviewerAssignee = collaborator.displayName;
+          nextOpsData.reviewerCollaboratorId = reviewerCollaboratorId;
+        }
+      }
+
+      const ops = await tx.submissionOps.upsert({
+        where: { submissionId: submission.id },
+        create: {
+          submissionId: submission.id,
+          ...nextOpsData,
+        },
+        update: {
+          ...nextOpsData,
+        },
+      });
+
+      const changes: Array<{ field: string; from: string | null; to: string | null }> = [];
+      if (orderPaymentStatus && (existingOps?.orderPaymentStatus ?? OrderPaymentStatus.PAID) !== orderPaymentStatus) {
+        changes.push({
+          field: "orderPaymentStatus",
+          from: existingOps?.orderPaymentStatus ?? OrderPaymentStatus.PAID,
+          to: orderPaymentStatus,
+        });
+      }
+      if (editorialStatus && (existingOps?.editorialStatus ?? EditorialStatus.SUBMITTED) !== editorialStatus) {
+        changes.push({
+          field: "editorialStatus",
+          from: existingOps?.editorialStatus ?? EditorialStatus.SUBMITTED,
+          to: editorialStatus,
+        });
+      }
+      if (publicationStatus && (existingOps?.publicationStatus ?? PublicationStatus.NOT_SCHEDULED) !== publicationStatus) {
+        changes.push({
+          field: "publicationStatus",
+          from: existingOps?.publicationStatus ?? PublicationStatus.NOT_SCHEDULED,
+          to: publicationStatus,
+        });
+      }
+      if (reviewerAssignee !== null && (existingOps?.reviewerAssignee ?? null) !== (reviewerAssignee || null)) {
+        changes.push({ field: "reviewerAssignee", from: existingOps?.reviewerAssignee ?? null, to: reviewerAssignee || null });
+      }
+      if (reviewerCollaboratorId !== null && (existingOps?.reviewerCollaboratorId ?? null) !== (reviewerCollaboratorId || null)) {
+        changes.push({
+          field: "reviewerCollaboratorId",
+          from: existingOps?.reviewerCollaboratorId ?? null,
+          to: reviewerCollaboratorId || null,
+        });
+        if (resolvedReviewerDisplay) {
+          changes.push({
+            field: "reviewerAssignee",
+            from: existingOps?.reviewerAssignee ?? null,
+            to: resolvedReviewerDisplay,
+          });
+        }
+      }
+      if (clientVisibleNote !== null && (existingOps?.clientVisibleNote ?? null) !== (clientVisibleNote || null)) {
+        changes.push({ field: "clientVisibleNote", from: existingOps?.clientVisibleNote ?? null, to: clientVisibleNote || null });
+      }
+      if (internalNote !== null && (existingOps?.internalNote ?? null) !== (internalNote || null)) {
+        changes.push({ field: "internalNote", from: existingOps?.internalNote ?? null, to: internalNote || null });
+      }
+
+      for (const change of changes) {
+        await tx.submissionAuditEvent.create({
+          data: {
+            submissionId: submission.id,
+            actorRole: auth.role,
+            actorIdentifier: auth.actor,
+            eventType: "FIELD_UPDATED",
+            fieldName: change.field,
+            fromValue: change.from,
+            toValue: change.to,
+            comment: comment || null,
+          },
+        });
+      }
+
+      if (changes.length === 0 && comment) {
+        await tx.submissionAuditEvent.create({
+          data: {
+            submissionId: submission.id,
+            actorRole: auth.role,
+            actorIdentifier: auth.actor,
+            eventType: "COMMENT",
+            comment,
+          },
+        });
+      }
+
+      return ops;
     });
 
-    const changes: Array<{ field: string; from: string | null; to: string | null }> = [];
-    if (orderPaymentStatus && (existingOps?.orderPaymentStatus ?? OrderPaymentStatus.PAID) !== orderPaymentStatus) {
-      changes.push({
-        field: "orderPaymentStatus",
-        from: existingOps?.orderPaymentStatus ?? OrderPaymentStatus.PAID,
-        to: orderPaymentStatus,
-      });
+    return NextResponse.json({ ok: true, workflow: updated });
+  } catch (error) {
+    if (error instanceof Error && error.message === "INVALID_REVIEWER_COLLABORATOR") {
+      return NextResponse.json({ code: "INVALID_REVIEWER_COLLABORATOR" }, { status: 400 });
     }
-    if (editorialStatus && (existingOps?.editorialStatus ?? EditorialStatus.SUBMITTED) !== editorialStatus) {
-      changes.push({
-        field: "editorialStatus",
-        from: existingOps?.editorialStatus ?? EditorialStatus.SUBMITTED,
-        to: editorialStatus,
-      });
-    }
-    if (publicationStatus && (existingOps?.publicationStatus ?? PublicationStatus.NOT_SCHEDULED) !== publicationStatus) {
-      changes.push({
-        field: "publicationStatus",
-        from: existingOps?.publicationStatus ?? PublicationStatus.NOT_SCHEDULED,
-        to: publicationStatus,
-      });
-    }
-    if (reviewerAssignee !== null && (existingOps?.reviewerAssignee ?? null) !== (reviewerAssignee || null)) {
-      changes.push({ field: "reviewerAssignee", from: existingOps?.reviewerAssignee ?? null, to: reviewerAssignee || null });
-    }
-    if (clientVisibleNote !== null && (existingOps?.clientVisibleNote ?? null) !== (clientVisibleNote || null)) {
-      changes.push({ field: "clientVisibleNote", from: existingOps?.clientVisibleNote ?? null, to: clientVisibleNote || null });
-    }
-    if (internalNote !== null && (existingOps?.internalNote ?? null) !== (internalNote || null)) {
-      changes.push({ field: "internalNote", from: existingOps?.internalNote ?? null, to: internalNote || null });
-    }
-
-    for (const change of changes) {
-      await tx.submissionAuditEvent.create({
-        data: {
-          submissionId: submission.id,
-          actorRole: auth.role,
-          actorIdentifier: auth.actor,
-          eventType: "FIELD_UPDATED",
-          fieldName: change.field,
-          fromValue: change.from,
-          toValue: change.to,
-          comment: comment || null,
-        },
-      });
-    }
-
-    if (changes.length === 0 && comment) {
-      await tx.submissionAuditEvent.create({
-        data: {
-          submissionId: submission.id,
-          actorRole: auth.role,
-          actorIdentifier: auth.actor,
-          eventType: "COMMENT",
-          comment,
-        },
-      });
-    }
-
-    return ops;
-  });
-
-  return NextResponse.json({ ok: true, workflow: updated });
+    return NextResponse.json({ code: "INTERNAL_SERVER_ERROR" }, { status: 500 });
+  }
 }

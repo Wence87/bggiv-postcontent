@@ -175,18 +175,37 @@ model SubmissionOps {
   editorialStatus     EditorialStatus    @default(SUBMITTED)
   publicationStatus   PublicationStatus  @default(NOT_SCHEDULED)
   reviewerAssignee    String?
+  reviewerCollaboratorId String?
   clientVisibleNote   String?
   internalNote        String?
   createdAt           DateTime          @default(now())
   updatedAt           DateTime          @updatedAt
 
   submission          SubmitFormSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  reviewerCollaborator Collaborator? @relation(fields: [reviewerCollaboratorId], references: [id], onDelete: SetNull)
 
   @@index([editorialStatus])
   @@index([publicationStatus])
   @@index([orderPaymentStatus])
   @@index([reviewerAssignee])
+  @@index([reviewerCollaboratorId])
   @@index([updatedAt])
+}
+
+model Collaborator {
+  id            String    @id @default(cuid())
+  firstName     String
+  lastName      String
+  displayName   String
+  email         String    @unique
+  role          AdminRole
+  isActive      Boolean   @default(true)
+  apiTokenHash  String?   @unique
+  companyScope  String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  assignedSubmissionOps SubmissionOps[]
 }
 
 model SubmissionAuditEvent {
