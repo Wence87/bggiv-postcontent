@@ -1,17 +1,16 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { Eye, Trash2 } from "lucide-react";
 
 import { AdminShell } from "@/components/admin/AdminShell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { buildAdminSectionHref } from "@/lib/adminRoutes";
 
 const ADMIN_TOKEN_KEY = "adminToken";
 
@@ -61,6 +60,32 @@ type CollaboratorDetail = {
   }>;
 };
 
+type SubmissionDetail = {
+  submission: {
+    id: string;
+    orderNumber: string | null;
+    linkedOrderId: string | null;
+    productType: string;
+    companyName: string;
+    contactEmail: string;
+    reservationStartsAt: string | null;
+    reservationMonthKey: string | null;
+    reservationWeekKey: string | null;
+    createdAt: string;
+    updatedAt: string;
+    formData: Record<string, unknown>;
+  };
+  workflow: {
+    editorialStatus: string;
+    publicationStatus: string;
+    reviewerAssignee: string;
+  };
+  pendingAction: {
+    label: string;
+    owner: "ADMIN" | "CLIENT" | "OPS";
+  };
+};
+
 const EMPTY_FORM = {
   firstName: "",
   lastName: "",
@@ -100,8 +125,8 @@ function productLabel(value: string): string {
 }
 
 export default function CollaboratorsPageClient() {
-  const pathname = usePathname();
   const [token, setToken] = useState("");
+  const [viewerRole, setViewerRole] = useState("");
   const [items, setItems] = useState<Collaborator[]>([]);
   const [plainToken, setPlainToken] = useState<string | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -110,6 +135,12 @@ export default function CollaboratorsPageClient() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<CollaboratorDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Collaborator | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [selectedSubmissionId, setSelectedSubmissionId] = useState<string | null>(null);
+  const [submissionDetail, setSubmissionDetail] = useState<SubmissionDetail | null>(null);
+  const [submissionLoading, setSubmissionLoading] = useState(false);
 
   useEffect(() => {
     const stored = window.localStorage.getItem(ADMIN_TOKEN_KEY) ?? "";
@@ -123,8 +154,6 @@ export default function CollaboratorsPageClient() {
 
   const authHeaders = token ? ({ "x-admin-token": token } as Record<string, string>) : ({} as Record<string, string>);
 
-  const submissionsHref = useMemo(() => buildAdminSectionHref(pathname, "submissions"), [pathname]);
-
   const refresh = async () => {
     const response = await fetch("/api/admin/collaborators?active=0", { headers: authHeaders });
     if (!response.ok) {
@@ -132,8 +161,9 @@ export default function CollaboratorsPageClient() {
       setError(payload.message || payload.code || "Unable to load collaborators.");
       return;
     }
-    const payload = (await response.json()) as { items: Collaborator[] };
+    const payload = (await response.json()) as { items: Collaborator[]; role?: string };
     setItems(payload.items || []);
+    setViewerRole(payload.role || "");
     setError(null);
   };
 
@@ -154,6 +184,22 @@ export default function CollaboratorsPageClient() {
     const payload = (await response.json()) as CollaboratorDetail;
     setDetail(payload);
     setDetailLoading(false);
+  };
+
+  const openSubmissionDetail = async (submissionId: string) => {
+    setSelectedSubmissionId(submissionId);
+    setSubmissionDetail(null);
+    setSubmissionLoading(true);
+    const response = await fetch(`/api/admin/submissions/${submissionId}`, { headers: authHeaders });
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => ({}))) as { message?: string; code?: string };
+      setError(payload.message || payload.code || "Unable to load submission detail.");
+      setSubmissionLoading(false);
+      return;
+    }
+    const payload = (await response.json()) as SubmissionDetail;
+    setSubmissionDetail(payload);
+    setSubmissionLoading(false);
   };
 
   const createCollaborator = async () => {
@@ -185,7 +231,7 @@ export default function CollaboratorsPageClient() {
     if (!response.ok) {
       const payload = (await response.json().catch(() => ({}))) as { message?: string; code?: string };
       setError(payload.message || payload.code || "Update collaborator failed.");
-      return;
+      return null;
     }
     const payload = (await response.json()) as { plainToken?: string };
     setError(null);
@@ -208,6 +254,33 @@ export default function CollaboratorsPageClient() {
     } catch {
       setTokenFeedback("Token regenerated. Copy to clipboard failed.");
       setPlainToken(tokenValue);
+    }
+  };
+
+  const deleteCollaborator = async () => {
+    if (!deleteTarget || deleteConfirmText !== "DELETE") return;
+    setDeleteLoading(true);
+    try {
+      const response = await fetch(`/api/admin/collaborators/${deleteTarget.id}`, {
+        method: "DELETE",
+        headers: authHeaders,
+      });
+      const payload = (await response.json().catch(() => ({}))) as { message?: string; code?: string };
+      if (!response.ok) {
+        setError(payload.message || payload.code || "Delete collaborator failed.");
+        return;
+      }
+      setError(null);
+      setTokenFeedback(`Collaborator deleted: ${deleteTarget.displayName}`);
+      if (selectedId === deleteTarget.id) {
+        setSelectedId(null);
+        setDetail(null);
+      }
+      setDeleteTarget(null);
+      setDeleteConfirmText("");
+      await refresh();
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -316,8 +389,25 @@ export default function CollaboratorsPageClient() {
                   </TableCell>
                   <TableCell>
                     <div className="flex gap-2">
-                      <Button variant="outline" size="sm" onClick={() => void openDetail(item.id)}>View</Button>
-                      <Button variant="outline" size="sm" onClick={() => void regenerateAndCopyToken(item.id)}>Regenerate + Copy token</Button>
+                      <Button variant="outline" size="sm" className="h-8 w-8 p-0" title="View collaborator detail" aria-label="View collaborator detail" onClick={() => void openDetail(item.id)}>
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                      <Button variant="outline" size="sm" title="Regenerate and copy token" aria-label="Regenerate and copy token" onClick={() => void regenerateAndCopyToken(item.id)}>Regenerate + Copy token</Button>
+                      {viewerRole === "SUPER_ADMIN" ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 w-8 p-0 text-red-700"
+                          title="Delete collaborator"
+                          aria-label="Delete collaborator"
+                          onClick={() => {
+                            setDeleteTarget(item);
+                            setDeleteConfirmText("");
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      ) : null}
                     </div>
                   </TableCell>
                 </TableRow>
@@ -366,13 +456,15 @@ export default function CollaboratorsPageClient() {
                       {detail.assignments.map((row) => (
                         <TableRow key={row.submissionId}>
                           <TableCell>
-                            {submissionsHref ? (
-                              <Link href={`${submissionsHref}?openSubmissionId=${encodeURIComponent(row.submissionId)}`} className="text-blue-700 hover:underline">
-                                {row.submissionId.slice(0, 8)}...
-                              </Link>
-                            ) : (
-                              `${row.submissionId.slice(0, 8)}...`
-                            )}
+                            <button
+                              type="button"
+                              className="text-blue-700 hover:underline"
+                              title="Open submission detail"
+                              aria-label="Open submission detail"
+                              onClick={() => void openSubmissionDetail(row.submissionId)}
+                            >
+                              {row.submissionId.slice(0, 8)}...
+                            </button>
                           </TableCell>
                           <TableCell>{row.orderNumber}</TableCell>
                           <TableCell>{productLabel(row.productType)}</TableCell>
@@ -393,6 +485,63 @@ export default function CollaboratorsPageClient() {
           ) : null}
         </SheetContent>
       </Sheet>
+
+      <Sheet open={Boolean(selectedSubmissionId)} onOpenChange={(open) => (!open ? setSelectedSubmissionId(null) : undefined)}>
+        <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-3xl">
+          <SheetHeader>
+            <SheetTitle>Submission detail</SheetTitle>
+            <SheetDescription>
+              Opened from collaborator: {detail?.collaborator.displayName ?? "-"}
+            </SheetDescription>
+          </SheetHeader>
+          {submissionLoading ? <div className="mt-8 text-sm text-muted-foreground">Loading...</div> : null}
+          {submissionDetail ? (
+            <div className="mt-6 space-y-4 text-sm">
+              <section className="rounded-md border p-4">
+                <p><span className="text-muted-foreground">Submission:</span> {submissionDetail.submission.id}</p>
+                <p><span className="text-muted-foreground">Order #:</span> {submissionDetail.submission.orderNumber ?? submissionDetail.submission.linkedOrderId ?? "-"}</p>
+                <p><span className="text-muted-foreground">Product:</span> {productLabel(submissionDetail.submission.productType)}</p>
+                <p><span className="text-muted-foreground">Company:</span> {submissionDetail.submission.companyName}</p>
+                <p><span className="text-muted-foreground">Contact:</span> {submissionDetail.submission.contactEmail}</p>
+                <p><span className="text-muted-foreground">Created:</span> {iso(submissionDetail.submission.createdAt)}</p>
+                <p><span className="text-muted-foreground">Updated:</span> {iso(submissionDetail.submission.updatedAt)}</p>
+              </section>
+              <section className="rounded-md border p-4">
+                <p><span className="text-muted-foreground">Editorial:</span> {submissionDetail.workflow.editorialStatus}</p>
+                <p><span className="text-muted-foreground">Publication:</span> {submissionDetail.workflow.publicationStatus}</p>
+                <p><span className="text-muted-foreground">Reviewer:</span> {submissionDetail.workflow.reviewerAssignee || "—"}</p>
+                <p><span className="text-muted-foreground">Pending action:</span> {submissionDetail.pendingAction.label} ({submissionDetail.pendingAction.owner})</p>
+              </section>
+            </div>
+          ) : null}
+        </SheetContent>
+      </Sheet>
+
+      <Dialog open={Boolean(deleteTarget)} onOpenChange={(open) => (!open ? setDeleteTarget(null) : undefined)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete collaborator</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to permanently delete this collaborator? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            <p>
+              Collaborator: <span className="font-semibold">{deleteTarget?.displayName ?? "-"}</span>
+            </p>
+            <div>
+              <Label className="mb-1 block">Type DELETE to confirm</Label>
+              <Input value={deleteConfirmText} onChange={(e) => setDeleteConfirmText(e.target.value)} placeholder="DELETE" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+            <Button className="bg-red-600 text-white hover:bg-red-700" disabled={deleteConfirmText !== "DELETE" || deleteLoading} onClick={() => void deleteCollaborator()}>
+              {deleteLoading ? "Deleting..." : "Delete collaborator"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AdminShell>
   );
 }

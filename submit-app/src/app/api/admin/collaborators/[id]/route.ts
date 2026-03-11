@@ -183,3 +183,39 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     return NextResponse.json({ code: "INTERNAL_SERVER_ERROR", message: "Unable to update collaborator." }, { status: 500 });
   }
 }
+
+export async function DELETE(request: NextRequest, context: { params: Promise<{ id: string }> }) {
+  const auth = await authenticateAdminRequestWithCollaborators(request);
+  if (!auth) return unauthorized();
+  if (auth.role !== "SUPER_ADMIN") return forbidden();
+
+  const { id } = await context.params;
+
+  const collaborator = await prisma.collaborator.findFirst({
+    where: { id, role: { in: INTERNAL_ROLES } },
+    select: { id: true, displayName: true },
+  });
+  if (!collaborator) {
+    return NextResponse.json({ code: "NOT_FOUND", message: "Collaborator not found." }, { status: 404 });
+  }
+
+  const assignedCount = await prisma.submissionOps.count({
+    where: { reviewerCollaboratorId: id },
+  });
+  if (assignedCount > 0) {
+    return NextResponse.json(
+      {
+        code: "CONFLICT",
+        message: "This collaborator still has assigned submissions. Reassign or clear them before deletion.",
+        assignedCount,
+      },
+      { status: 409 }
+    );
+  }
+
+  await prisma.collaborator.delete({
+    where: { id },
+  });
+
+  return NextResponse.json({ ok: true, deletedId: id, deletedDisplayName: collaborator.displayName });
+}

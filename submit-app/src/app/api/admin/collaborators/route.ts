@@ -138,7 +138,7 @@ export async function GET(request: NextRequest) {
     },
   }));
 
-  return NextResponse.json({ items });
+  return NextResponse.json({ items, role: auth.role });
 }
 
 export async function POST(request: NextRequest) {
