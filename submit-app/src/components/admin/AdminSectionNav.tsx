@@ -2,22 +2,24 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { buildAdminSectionHref, type AdminSection } from "@/lib/adminRoutes";
 
 type Item = {
-  key: "submissions" | "booking-tools" | "collaborators";
+  key: AdminSection;
   label: string;
   href: string;
 };
 
 function buildItems(pathname: string): Item[] {
-  const match = /^\/admin\/([^/]+)/.exec(pathname);
-  if (!match) return [];
-  const slug = match[1];
-  const base = `/admin/${slug}`;
+  const submissionsHref = buildAdminSectionHref(pathname, "submissions");
+  const bookingToolsHref = buildAdminSectionHref(pathname, "booking-tools");
+  const collaboratorsHref = buildAdminSectionHref(pathname, "collaborators");
+  if (!submissionsHref || !bookingToolsHref || !collaboratorsHref) return [];
+
   return [
-    { key: "submissions", label: "Submissions", href: base },
-    { key: "booking-tools", label: "Booking Tools", href: `${base}/booking-tools` },
-    { key: "collaborators", label: "Collaborators", href: `${base}/collaborators` },
+    { key: "submissions", label: "Submissions", href: submissionsHref },
+    { key: "booking-tools", label: "Booking Tools", href: bookingToolsHref },
+    { key: "collaborators", label: "Collaborators", href: collaboratorsHref },
   ];
 }
 
@@ -29,7 +31,15 @@ function isActive(pathname: string, item: Item): boolean {
 export function AdminSectionNav() {
   const pathname = usePathname() || "";
   const items = buildItems(pathname);
-  if (!items.length) return null;
+  if (!items.length) {
+    return (
+      <nav className="border-b border-slate-200 bg-white/85">
+        <div className="mx-auto flex w-full max-w-[1400px] items-center px-6 py-2 text-xs text-slate-500">
+          Admin navigation unavailable on this route.
+        </div>
+      </nav>
+    );
+  }
 
   return (
     <nav className="border-b border-slate-200 bg-white/85">
@@ -51,4 +61,3 @@ export function AdminSectionNav() {
     </nav>
   );
 }
-
