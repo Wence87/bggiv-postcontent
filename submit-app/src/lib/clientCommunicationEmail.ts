@@ -5,6 +5,10 @@ type ClientCommunicationEmailInput = {
   editLink: string;
 };
 
+function isValidEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
 function escapeHtml(value: string): string {
   return value
     .replace(/&/g, "&amp;")
@@ -48,6 +52,8 @@ BoardGameGiveaways Team`;
 export async function sendClientCommunicationEmail(input: ClientCommunicationEmailInput): Promise<void> {
   const resendApiKey = process.env.RESEND_API_KEY;
   const fromEmail = process.env.RESEND_FROM_EMAIL || process.env.CLIENT_COMM_FROM_EMAIL;
+  const rawReplyTo = (process.env.RESEND_REPLY_TO || "contact@boardgamegiveaways.com").trim();
+  const replyTo = isValidEmail(rawReplyTo) ? rawReplyTo : "contact@boardgamegiveaways.com";
 
   if (!resendApiKey || !fromEmail) {
     throw new Error("EMAIL_NOT_CONFIGURED");
@@ -66,6 +72,10 @@ export async function sendClientCommunicationEmail(input: ClientCommunicationEma
       subject: input.subject,
       text: body.text,
       html: body.html,
+      reply_to: replyTo,
+      headers: {
+        "List-Unsubscribe": `<mailto:${replyTo}>`,
+      },
     }),
   });
 
@@ -74,4 +84,3 @@ export async function sendClientCommunicationEmail(input: ClientCommunicationEma
     throw new Error(`EMAIL_SEND_FAILED:${response.status}:${details.slice(0, 400)}`);
   }
 }
-
