@@ -30,6 +30,11 @@ final class BGGIV_Woo_Submit_Link {
     }
 
     public static function register_rest_routes(): void {
+        // If hardened order-context plugin is active, do not override its route.
+        if (class_exists('BGG_Order_Context_REST')) {
+            return;
+        }
+
         register_rest_route(
             'bgg/v1',
             '/order-context',
@@ -42,6 +47,14 @@ final class BGGIV_Woo_Submit_Link {
     }
 
     public static function get_order_context(WP_REST_Request $request) {
+        // Backward-compatible delegation when hardened plugin is loaded after route registration.
+        if (class_exists('BGG_Order_Context_REST') && method_exists('BGG_Order_Context_REST', 'get_order_context')) {
+            $token = (string) $request->get_param('token');
+            if ($token !== '') {
+                return BGG_Order_Context_REST::get_order_context($request);
+            }
+        }
+
         $order_id = absint((string) $request->get_param('order_id'));
         $order_key = (string) $request->get_param('order_key');
 
