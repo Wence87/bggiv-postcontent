@@ -116,7 +116,6 @@ export async function authenticateAdminRequestWithCollaborators(request: NextReq
       email: true,
       role: true,
       isActive: true,
-      companyScope: true,
     },
   });
   if (!collaborator || !collaborator.isActive) return null;
@@ -132,10 +131,8 @@ export async function authenticateAdminRequestWithCollaborators(request: NextReq
   return {
     role: collaborator.role,
     actor: collaborator.displayName || collaborator.email || collaborator.role,
-    scopedEmail: collaborator.role === "PUBLISHER" || collaborator.role === "CLIENT_PRO" ? collaborator.email.toLowerCase() : null,
-    scopedCompany: collaborator.role === "PUBLISHER" || collaborator.role === "CLIENT_PRO"
-      ? (collaborator.companyScope?.toLowerCase() ?? null)
-      : null,
+    scopedEmail: null,
+    scopedCompany: null,
     collaboratorId: collaborator.id,
   };
 }

@@ -106,13 +106,12 @@ export async function GET(request: NextRequest) {
     andWhere.push({ bannerImageName: "" });
   }
 
-  if (paymentStatus || editorialStatus || publicationStatus || reviewer) {
+  if (paymentStatus || editorialStatus || reviewer) {
     andWhere.push({
       ops: {
         is: {
           ...(paymentStatus ? { orderPaymentStatus: paymentStatus } : {}),
           ...(editorialStatus ? { editorialStatus } : {}),
-          ...(publicationStatus ? { publicationStatus } : {}),
           ...(reviewer ? { reviewerAssignee: { contains: reviewer, mode: "insensitive" } } : {}),
         },
       },
@@ -146,9 +145,11 @@ export async function GET(request: NextRequest) {
     })
     .map(toListRow);
 
+  const filteredRows = publicationStatus ? rows.filter((row) => row.publicationStatus === publicationStatus) : rows;
+
   return NextResponse.json({
-    items: rows,
-    count: rows.length,
+    items: filteredRows,
+    count: filteredRows.length,
     role: auth.role,
     scope: canViewAllSubmissions(auth.role) ? "all" : "own",
   });

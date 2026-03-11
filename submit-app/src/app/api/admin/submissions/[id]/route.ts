@@ -46,6 +46,16 @@ function derivePendingAction(editorialStatus: EditorialStatus, publicationStatus
   return { key: "ADMIN_REVIEW", label: "Pending admin review", owner: "ADMIN" };
 }
 
+function defaultPublicationStatusForSubmission(submission: {
+  reservationStartsAt: Date | null;
+  reservationMonthKey: string | null;
+  reservationWeekKey: string | null;
+}): PublicationStatus {
+  return submission.reservationStartsAt || submission.reservationMonthKey || submission.reservationWeekKey
+    ? PublicationStatus.SCHEDULED
+    : PublicationStatus.NOT_SCHEDULED;
+}
+
 async function loadScopedSubmission(id: string, request: NextRequest) {
   const auth = await authenticateAdminRequestWithCollaborators(request);
   if (!auth) return { auth: null, submission: null };
@@ -100,6 +110,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
 
   const assets = summarizeAssets(submission);
   const hideInternal = auth.role === "PUBLISHER" || auth.role === "CLIENT_PRO";
+  const defaultPublicationStatus = defaultPublicationStatusForSubmission(submission);
   const canUpdateEditorial = canEditEditorial(auth.role);
   const canUpdatePublication = canEditPublication(auth.role);
   const canUpdatePayment = canEditPayment(auth.role);
@@ -132,7 +143,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
     workflow: {
       orderPaymentStatus: submission.ops?.orderPaymentStatus ?? OrderPaymentStatus.PAID,
       editorialStatus: submission.ops?.editorialStatus ?? EditorialStatus.SUBMITTED,
-      publicationStatus: submission.ops?.publicationStatus ?? PublicationStatus.NOT_SCHEDULED,
+      publicationStatus: submission.ops?.publicationStatus ?? defaultPublicationStatus,
       reviewerAssignee: submission.ops?.reviewerAssignee ?? "",
       reviewerCollaboratorId: submission.ops?.reviewerCollaboratorId ?? "",
       clientVisibleNote: submission.ops?.clientVisibleNote ?? "",
@@ -141,7 +152,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
     collaborators,
     pendingAction: derivePendingAction(
       submission.ops?.editorialStatus ?? EditorialStatus.SUBMITTED,
-      submission.ops?.publicationStatus ?? PublicationStatus.NOT_SCHEDULED
+      submission.ops?.publicationStatus ?? defaultPublicationStatus
     ),
     audit: submission.auditEvents
       .filter((event) => !(hideInternal && event.fieldName === "internalNote"))
@@ -285,10 +296,10 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
           to: editorialStatus,
         });
       }
-      if (publicationStatus && (existingOps?.publicationStatus ?? PublicationStatus.NOT_SCHEDULED) !== publicationStatus) {
+      if (publicationStatus && (existingOps?.publicationStatus ?? defaultPublicationStatusForSubmission(submission)) !== publicationStatus) {
         changes.push({
           field: "publicationStatus",
-          from: existingOps?.publicationStatus ?? PublicationStatus.NOT_SCHEDULED,
+          from: existingOps?.publicationStatus ?? defaultPublicationStatusForSubmission(submission),
           to: publicationStatus,
         });
       }

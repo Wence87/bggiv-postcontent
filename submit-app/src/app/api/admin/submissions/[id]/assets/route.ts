@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { authenticateAdminRequest, buildSubmissionScopeWhere, canDownloadExports } from "@/lib/adminAuth";
+import { authenticateAdminRequestWithCollaborators, buildSubmissionScopeWhere, canDownloadExports } from "@/lib/adminAuth";
 import { prisma } from "@/lib/prisma";
 import { createZip } from "@/lib/zip";
 
@@ -13,7 +13,7 @@ function unauthorized() {
 }
 
 export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }) {
-  const auth = authenticateAdminRequest(request);
+  const auth = await authenticateAdminRequestWithCollaborators(request);
   if (!auth) return unauthorized();
   if (!canDownloadExports(auth.role)) {
     return NextResponse.json({ code: "FORBIDDEN" }, { status: 403 });

@@ -58,6 +58,7 @@ type ListRow = {
   hasAssets: boolean;
   orderedOptionKeys: string[];
   orderedOptionValues: Record<string, string>;
+  businessOptionSelections: Record<string, { selected: boolean; variant: string }>;
   previews: {
     title: string;
     shortDescription: string;
@@ -167,6 +168,7 @@ type PurchasedIconItem = {
   key: PurchasedIconKey;
   label: string;
   active: boolean;
+  variant?: string;
   Icon: ComponentType<{ className?: string }>;
 };
 
@@ -249,6 +251,16 @@ function formatMoney(value: string): string {
   return amount.toFixed(2);
 }
 
+function formatProductLabel(productType: string): string {
+  const normalized = productType.trim().toLowerCase();
+  if (normalized === "promo") return "Promodeal";
+  if (normalized === "giveaway") return "Giveaway";
+  if (normalized === "news") return "News";
+  if (normalized === "ads") return "Ads";
+  if (normalized === "sponsorship") return "Sponsorship";
+  return productType.toUpperCase();
+}
+
 const OPTION_KEYS_BY_PRODUCT: Record<string, PurchasedIconKey[]> = {
   giveaway: [
     "audience_amplifier",
@@ -281,31 +293,6 @@ const ICON_META: Record<PurchasedIconKey, { label: string; Icon: ComponentType<{
   weekly_newsletter_feature: { label: "Weekly Newsletter", Icon: Mail },
 };
 
-const OPTION_KEY_CANONICAL_MAP: Record<string, PurchasedIconKey> = {
-  audienceamplifier: "audience_amplifier",
-  multiactionentry: "audience_amplifier",
-  giveawayduration: "duration",
-  duration: "duration",
-  socialboost: "social_boost",
-  featuredspotherogrid: "hero_grid",
-  featuredspotintheherogrid: "hero_grid",
-  featuredspotintheherogrid7days: "hero_grid",
-  herogrid: "hero_grid",
-  stickypost: "sticky_post",
-  sidebarspotlight: "sidebar_spotlight",
-  extendedtextlimit: "extended_text_limit",
-  additionalimages: "additional_images",
-  embeddedvideo: "embedded_video",
-  weeklynewsletter: "weekly_newsletter_feature",
-  weeklynewsletterfeature: "weekly_newsletter_feature",
-  newsletterfeature: "weekly_newsletter_feature",
-};
-
-function canonicalizePurchasedOptionKey(rawKey: string): PurchasedIconKey | null {
-  const normalized = rawKey.toLowerCase().replace(/[^a-z0-9]/g, "");
-  return OPTION_KEY_CANONICAL_MAP[normalized] ?? null;
-}
-
 function summarizeAudienceAmplifier(formData: Record<string, unknown>): string {
   const raw = formData.audience_amplifier_actions;
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return "Not configured";
@@ -330,18 +317,21 @@ function PurchasedOptionIcon({ item }: { item: PurchasedIconItem }) {
   const className = item.active
     ? "border-emerald-300 bg-emerald-50 text-emerald-900"
     : "border-slate-200 bg-slate-50/60 text-slate-400";
+  const status = item.active ? "Selected" : "Not selected";
+  const details = item.active && item.variant && item.variant !== "Enabled" ? ` (${compactText(item.variant, 22)})` : "";
+  const tooltip = `${item.label}\n${status}${details}`;
 
   return (
     <span className="group relative inline-flex">
       <span
         className={`inline-flex h-7 w-7 items-center justify-center rounded border ${className}`}
-        title={item.label}
-        aria-label={item.label}
+        title={tooltip}
+        aria-label={tooltip}
       >
         <item.Icon className="h-3.5 w-3.5" />
       </span>
       <span className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-1 hidden -translate-x-1/2 whitespace-nowrap rounded-md bg-slate-900 px-2 py-1 text-[11px] leading-4 text-white shadow-lg group-hover:block">
-        {item.label}
+        {item.label} · {status}
       </span>
     </span>
   );
@@ -662,23 +652,16 @@ export default function AdminSubmissionsPageClient() {
   const purchasedIconsForRow = (row: ListRow): PurchasedIconItem[] => {
     const product = row.productType.trim().toLowerCase();
     const optionKeys = OPTION_KEYS_BY_PRODUCT[product] ?? [];
-
-    const activeBusinessKeys = new Set<PurchasedIconKey>();
-    for (const rawKey of row.orderedOptionKeys ?? []) {
-      const canonical = canonicalizePurchasedOptionKey(rawKey);
-      if (canonical) activeBusinessKeys.add(canonical);
-    }
-    for (const rawKey of Object.keys(row.orderedOptionValues ?? {})) {
-      const canonical = canonicalizePurchasedOptionKey(rawKey);
-      if (canonical) activeBusinessKeys.add(canonical);
-    }
+    const selectionMap = row.businessOptionSelections ?? {};
 
     return optionKeys.map((key) => {
-      const active = activeBusinessKeys.has(key);
+      const selection = selectionMap[key];
+      const active = Boolean(selection?.selected);
       return {
         key,
         label: ICON_META[key].label,
         active,
+        variant: selection?.variant ?? "",
         Icon: ICON_META[key].Icon,
       };
     });
@@ -748,7 +731,7 @@ export default function AdminSubmissionsPageClient() {
               <div>
                 <Label className="mb-1 block text-xs uppercase">Product type</Label>
                 <select className="h-9 w-full rounded-md border px-2 text-sm" value={productType} onChange={(event) => setProductType(event.target.value)}>
-                  <option value="">All</option><option value="giveaway">Giveaway</option><option value="promo">Promo</option><option value="news">News</option><option value="ads">Ads</option><option value="sponsorship">Sponsorship</option>
+                  <option value="">All</option><option value="giveaway">Giveaway</option><option value="promo">Promodeal</option><option value="news">News</option><option value="ads">Ads</option><option value="sponsorship">Sponsorship</option>
                 </select>
               </div>
               <div>
@@ -865,7 +848,7 @@ export default function AdminSubmissionsPageClient() {
                         <TableCell className="whitespace-nowrap px-2 py-2">
                           <span className={`inline-flex rounded border px-2 py-0.5 text-xs font-medium ${urgency.className}`}>{urgency.label}</span>
                         </TableCell>
-                        <TableCell className="whitespace-nowrap px-2 py-2"><Badge variant="outline">{row.productType.toUpperCase()}</Badge></TableCell>
+                        <TableCell className="whitespace-nowrap px-2 py-2"><Badge variant="outline">{formatProductLabel(row.productType)}</Badge></TableCell>
                         <TableCell className="whitespace-nowrap px-2 py-2" title={row.company}>{compactText(row.company, 20)}</TableCell>
                         <TableCell className="whitespace-nowrap px-2 py-2" title={row.contactEmail}>
                           {isEmail(row.contactEmail) ? (
@@ -968,7 +951,7 @@ export default function AdminSubmissionsPageClient() {
                 <h3 className="text-sm font-semibold uppercase">Order / customer info</h3>
                 <div className="mt-3 grid gap-2 text-sm md:grid-cols-2">
                   <p><span className="text-muted-foreground">Order:</span> {detail.submission.orderNumber || detail.submission.linkedOrderId || "-"}</p>
-                  <p><span className="text-muted-foreground">Product:</span> {detail.submission.productType.toUpperCase()}</p>
+                  <p><span className="text-muted-foreground">Product:</span> {formatProductLabel(detail.submission.productType)}</p>
                   <p><span className="text-muted-foreground">Company:</span> {detail.submission.companyName}</p>
                   <p><span className="text-muted-foreground">Contact:</span> {detail.submission.contactEmail}</p>
                   <p><span className="text-muted-foreground">Reserved:</span> {detail.submission.reservationStartsAt || detail.submission.reservationWeekKey || detail.submission.reservationMonthKey || "-"}</p>
@@ -1017,6 +1000,7 @@ export default function AdminSubmissionsPageClient() {
                       <select className="h-10 w-full rounded-md border px-3 text-sm" value={workflow.publicationStatus} onChange={(event) => setWorkflow((prev) => ({ ...prev, publicationStatus: event.target.value }))}>
                         <option>NOT_SCHEDULED</option><option>SCHEDULED</option><option>PUBLISHED</option><option>ARCHIVED</option>
                       </select>
+                      <p className="mt-1 text-xs text-muted-foreground">Internal workflow status. `SCHEDULED` means a reservation slot exists.</p>
                     </div>
                   ) : (
                     <div>

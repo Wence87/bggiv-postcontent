@@ -22,6 +22,7 @@ export type SubmissionListRow = {
   hasAssets: boolean;
   orderedOptionKeys: string[];
   orderedOptionValues: Record<string, string>;
+  businessOptionSelections: Record<string, { selected: boolean; variant: string }>;
   previews: {
     title: string;
     shortDescription: string;
@@ -32,6 +33,19 @@ export type SubmissionListRow = {
     audienceAmplifier: string;
   };
 };
+
+const BUSINESS_OPTION_KEYS = new Set([
+  "social_boost",
+  "hero_grid",
+  "sticky_post",
+  "sidebar_spotlight",
+  "extended_text_limit",
+  "additional_images",
+  "embedded_video",
+  "weekly_newsletter_feature",
+  "audience_amplifier",
+  "duration",
+]);
 
 const OPTION_KEY_ALIASES: Record<string, string> = {
   audienceamplifier: "audience_amplifier",
@@ -159,6 +173,61 @@ function resolveOptionValue(canonical: string, option: Record<string, unknown>, 
   return raw;
 }
 
+function parseBoolish(value: unknown): boolean | null {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return null;
+  if (["true", "yes", "enabled", "1", "on"].includes(normalized)) return true;
+  if (["false", "no", "disabled", "0", "off"].includes(normalized)) return false;
+  return null;
+}
+
+function normalizeSelectionText(raw: string): string {
+  return raw.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function isNegativeSelection(raw: string): boolean {
+  const value = normalizeSelectionText(raw);
+  if (!value) return false;
+  const negatives = [
+    "none",
+    "no option",
+    "not selected",
+    "not included",
+    "without",
+    "disabled",
+    "do not",
+    "i don't",
+    "i do not",
+    "no thanks",
+    "pas",
+    "aucun",
+    "non",
+    "n/a",
+  ];
+  return negatives.some((entry) => value.includes(entry));
+}
+
+function isPositiveSelection(raw: string): boolean {
+  const value = normalizeSelectionText(raw);
+  if (!value) return false;
+  const positives = [
+    "yes",
+    "enabled",
+    "included",
+    "selected",
+    "week",
+    "day",
+    "up to",
+    "unlimited",
+    "multi-action",
+    "multi action",
+  ];
+  return positives.some((entry) => value.includes(entry));
+}
+
 function extractOrderedOptionKeys(orderContextJson: Prisma.JsonValue | null): string[] {
   const context = safeJsonObject(orderContextJson);
   const keys = new Set<string>();
@@ -221,6 +290,73 @@ function extractOrderedOptionValues(orderContextJson: Prisma.JsonValue | null): 
   }
 
   return Object.fromEntries(optionValues);
+}
+
+function extractBusinessOptionSelections(orderContextJson: Prisma.JsonValue | null): Record<string, { selected: boolean; variant: string }> {
+  const context = safeJsonObject(orderContextJson);
+  const selections = new Map<string, { selected: boolean; variant: string }>();
+  const enabledSet = new Set(
+    (Array.isArray(context.enabled_options) ? context.enabled_options : [])
+      .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+      .map((item) => canonicalizeOptionKey(item))
+      .filter((canonical) => BUSINESS_OPTION_KEYS.has(canonical))
+  );
+
+  const options = Array.isArray(context.options)
+    ? context.options.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item))
+    : [];
+
+  for (const option of options) {
+    const rawKey =
+      [option.canonical_key, option.option_key, option.key, option.code, option.slug, option.value, option.label, option.name].find(
+        (value) => typeof value === "string" && value.trim().length > 0
+      ) as string | undefined;
+    if (!rawKey) continue;
+    const canonical = canonicalizeOptionKey(rawKey);
+    if (!BUSINESS_OPTION_KEYS.has(canonical)) continue;
+
+    const selectedRaw =
+      [option.selected_value_en, option.selected_value, option.value_en, option.value, option.label].find(
+        (value) => typeof value === "string" && value.trim().length > 0
+      ) as string | undefined;
+    const selectedText = decodeBasicHtmlEntities(selectedRaw ?? "").trim();
+    const explicitEnabled = parseBoolish(option.enabled);
+    let selected = false;
+    if (explicitEnabled === true) {
+      selected = !isNegativeSelection(selectedText);
+    } else if (explicitEnabled === false) {
+      selected = false;
+    } else if (selectedText) {
+      if (isNegativeSelection(selectedText)) selected = false;
+      else if (isPositiveSelection(selectedText)) selected = true;
+      else selected = enabledSet.has(canonical);
+    } else {
+      selected = enabledSet.has(canonical);
+    }
+
+    const variant = selected ? resolveOptionValue(canonical, option, context) : "";
+    const existing = selections.get(canonical);
+    if (!existing) {
+      selections.set(canonical, { selected, variant });
+      continue;
+    }
+    if (!existing.selected && selected) {
+      selections.set(canonical, { selected, variant });
+      continue;
+    }
+    if (existing.selected && !existing.variant && variant) {
+      selections.set(canonical, { selected: true, variant });
+    }
+  }
+
+  for (const canonical of enabledSet) {
+    const existing = selections.get(canonical);
+    if (!existing) {
+      selections.set(canonical, { selected: true, variant: "Enabled" });
+    }
+  }
+
+  return Object.fromEntries(selections);
 }
 
 function findNumericInMap(map: Record<string, unknown>, keys: string[]): number | null {
@@ -435,6 +571,10 @@ export function toListRow(submission: {
   const shortDescription = typeof form.short_product_description === "string" ? form.short_product_description.trim() : "-";
   const body = typeof form.body === "string" ? form.body.trim() : "-";
   const notes = typeof form.notes === "string" ? form.notes.trim() : "-";
+  const defaultPublicationStatus =
+    submission.reservationStartsAt || submission.reservationMonthKey || submission.reservationWeekKey
+      ? PublicationStatus.SCHEDULED
+      : PublicationStatus.NOT_SCHEDULED;
   return {
     id: submission.id,
     submissionId: submission.id,
@@ -450,13 +590,14 @@ export function toListRow(submission: {
     totalPaid: payment.totalPaid,
     vatPaid: payment.vatPaid,
     editorialStatus: submission.ops?.editorialStatus ?? EditorialStatus.SUBMITTED,
-    publicationStatus: submission.ops?.publicationStatus ?? PublicationStatus.NOT_SCHEDULED,
+    publicationStatus: submission.ops?.publicationStatus ?? defaultPublicationStatus,
     reviewerAssignee: submission.ops?.reviewerAssignee ?? "-",
     purchasedOptionsSummary: summarizePurchasedOptions(submission),
     assetsSummary: assets.summary,
     hasAssets: assets.hasAssets,
     orderedOptionKeys: extractOrderedOptionKeys(submission.orderContextJson),
     orderedOptionValues: extractOrderedOptionValues(submission.orderContextJson),
+    businessOptionSelections: extractBusinessOptionSelections(submission.orderContextJson),
     previews: {
       title,
       shortDescription,

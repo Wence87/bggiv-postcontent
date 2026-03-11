@@ -47,7 +47,11 @@ type UpcomingRow = {
   companyName: string;
   status: ApiBooking["status"];
   orderReference: string;
+  createdAt: string;
 };
+
+type UpcomingSortKey = "slot" | "slotDateTime" | "company" | "status";
+type UpcomingSortDir = "asc" | "desc";
 
 type MetaState = {
   companyName: string;
@@ -73,7 +77,7 @@ const PRODUCT_LABELS: Record<ProductView, string> = {
   sponsorship: "Sponsorship",
   ads: "Ads",
   news: "News post",
-  promo: "Promo deal post",
+  promo: "Promodeal post",
   giveaway: "Giveaway post",
 };
 
@@ -337,6 +341,11 @@ function compactOrderRef(value: string): string {
   return `${trimmed.slice(0, 10)}...`;
 }
 
+function formatUpcomingDateTime(timestamp: number): string {
+  if (!Number.isFinite(timestamp) || timestamp <= 0) return "-";
+  return new Date(timestamp).toLocaleString("en-GB");
+}
+
 export default function AdminPage() {
   const [active, setActive] = useState<ProductView>("sponsorship");
   const [token, setToken] = useState("");
@@ -344,6 +353,8 @@ export default function AdminPage() {
 
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
+  const [upcomingSortKey, setUpcomingSortKey] = useState<UpcomingSortKey>("slotDateTime");
+  const [upcomingSortDir, setUpcomingSortDir] = useState<UpcomingSortDir>("asc");
   const [bookings, setBookings] = useState<ApiBooking[]>([]);
   const [monthsTaken, setMonthsTaken] = useState<string[]>([]);
   const [adsWeeks, setAdsWeeks] = useState<AdsWeek[]>([]);
@@ -785,6 +796,7 @@ export default function AdminPage() {
           companyName: b.companyName,
           status: b.status,
           orderReference: b.orderReference,
+          createdAt: b.createdAt,
         }));
     }
     if (active === "ads") {
@@ -799,6 +811,7 @@ export default function AdminPage() {
           companyName: b.companyName,
           status: b.status,
           orderReference: b.orderReference,
+          createdAt: b.createdAt,
         }))
         .sort((a, b) => a.slotLabel.localeCompare(b.slotLabel))
         .slice(0, 26);
@@ -818,8 +831,54 @@ export default function AdminPage() {
         companyName: b.companyName,
         status: b.status,
         orderReference: b.orderReference,
+        createdAt: b.createdAt,
       }));
   }, [active, bookings]);
+
+  const parseUpcomingSlotDateTime = useCallback((row: UpcomingRow): number => {
+    const parsedFromLabel = Date.parse(row.slotLabel);
+    if (Number.isFinite(parsedFromLabel)) return parsedFromLabel;
+    const parsedFromCreatedAt = Date.parse(row.createdAt);
+    return Number.isFinite(parsedFromCreatedAt) ? parsedFromCreatedAt : 0;
+  }, []);
+
+  const sortedUpcomingRows = useMemo(() => {
+    const rows = [...upcomingRows];
+    rows.sort((a, b) => {
+      const left =
+        upcomingSortKey === "slot"
+          ? a.slotLabel.toLowerCase()
+          : upcomingSortKey === "slotDateTime"
+            ? parseUpcomingSlotDateTime(a)
+            : upcomingSortKey === "company"
+              ? a.companyName.toLowerCase()
+              : a.status.toLowerCase();
+      const right =
+        upcomingSortKey === "slot"
+          ? b.slotLabel.toLowerCase()
+          : upcomingSortKey === "slotDateTime"
+            ? parseUpcomingSlotDateTime(b)
+            : upcomingSortKey === "company"
+              ? b.companyName.toLowerCase()
+              : b.status.toLowerCase();
+      if (typeof left === "number" && typeof right === "number") {
+        return upcomingSortDir === "asc" ? left - right : right - left;
+      }
+      if (left < right) return upcomingSortDir === "asc" ? -1 : 1;
+      if (left > right) return upcomingSortDir === "asc" ? 1 : -1;
+      return 0;
+    });
+    return rows;
+  }, [upcomingRows, upcomingSortDir, upcomingSortKey, parseUpcomingSlotDateTime]);
+
+  const onSortUpcoming = (key: UpcomingSortKey) => {
+    if (upcomingSortKey === key) {
+      setUpcomingSortDir((prev) => (prev === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setUpcomingSortKey(key);
+    setUpcomingSortDir("asc");
+  };
 
   const sponsorshipMonths = useMemo(() => {
     const start = startOfBrusselsMonthUtc(new Date());
@@ -1248,7 +1307,7 @@ export default function AdminPage() {
                 <Tabs value={active} onValueChange={(value) => setActive(value as ProductView)}>
                   <TabsList>
                     <TabsTrigger value="news">News post</TabsTrigger>
-                    <TabsTrigger value="promo">Promo deal post</TabsTrigger>
+                    <TabsTrigger value="promo">Promodeal post</TabsTrigger>
                     <TabsTrigger value="giveaway">Giveaway post</TabsTrigger>
                   </TabsList>
                 </Tabs>
@@ -1282,26 +1341,34 @@ export default function AdminPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Product</TableHead>
-                  <TableHead className="whitespace-nowrap">Slot</TableHead>
-                  <TableHead>Company</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead className="whitespace-nowrap">
+                    <button type="button" className="hover:underline" onClick={() => onSortUpcoming("slot")}>Slot</button>
+                  </TableHead>
+                  <TableHead className="whitespace-nowrap">
+                    <button type="button" className="hover:underline" onClick={() => onSortUpcoming("slotDateTime")}>Date/time</button>
+                  </TableHead>
+                  <TableHead>
+                    <button type="button" className="hover:underline" onClick={() => onSortUpcoming("company")}>Company</button>
+                  </TableHead>
+                  <TableHead>
+                    <button type="button" className="hover:underline" onClick={() => onSortUpcoming("status")}>Status</button>
+                  </TableHead>
                   <TableHead>Order</TableHead>
                   <TableHead>Action</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {upcomingRows.length === 0 ? (
+                {sortedUpcomingRows.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={6} className="text-center text-muted-foreground">
                       No upcoming bookings found.
                     </TableCell>
                   </TableRow>
                 ) : (
-                  upcomingRows.map((row) => (
+                  sortedUpcomingRows.map((row) => (
                     <TableRow key={row.key}>
-                      <TableCell>{row.product}</TableCell>
                       <TableCell className="whitespace-nowrap">{row.slotLabel}</TableCell>
+                      <TableCell className="whitespace-nowrap">{formatUpcomingDateTime(parseUpcomingSlotDateTime(row))}</TableCell>
                       <TableCell>{row.companyName}</TableCell>
                       <TableCell>{row.status}</TableCell>
                       <TableCell>
