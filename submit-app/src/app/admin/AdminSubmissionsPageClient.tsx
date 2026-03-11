@@ -869,6 +869,7 @@ export default function AdminSubmissionsPageClient() {
         saving={savingDetail}
         onSave={() => void saveWorkflow()}
         canSeeInternalNotes={roleCanEdit.canSeeInternalNotes}
+        themeVariant="submissions"
       />
     </>
   );

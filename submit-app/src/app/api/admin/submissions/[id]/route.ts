@@ -66,6 +66,10 @@ async function loadScopedSubmission(id: string, request: NextRequest) {
     },
     include: {
       ops: true,
+      clientMessages: {
+        orderBy: { createdAt: "desc" },
+        take: 30,
+      },
       auditEvents: {
         orderBy: { createdAt: "desc" },
         take: 100,
@@ -116,6 +120,35 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
   const canUpdatePayment = canEditPayment(auth.role);
   const canUpdateNotes = canEditNotes(auth.role);
   const collaborators = canUpdateNotes ? await listReviewerCollaborators() : [];
+  const previousVersion = submission.linkedOrderId
+    ? await prisma.submitFormSubmission.findFirst({
+        where: {
+          linkedOrderId: submission.linkedOrderId,
+          id: { not: submission.id },
+          createdAt: { lt: submission.createdAt },
+        },
+        orderBy: { createdAt: "desc" },
+        select: {
+          id: true,
+          createdAt: true,
+          formDataJson: true,
+        },
+      })
+    : null;
+
+  if (auth.collaboratorId) {
+    void prisma.submissionAuditEvent
+      .create({
+        data: {
+          submissionId: submission.id,
+          actorRole: auth.role,
+          actorIdentifier: auth.actor,
+          eventType: "VIEWED",
+          comment: "Submission opened in admin.",
+        },
+      })
+      .catch(() => undefined);
+  }
 
   return NextResponse.json({
     id: submission.id,
@@ -167,6 +200,22 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
         comment: event.comment,
         createdAt: event.createdAt.toISOString(),
       })),
+    clientMessages: submission.clientMessages.map((message) => ({
+      id: message.id,
+      actorRole: message.actorRole,
+      actorIdentifier: message.actorIdentifier,
+      message: message.message,
+      createdAt: message.createdAt.toISOString(),
+    })),
+    previousVersion: previousVersion
+      ? {
+          id: previousVersion.id,
+          createdAt: previousVersion.createdAt.toISOString(),
+          formData: previousVersion.formDataJson && typeof previousVersion.formDataJson === "object"
+            ? (previousVersion.formDataJson as Record<string, unknown>)
+            : {},
+        }
+      : null,
     role: auth.role,
     permissions: {
       canUpdateEditorial,
@@ -204,6 +253,8 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     typeof payload.reviewerCollaboratorId === "string" ? payload.reviewerCollaboratorId.trim() : null;
   const clientVisibleNote = typeof payload.clientVisibleNote === "string" ? payload.clientVisibleNote.trim() : null;
   const internalNote = typeof payload.internalNote === "string" ? payload.internalNote.trim() : null;
+  const clientMessage = typeof payload.clientMessage === "string" ? payload.clientMessage.trim() : null;
+  const requestClientChanges = payload.requestClientChanges === true;
   const comment = typeof payload.comment === "string" ? payload.comment.trim() : null;
 
   if (editorialStatus && !canEditEditorial(auth.role)) {
@@ -215,8 +266,11 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
   if (orderPaymentStatus && !canEditPayment(auth.role)) {
     return forbidden("Role cannot update payment status");
   }
-  if ((clientVisibleNote !== null || internalNote !== null || reviewerAssignee !== null || reviewerCollaboratorId !== null) && !canEditNotes(auth.role)) {
+  if ((clientVisibleNote !== null || internalNote !== null || reviewerAssignee !== null || reviewerCollaboratorId !== null || clientMessage !== null) && !canEditNotes(auth.role)) {
     return forbidden("Role cannot edit reviewer or notes");
+  }
+  if (requestClientChanges && !canEditEditorial(auth.role)) {
+    return forbidden("Role cannot request client changes");
   }
 
   const existingOps = submission.ops;
@@ -239,7 +293,11 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
   if (clientVisibleNote !== null) nextOpsData.clientVisibleNote = clientVisibleNote || null;
   if (internalNote !== null) nextOpsData.internalNote = internalNote || null;
 
-  const noChanges = Object.keys(nextOpsData).length === 0 && !comment;
+  if (requestClientChanges) {
+    nextOpsData.editorialStatus = EditorialStatus.CHANGES_REQUESTED;
+  }
+
+  const noChanges = Object.keys(nextOpsData).length === 0 && !comment && !clientMessage;
   if (noChanges) {
     return NextResponse.json({ code: "BAD_REQUEST", message: "No changes provided" }, { status: 400 });
   }
@@ -350,6 +408,27 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
             actorIdentifier: auth.actor,
             eventType: "COMMENT",
             comment,
+          },
+        });
+      }
+
+      if (clientMessage) {
+        await tx.submissionClientMessage.create({
+          data: {
+            submissionId: submission.id,
+            actorRole: auth.role,
+            actorIdentifier: auth.actor,
+            message: clientMessage,
+          },
+        });
+        await tx.submissionAuditEvent.create({
+          data: {
+            submissionId: submission.id,
+            actorRole: auth.role,
+            actorIdentifier: auth.actor,
+            eventType: "CLIENT_MESSAGE",
+            fieldName: "clientCommunication",
+            comment: clientMessage,
           },
         });
       }

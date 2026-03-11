@@ -522,6 +522,7 @@ export default function CollaboratorsPageClient() {
         onSave={() => void saveSubmissionWorkflow()}
         canSeeInternalNotes={viewerRole !== "PUBLISHER" && viewerRole !== "CLIENT_PRO"}
         contextSubtitle={`Opened from collaborator: ${detail?.collaborator.displayName ?? "-"}`}
+        themeVariant="collaborators"
       />
 
       <Dialog open={Boolean(deleteTarget)} onOpenChange={(open) => (!open ? setDeleteTarget(null) : undefined)}>

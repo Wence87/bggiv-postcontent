@@ -77,6 +77,11 @@ export type SubmissionDetailPayload = {
     actorRole: string;
     actorIdentifier: string | null;
   }>;
+  previousVersion?: {
+    id: string;
+    createdAt: string;
+    formData: Record<string, unknown>;
+  } | null;
 };
 
 export type SubmissionWorkflowForm = {
@@ -169,6 +174,56 @@ function summarizeAudienceAmplifier(formData: Record<string, unknown>): string {
   return labels.length ? labels.join("\n") : "Not configured";
 }
 
+type QuizStructured = {
+  question: string;
+  answers: string[];
+  correctIndex: number;
+  correctLabel: string;
+};
+
+function readQuizStructured(data: Record<string, unknown>): QuizStructured {
+  const question = getString(data, "giveaway_question");
+  const answer1 = getString(data, "answer_1");
+  const answer2 = getString(data, "answer_2");
+  const answer3 = getString(data, "answer_3");
+  const answer4 = getString(data, "answer_4");
+  const answer5 = getString(data, "answer_5");
+  const legacyAnswers = [
+    getString(data, "answer_correct"),
+    getString(data, "answer_wrong_1"),
+    getString(data, "answer_wrong_2"),
+    getString(data, "answer_wrong_3"),
+    getString(data, "answer_wrong_4"),
+  ];
+  const answers = [answer1, answer2, answer3, answer4, answer5].some((value) => value !== "-") ? [answer1, answer2, answer3, answer4, answer5] : legacyAnswers;
+
+  const explicitIndexValue = data.correct_answer_index;
+  const explicitIndex = typeof explicitIndexValue === "number"
+    ? explicitIndexValue
+    : typeof explicitIndexValue === "string"
+      ? Number.parseInt(explicitIndexValue, 10)
+      : NaN;
+  const correctKey = typeof data.correct_answer_key === "string" ? data.correct_answer_key.trim() : "";
+
+  let correctIndex = 0;
+  if (Number.isFinite(explicitIndex) && explicitIndex >= 1 && explicitIndex <= answers.length) {
+    correctIndex = explicitIndex - 1;
+  } else if (/^answer_[1-5]$/.test(correctKey)) {
+    correctIndex = Number.parseInt(correctKey.split("_")[1], 10) - 1;
+  }
+
+  const correctLabel = `Answer ${correctIndex + 1}`;
+  return { question, answers, correctIndex, correctLabel };
+}
+
+function normalizeDiffValue(value: string): string {
+  return value.trim().replace(/\s+/g, " ");
+}
+
+function hasChanged(left: string, right: string): boolean {
+  return normalizeDiffValue(left) !== normalizeDiffValue(right);
+}
+
 export function SubmissionDetailSheet({
   open,
   onOpenChange,
@@ -180,6 +235,7 @@ export function SubmissionDetailSheet({
   onSave,
   canSeeInternalNotes,
   contextSubtitle,
+  themeVariant = "submissions",
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -191,6 +247,7 @@ export function SubmissionDetailSheet({
   onSave: () => void;
   canSeeInternalNotes: boolean;
   contextSubtitle?: string;
+  themeVariant?: "submissions" | "collaborators";
 }) {
   const formData = detail?.submission.formData ?? {};
   const shipping = getStringList(formData, "shipping_countries");
@@ -214,10 +271,23 @@ export function SubmissionDetailSheet({
     detailPermissions.canUpdateEditorial ||
     detailPermissions.canUpdatePublication ||
     detailPermissions.canUpdatePayment;
+  const previousFormData = detail?.previousVersion?.formData ?? null;
+  const currentQuiz = readQuizStructured(formData);
+  const previousQuiz = previousFormData ? readQuizStructured(previousFormData) : null;
+  const hasQuizDiff = Boolean(
+    previousQuiz &&
+      (
+        hasChanged(previousQuiz.question, currentQuiz.question) ||
+        previousQuiz.answers.some((value, index) => hasChanged(value, currentQuiz.answers[index] ?? "-")) ||
+        previousQuiz.correctIndex !== currentQuiz.correctIndex
+      )
+  );
+  const containerTone = themeVariant === "collaborators" ? "bg-emerald-50/60 border-emerald-100" : "bg-sky-50/60 border-sky-100";
+  const panelTone = themeVariant === "collaborators" ? "bg-emerald-50/40 border-emerald-100" : "bg-sky-50/40 border-sky-100";
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-4xl">
+      <SheetContent side="right" className={`w-full overflow-y-auto sm:max-w-4xl ${containerTone}`}>
         <SheetHeader>
           <SheetTitle>Submission detail</SheetTitle>
           <SheetDescription>
@@ -231,7 +301,7 @@ export function SubmissionDetailSheet({
 
         {detail ? (
           <div className="mt-6 space-y-6">
-            <section className="rounded-md border p-4">
+            <section className={`rounded-md border p-4 ${panelTone}`}>
               <h3 className="text-sm font-semibold uppercase">Order / customer info</h3>
               <div className="mt-3 grid gap-2 text-sm md:grid-cols-2">
                 <p><span className="text-muted-foreground">Order:</span> {detail.submission.orderNumber || detail.submission.linkedOrderId || "-"}</p>
@@ -243,7 +313,7 @@ export function SubmissionDetailSheet({
               </div>
             </section>
 
-            <section className="rounded-md border p-4">
+            <section className={`rounded-md border p-4 ${panelTone}`}>
               <h3 className="text-sm font-semibold uppercase">Workflow</h3>
               <p className="mb-2 text-xs text-muted-foreground">Publication status is an internal workflow status managed in admin. It does not automatically sync WordPress publication state.</p>
               <div className="mb-3 rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
@@ -383,7 +453,7 @@ export function SubmissionDetailSheet({
               ) : null}
             </section>
 
-            <section className="rounded-md border p-4">
+            <section className={`rounded-md border p-4 ${panelTone}`}>
               <h3 className="text-sm font-semibold uppercase">Client submission data</h3>
               <div className="mt-3 space-y-3 text-sm">
                 <div className="rounded border p-3"><p className="text-xs uppercase text-muted-foreground">Title</p><p>{getString(formData, "title")}</p></div>
@@ -401,7 +471,57 @@ export function SubmissionDetailSheet({
                     </div>
                     <div className="rounded border p-3">
                       <p className="text-xs uppercase text-muted-foreground">Quiz question and answers</p>
-                      <div className="grid gap-1">{quizFields.map(([label, value]) => (<p key={label}><span className="text-muted-foreground">{label}:</span> {value}</p>))}</div>
+                      {previousQuiz ? (
+                        <div className="mt-2 space-y-2">
+                          <div className="grid grid-cols-2 gap-2 text-[11px] uppercase text-muted-foreground">
+                            <p>Previous version ({iso(detail.previousVersion?.createdAt || "")})</p>
+                            <p>Current version</p>
+                          </div>
+                          <div className="grid gap-2">
+                            <div className="grid grid-cols-2 gap-2">
+                              <div className={`rounded border p-2 ${hasChanged(previousQuiz.question, currentQuiz.question) ? "bg-red-50" : "bg-white"}`}>
+                                <p className="text-[11px] uppercase text-muted-foreground">Question</p>
+                                <p className={`whitespace-pre-wrap ${hasChanged(previousQuiz.question, currentQuiz.question) ? "line-through text-red-700" : ""}`}>{previousQuiz.question}</p>
+                              </div>
+                              <div className={`rounded border p-2 ${hasChanged(previousQuiz.question, currentQuiz.question) ? "bg-yellow-50" : "bg-white"}`}>
+                                <p className="text-[11px] uppercase text-muted-foreground">Question</p>
+                                <p className="whitespace-pre-wrap">{currentQuiz.question}</p>
+                              </div>
+                            </div>
+                            {currentQuiz.answers.map((currentAnswer, index) => {
+                              const prevAnswer = previousQuiz.answers[index] ?? "-";
+                              const changed = hasChanged(prevAnswer, currentAnswer);
+                              const isPrevCorrect = previousQuiz.correctIndex === index;
+                              const isCurrentCorrect = currentQuiz.correctIndex === index;
+                              return (
+                                <div key={`quiz-answer-${index}`} className="grid grid-cols-2 gap-2">
+                                  <div className={`rounded border p-2 ${changed ? "bg-red-50" : "bg-white"}`}>
+                                    <p className="text-[11px] uppercase text-muted-foreground">Answer {index + 1}{isPrevCorrect ? " · Correct" : ""}</p>
+                                    <p className={`${changed ? "line-through text-red-700" : ""}`}>{prevAnswer}</p>
+                                  </div>
+                                  <div className={`rounded border p-2 ${changed ? "bg-yellow-50" : "bg-white"}`}>
+                                    <p className="text-[11px] uppercase text-muted-foreground">Answer {index + 1}{isCurrentCorrect ? " · Correct" : ""}</p>
+                                    <p>{currentAnswer}</p>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          {previousQuiz.correctIndex !== currentQuiz.correctIndex ? (
+                            <p className="rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs text-amber-800">
+                              Correct answer changed: {previousQuiz.correctLabel} → {currentQuiz.correctLabel}
+                            </p>
+                          ) : hasQuizDiff ? null : (
+                            <p className="text-xs text-muted-foreground">No quiz changes detected.</p>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="grid gap-1">
+                          {quizFields.map(([label, value]) => (
+                            <p key={label}><span className="text-muted-foreground">{label}:</span> {value}</p>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <div className="rounded border p-3"><p className="text-xs uppercase text-muted-foreground">Shipping configuration</p><p>{shipping.length ? shipping.join(", ") : "-"}</p></div>
                     <div className="rounded border p-3"><p className="text-xs uppercase text-muted-foreground">Audience Amplifier configuration</p><pre className="whitespace-pre-wrap text-xs">{summarizeAudienceAmplifier(formData)}</pre></div>
@@ -410,7 +530,7 @@ export function SubmissionDetailSheet({
               </div>
             </section>
 
-            <section className="rounded-md border p-4">
+            <section className={`rounded-md border p-4 ${panelTone}`}>
               <h3 className="text-sm font-semibold uppercase">Audit history</h3>
               <div className="mt-3 space-y-2 text-xs">
                 {detail.audit.length === 0 ? (
