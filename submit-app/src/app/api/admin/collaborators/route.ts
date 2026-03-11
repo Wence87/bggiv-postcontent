@@ -49,6 +49,11 @@ export async function GET(request: NextRequest) {
       companyScope: true,
       createdAt: true,
       updatedAt: true,
+      _count: {
+        select: {
+          assignedSubmissionOps: true,
+        },
+      },
     },
   });
 

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import { BrandHeader } from "@/components/BrandHeader";
+import { AdminSectionNav } from "@/components/admin/AdminSectionNav";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,6 +20,7 @@ type Collaborator = {
   role: "SUPER_ADMIN" | "CONTENT_ADMIN" | "OPS_ADMIN" | "PUBLISHER" | "CLIENT_PRO";
   isActive: boolean;
   companyScope: string | null;
+  _count?: { assignedSubmissionOps: number };
 };
 
 const EMPTY_FORM = {
@@ -87,10 +89,10 @@ export default function CollaboratorsPageClient() {
   };
 
   return (
-    <main className="min-h-screen bg-slate-200/60">
-      <header className="border-b bg-white">
+    <main className="min-h-screen bg-emerald-50">
+      <header className="border-b border-emerald-100 bg-white">
         <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-6 py-4">
-          <BrandHeader title="Collaborators" subtitle="Manage reviewer/admin collaborators and access tokens." />
+          <BrandHeader title="Collaborators" subtitle="Manage collaborators, roles, assignment ownership and access tokens." />
           <div className="flex items-center gap-2">
             <Input
               type="password"
@@ -107,6 +109,7 @@ export default function CollaboratorsPageClient() {
           </div>
         </div>
       </header>
+      <AdminSectionNav />
 
       <div className="mx-auto w-full max-w-6xl space-y-4 px-6 py-4">
         {plainToken ? (
@@ -144,7 +147,12 @@ export default function CollaboratorsPageClient() {
               <div key={item.id} className="grid gap-2 rounded border p-3 md:grid-cols-[1fr_180px_140px_120px_220px] md:items-center">
                 <div>
                   <p className="font-medium">{item.displayName} ({item.firstName} {item.lastName})</p>
-                  <p className="text-sm text-muted-foreground">{item.email}{item.companyScope ? ` • scope: ${item.companyScope}` : ""}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {item.email}
+                    {item.companyScope ? ` • scope: ${item.companyScope}` : ""}
+                    {" • "}
+                    <span className="font-medium">Assigned:</span> {item._count?.assignedSubmissionOps ?? 0}
+                  </p>
                 </div>
                 <select className="h-9 rounded border px-2" value={item.role} onChange={(e) => void updateCollaborator(item.id, { role: e.target.value })}>
                   <option>SUPER_ADMIN</option>

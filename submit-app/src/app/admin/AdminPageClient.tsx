@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { DayPicker } from "react-day-picker";
 import "react-day-picker/dist/style.css";
@@ -7,11 +9,12 @@ import { CalendarClock, Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { BrandHeader } from "@/components/BrandHeader";
+import { AdminSectionNav } from "@/components/admin/AdminSectionNav";
 import { PostsAvailabilityPanel, type PostAvailabilityDay } from "@/components/admin/PostsAvailabilityPanel";
 import { PostsBookingForm } from "@/components/admin/PostsBookingForm";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -330,6 +333,7 @@ function BookingMetaFields({
 }
 
 export default function AdminPage() {
+  const pathname = usePathname();
   const [active, setActive] = useState<ProductView>("sponsorship");
   const [token, setToken] = useState("");
   const [unauthorized, setUnauthorized] = useState(false);
@@ -933,12 +937,17 @@ export default function AdminPage() {
     setSponsorshipMonthsCount(1);
   };
 
+  const backToSubmissionsHref = useMemo(() => {
+    const match = /^\/admin\/([^/]+)/.exec(pathname || "");
+    return match ? `/admin/${match[1]}` : "/admin";
+  }, [pathname]);
+
   return (
-    <main className="min-h-screen bg-muted/30">
-      <header className="border-b bg-background">
+    <main className="min-h-screen bg-violet-50">
+      <header className="border-b border-violet-100 bg-white">
         <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-6 py-4">
           <BrandHeader
-            title="Admin Back Office"
+            title="Booking Tools"
             subtitle="Manage sponsorship, ads and post booking availability."
           />
           <div className="flex items-center gap-2">
@@ -952,9 +961,13 @@ export default function AdminPage() {
             <Button type="button" variant="outline" onClick={clearToken}>
               Clear
             </Button>
+            <Link href={backToSubmissionsHref} className={buttonVariants({ variant: "outline", size: "sm" })}>
+              Back to Submissions
+            </Link>
           </div>
         </div>
       </header>
+      <AdminSectionNav />
 
       <div className="mx-auto grid w-full max-w-7xl grid-cols-1 gap-6 px-6 py-6 lg:grid-cols-[240px_1fr]">
         <aside className="rounded-lg border bg-background p-3">
