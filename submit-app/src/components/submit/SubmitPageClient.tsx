@@ -192,6 +192,7 @@ type AudienceAmplifierField = {
 type DiagnosticState = {
   endpoint: string;
   status: number;
+  reason?: string;
   responseBody: unknown;
 } | null;
 
@@ -200,7 +201,6 @@ type SubmitPageClientProps = {
   diag?: boolean;
 };
 
-const WP_BASE_URL = (process.env.NEXT_PUBLIC_WP_BASE_URL || "https://boardgamegiveaways.com").replace(/\/$/, "");
 const FRONTEND_TREE_MARKER = "submit-app";
 const FRONTEND_BUILD_MARKER = process.env.NEXT_PUBLIC_BUILD_STAMP || "build-stamp-missing";
 const GIVEAWAY_FREE_HIGHLIGHT_OPTIONS: GiveawayFreeHighlightOption[] = [
@@ -282,6 +282,55 @@ const AUDIENCE_AMPLIFIER_FIELDS: AudienceAmplifierField[] = [
     type: "url",
   },
 ];
+
+type ContextFailure = {
+  message: string;
+  reason: string;
+};
+
+function resolveTokenContextEndpoint(token: string, diag: boolean): string {
+  return `/api/submit/order-context?token=${encodeURIComponent(token)}${diag ? "&diag=1" : ""}`;
+}
+
+function parseResponseBody(text: string): unknown {
+  try {
+    return text ? JSON.parse(text) : null;
+  } catch {
+    return { raw: text.slice(0, 1000) };
+  }
+}
+
+function extractWpErrorCode(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") return null;
+  const record = payload as Record<string, unknown>;
+  return typeof record.code === "string" ? record.code : null;
+}
+
+function mapContextHttpFailure(status: number, payload: unknown): ContextFailure {
+  const code = extractWpErrorCode(payload);
+  if (code === "missing_token") return { message: "Token not found", reason: code };
+  if (code === "invalid_token") return { message: "Token expired or invalid", reason: code };
+  if (code === "forbidden_origin") return { message: "Network / CORS error while loading order context", reason: code };
+  if (code === "rate_limited") return { message: "Too many requests. Please retry in a moment.", reason: code };
+  if (code === "config_missing" || code === "woocommerce_missing") {
+    return { message: "Order context unavailable", reason: code };
+  }
+  if (code === "order_not_found" || code === "order_status_not_allowed") {
+    return { message: "Order context unavailable", reason: code };
+  }
+  if (status === 403) return { message: "Token expired or invalid", reason: code ?? "http_403" };
+  if (status === 404) return { message: "Order context unavailable", reason: code ?? "http_404" };
+  if (status === 429) return { message: "Too many requests. Please retry in a moment.", reason: code ?? "http_429" };
+  return { message: "Order context unavailable", reason: code ?? `http_${status}` };
+}
+
+function isValidOrderContextPayload(payload: unknown): payload is OrderContextResponse {
+  if (!payload || typeof payload !== "object") return false;
+  const record = payload as Record<string, unknown>;
+  if (!record.product || typeof record.product !== "object") return false;
+  const product = record.product as Record<string, unknown>;
+  return typeof product.product_type === "string" && typeof product.product_key === "string";
+}
 
 function weekKeyToDate(weekKey: string): string {
   const match = /^(\d{4})-W(\d{2})$/.exec(weekKey);
@@ -519,10 +568,7 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
     antarctica: false,
   });
 
-  const contextEndpoint = useMemo(
-    () => `${WP_BASE_URL}/wp-json/bgg/v1/order-context?token=${encodeURIComponent(token)}${diag ? "&diag=1" : ""}`,
-    [token, diag]
-  );
+  const contextEndpoint = useMemo(() => resolveTokenContextEndpoint(token, diag), [token, diag]);
 
   useEffect(() => {
     let cancelled = false;
@@ -535,28 +581,42 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
         const response = await fetch(contextEndpoint, {
           method: "GET",
           headers: { Accept: "application/json" },
+          cache: "no-store",
         });
 
         const responseText = await response.text();
-        let parsed: unknown = null;
-        try {
-          parsed = responseText ? JSON.parse(responseText) : null;
-        } catch {
-          parsed = { raw: responseText.slice(0, 1000) };
-        }
+        const parsed = parseResponseBody(responseText);
 
         if (!response.ok) {
+          const failure = mapContextHttpFailure(response.status, parsed);
+          console.error("[submit-context] request_failed", {
+            endpoint: contextEndpoint,
+            status: response.status,
+            reason: failure.reason,
+            responseBody: parsed,
+          });
           if (!cancelled) {
-            setDiagnostic({ endpoint: contextEndpoint, status: response.status, responseBody: parsed });
-            setError("Invalid or expired token");
+            setDiagnostic({ endpoint: contextEndpoint, status: response.status, reason: failure.reason, responseBody: parsed });
+            setError(failure.message);
           }
           return;
         }
 
-        if (!parsed || typeof parsed !== "object" || !("product" in parsed)) {
+        if (!isValidOrderContextPayload(parsed)) {
+          console.error("[submit-context] invalid_payload", {
+            endpoint: contextEndpoint,
+            status: response.status,
+            reason: "invalid_response_format",
+            responseBody: parsed,
+          });
           if (!cancelled) {
-            setDiagnostic({ endpoint: contextEndpoint, status: response.status, responseBody: parsed });
-            setError("Invalid order context payload");
+            setDiagnostic({
+              endpoint: contextEndpoint,
+              status: response.status,
+              reason: "invalid_response_format",
+              responseBody: parsed,
+            });
+            setError("Invalid response format");
           }
           return;
         }
@@ -579,16 +639,29 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
           setSelectedSponsorshipMonth(null);
           setSelectedPostDayKey(null);
           setSelectedPostHour(null);
-          setDiagnostic({ endpoint: contextEndpoint, status: response.status, responseBody: diag ? parsed : { ok: true } });
+          setDiagnostic({
+            endpoint: contextEndpoint,
+            status: response.status,
+            reason: "ok",
+            responseBody: diag ? parsed : { ok: true },
+          });
         }
       } catch (fetchError) {
+        const networkMessage = fetchError instanceof Error ? fetchError.message : "Network error";
+        console.error("[submit-context] network_error", {
+          endpoint: contextEndpoint,
+          status: 0,
+          reason: "network_error",
+          error: networkMessage,
+        });
         if (!cancelled) {
           setDiagnostic({
             endpoint: contextEndpoint,
             status: 0,
-            responseBody: { error: fetchError instanceof Error ? fetchError.message : "Network error" },
+            reason: "network_error",
+            responseBody: { error: networkMessage },
           });
-          setError("Unable to load order context");
+          setError("Network / CORS error while loading order context");
         }
       } finally {
         if (!cancelled) setLoading(false);
