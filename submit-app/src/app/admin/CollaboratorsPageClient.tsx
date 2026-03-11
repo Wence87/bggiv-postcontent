@@ -364,6 +364,7 @@ export default function CollaboratorsPageClient() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-10">View</TableHead>
                 <TableHead>Display</TableHead>
                 <TableHead>First</TableHead>
                 <TableHead>Last</TableHead>
@@ -382,6 +383,18 @@ export default function CollaboratorsPageClient() {
             <TableBody>
               {items.map((item) => (
                 <TableRow key={item.id}>
+                  <TableCell className="align-middle">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 w-8 p-0"
+                      title="View collaborator detail"
+                      aria-label="View collaborator detail"
+                      onClick={() => void openDetail(item.id)}
+                    >
+                      <Eye className="h-4 w-4" />
+                    </Button>
+                  </TableCell>
                   <TableCell className="font-medium">{item.displayName}</TableCell>
                   <TableCell>{item.firstName}</TableCell>
                   <TableCell>{item.lastName}</TableCell>
@@ -414,9 +427,6 @@ export default function CollaboratorsPageClient() {
                   </TableCell>
                   <TableCell>
                     <div className="flex gap-2">
-                      <Button variant="outline" size="sm" className="h-8 w-8 p-0" title="View collaborator detail" aria-label="View collaborator detail" onClick={() => void openDetail(item.id)}>
-                        <Eye className="h-4 w-4" />
-                      </Button>
                       <Button variant="outline" size="sm" title="Regenerate and copy token" aria-label="Regenerate and copy token" onClick={() => void regenerateAndCopyToken(item.id)}>Regenerate + Copy token</Button>
                       {viewerRole === "SUPER_ADMIN" ? (
                         <Button
@@ -443,7 +453,7 @@ export default function CollaboratorsPageClient() {
       </section>
 
       <Sheet open={Boolean(selectedId)} onOpenChange={(open) => (!open ? setSelectedId(null) : undefined)}>
-        <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-4xl">
+        <SheetContent side="right" className="w-full overflow-y-auto border-emerald-200 bg-emerald-50 sm:max-w-4xl">
           <SheetHeader>
             <SheetTitle>Collaborator detail</SheetTitle>
             <SheetDescription>Profile, permissions and assigned submissions.</SheetDescription>
@@ -522,7 +532,7 @@ export default function CollaboratorsPageClient() {
         onSave={() => void saveSubmissionWorkflow()}
         canSeeInternalNotes={viewerRole !== "PUBLISHER" && viewerRole !== "CLIENT_PRO"}
         contextSubtitle={`Opened from collaborator: ${detail?.collaborator.displayName ?? "-"}`}
-        themeVariant="collaborators"
+        themeVariant="submissions"
       />
 
       <Dialog open={Boolean(deleteTarget)} onOpenChange={(open) => (!open ? setDeleteTarget(null) : undefined)}>

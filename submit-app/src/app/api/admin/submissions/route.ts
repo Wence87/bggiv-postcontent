@@ -131,10 +131,46 @@ export async function GET(request: NextRequest) {
 
   const submissions = await prisma.submitFormSubmission.findMany({
     where: { AND: andWhere },
-    include: { ops: true },
+    include: {
+      ops: {
+        include: {
+          reviewerCollaborator: {
+            select: {
+              id: true,
+              displayName: true,
+              isActive: true,
+            },
+          },
+        },
+      },
+    },
     orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
     take: limit,
   });
+
+  const staleOpsIds = submissions
+    .filter(
+      (submission) =>
+        submission.ops &&
+        (
+          (!submission.ops.reviewerCollaboratorId && Boolean(submission.ops.reviewerAssignee)) ||
+          (Boolean(submission.ops.reviewerCollaboratorId) &&
+            (!submission.ops.reviewerCollaborator || !submission.ops.reviewerCollaborator.isActive))
+        )
+    )
+    .map((submission) => submission.ops!.id);
+
+  if (staleOpsIds.length > 0) {
+    void prisma.submissionOps
+      .updateMany({
+        where: { id: { in: staleOpsIds } },
+        data: {
+          reviewerCollaboratorId: null,
+          reviewerAssignee: null,
+        },
+      })
+      .catch(() => undefined);
+  }
 
   const rows = submissions
     .filter((submission) => {

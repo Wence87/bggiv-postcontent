@@ -1,6 +1,6 @@
 "use client";
 
-import { Dispatch, SetStateAction } from "react";
+import { Dispatch, SetStateAction, useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -282,8 +282,13 @@ export function SubmissionDetailSheet({
         previousQuiz.correctIndex !== currentQuiz.correctIndex
       )
   );
-  const containerTone = themeVariant === "collaborators" ? "bg-emerald-50/60 border-emerald-100" : "bg-sky-50/60 border-sky-100";
-  const panelTone = themeVariant === "collaborators" ? "bg-emerald-50/40 border-emerald-100" : "bg-sky-50/40 border-sky-100";
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const containerTone = themeVariant === "collaborators" ? "bg-sky-50 border-sky-200" : "bg-sky-50 border-sky-200";
+  const panelTone = themeVariant === "collaborators" ? "bg-sky-50 border-sky-200" : "bg-sky-50 border-sky-200";
+
+  useEffect(() => {
+    setHistoryOpen(false);
+  }, [detail?.id]);
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -531,24 +536,39 @@ export function SubmissionDetailSheet({
             </section>
 
             <section className={`rounded-md border p-4 ${panelTone}`}>
-              <h3 className="text-sm font-semibold uppercase">Audit history</h3>
-              <div className="mt-3 space-y-2 text-xs">
-                {detail.audit.length === 0 ? (
-                  <p className="text-muted-foreground">No events yet.</p>
-                ) : (
-                  detail.audit.map((event) => (
-                    <div key={event.id} className="rounded border p-3">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <p className="font-medium">{event.eventType}{event.fieldName ? ` • ${event.fieldName}` : ""}</p>
-                        <p className="text-muted-foreground">{iso(event.createdAt)}</p>
-                      </div>
-                      <p className="text-muted-foreground">Actor: {event.actorRole} ({event.actorIdentifier || "-"})</p>
-                      <p className="text-muted-foreground">Change: {event.fromValue || "-"} → {event.toValue || "-"}</p>
-                      {event.comment ? <p className="mt-1">Comment: {event.comment}</p> : null}
-                    </div>
-                  ))
-                )}
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-sm font-semibold uppercase">History</h3>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 px-3"
+                  onClick={() => setHistoryOpen((prev) => !prev)}
+                  aria-label={historyOpen ? "Collapse history" : "Expand history"}
+                  title={historyOpen ? "Collapse history" : "Expand history"}
+                >
+                  {historyOpen ? "Hide" : "Show"}
+                </Button>
               </div>
+              {historyOpen ? (
+                <div className="mt-3 space-y-2 text-xs">
+                  {detail.audit.length === 0 ? (
+                    <p className="text-muted-foreground">No events yet.</p>
+                  ) : (
+                    detail.audit.map((event) => (
+                      <div key={event.id} className="rounded border p-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="font-medium">{event.eventType}{event.fieldName ? ` • ${event.fieldName}` : ""}</p>
+                          <p className="text-muted-foreground">{iso(event.createdAt)}</p>
+                        </div>
+                        <p className="text-muted-foreground">Actor: {event.actorRole} ({event.actorIdentifier || "-"})</p>
+                        <p className="text-muted-foreground">Change: {event.fromValue || "-"} → {event.toValue || "-"}</p>
+                        {event.comment ? <p className="mt-1">Comment: {event.comment}</p> : null}
+                      </div>
+                    ))
+                  )}
+                </div>
+              ) : null}
             </section>
           </div>
         ) : null}

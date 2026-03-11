@@ -562,6 +562,11 @@ export function toListRow(submission: {
     editorialStatus: EditorialStatus;
     publicationStatus: PublicationStatus;
     reviewerAssignee: string | null;
+    reviewerCollaboratorId?: string | null;
+    reviewerCollaborator?: {
+      displayName: string;
+      isActive: boolean;
+    } | null;
   } | null;
 }): SubmissionListRow {
   const form = safeJsonObject(submission.formDataJson);
@@ -575,6 +580,11 @@ export function toListRow(submission: {
     submission.reservationStartsAt || submission.reservationMonthKey || submission.reservationWeekKey
       ? PublicationStatus.SCHEDULED
       : PublicationStatus.NOT_SCHEDULED;
+  const reviewerDisplay =
+    submission.ops?.reviewerCollaborator && submission.ops.reviewerCollaborator.isActive
+      ? submission.ops.reviewerCollaborator.displayName
+      : "-";
+
   return {
     id: submission.id,
     submissionId: submission.id,
@@ -591,7 +601,7 @@ export function toListRow(submission: {
     vatPaid: payment.vatPaid,
     editorialStatus: submission.ops?.editorialStatus ?? EditorialStatus.SUBMITTED,
     publicationStatus: submission.ops?.publicationStatus ?? defaultPublicationStatus,
-    reviewerAssignee: submission.ops?.reviewerAssignee ?? "-",
+    reviewerAssignee: reviewerDisplay,
     purchasedOptionsSummary: summarizePurchasedOptions(submission),
     assetsSummary: assets.summary,
     hasAssets: assets.hasAssets,

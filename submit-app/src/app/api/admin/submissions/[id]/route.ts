@@ -2,6 +2,8 @@ import { EditorialStatus, OrderPaymentStatus, PublicationStatus } from "@prisma/
 import { NextRequest, NextResponse } from "next/server";
 
 import { prisma } from "@/lib/prisma";
+import { sendClientCommunicationEmail } from "@/lib/clientCommunicationEmail";
+import { createSubmissionEditToken } from "@/lib/submissionEditToken";
 import {
   authenticateAdminRequestWithCollaborators,
   buildSubmissionScopeWhere,
@@ -65,7 +67,17 @@ async function loadScopedSubmission(id: string, request: NextRequest) {
       AND: [{ id }, buildSubmissionScopeWhere(auth)],
     },
     include: {
-      ops: true,
+      ops: {
+        include: {
+          reviewerCollaborator: {
+            select: {
+              id: true,
+              displayName: true,
+              isActive: true,
+            },
+          },
+        },
+      },
       clientMessages: {
         orderBy: { createdAt: "desc" },
         take: 30,
@@ -136,6 +148,34 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
       })
     : null;
 
+  const staleReviewerState =
+    submission.ops &&
+    (
+      (!submission.ops.reviewerCollaboratorId && Boolean(submission.ops.reviewerAssignee)) ||
+      (Boolean(submission.ops.reviewerCollaboratorId) &&
+        (!submission.ops.reviewerCollaborator || !submission.ops.reviewerCollaborator.isActive))
+    );
+  if (staleReviewerState) {
+    void prisma.submissionOps
+      .update({
+        where: { id: submission.ops!.id },
+        data: {
+          reviewerCollaboratorId: null,
+          reviewerAssignee: null,
+        },
+      })
+      .catch(() => undefined);
+  }
+
+  const workflowReviewerName =
+    submission.ops?.reviewerCollaborator && submission.ops.reviewerCollaborator.isActive
+      ? submission.ops.reviewerCollaborator.displayName
+      : "";
+  const workflowReviewerId =
+    submission.ops?.reviewerCollaborator && submission.ops.reviewerCollaborator.isActive
+      ? submission.ops.reviewerCollaborator.id
+      : "";
+
   if (auth.collaboratorId) {
     void prisma.submissionAuditEvent
       .create({
@@ -177,8 +217,8 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
       orderPaymentStatus: submission.ops?.orderPaymentStatus ?? OrderPaymentStatus.PAID,
       editorialStatus: submission.ops?.editorialStatus ?? EditorialStatus.SUBMITTED,
       publicationStatus: submission.ops?.publicationStatus ?? defaultPublicationStatus,
-      reviewerAssignee: submission.ops?.reviewerAssignee ?? "",
-      reviewerCollaboratorId: submission.ops?.reviewerCollaboratorId ?? "",
+      reviewerAssignee: workflowReviewerName,
+      reviewerCollaboratorId: workflowReviewerId,
       clientVisibleNote: submission.ops?.clientVisibleNote ?? "",
       internalNote: hideInternal ? "" : submission.ops?.internalNote ?? "",
     },
@@ -248,12 +288,12 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
   ] as const);
   const orderPaymentStatus = parseEnum(payload.orderPaymentStatus, ["PAID", "PENDING", "FAILED", "REFUNDED"] as const);
 
-  const reviewerAssignee = typeof payload.reviewerAssignee === "string" ? payload.reviewerAssignee.trim() : null;
   const reviewerCollaboratorId =
     typeof payload.reviewerCollaboratorId === "string" ? payload.reviewerCollaboratorId.trim() : null;
   const clientVisibleNote = typeof payload.clientVisibleNote === "string" ? payload.clientVisibleNote.trim() : null;
   const internalNote = typeof payload.internalNote === "string" ? payload.internalNote.trim() : null;
   const clientMessage = typeof payload.clientMessage === "string" ? payload.clientMessage.trim() : null;
+  const clientMessageSubject = typeof payload.clientMessageSubject === "string" ? payload.clientMessageSubject.trim() : null;
   const requestClientChanges = payload.requestClientChanges === true;
   const comment = typeof payload.comment === "string" ? payload.comment.trim() : null;
 
@@ -266,7 +306,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
   if (orderPaymentStatus && !canEditPayment(auth.role)) {
     return forbidden("Role cannot update payment status");
   }
-  if ((clientVisibleNote !== null || internalNote !== null || reviewerAssignee !== null || reviewerCollaboratorId !== null || clientMessage !== null) && !canEditNotes(auth.role)) {
+  if ((clientVisibleNote !== null || internalNote !== null || reviewerCollaboratorId !== null || clientMessage !== null) && !canEditNotes(auth.role)) {
     return forbidden("Role cannot edit reviewer or notes");
   }
   if (requestClientChanges && !canEditEditorial(auth.role)) {
@@ -288,12 +328,14 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
   if (orderPaymentStatus) nextOpsData.orderPaymentStatus = orderPaymentStatus;
   if (editorialStatus) nextOpsData.editorialStatus = editorialStatus;
   if (publicationStatus) nextOpsData.publicationStatus = publicationStatus;
-  if (reviewerAssignee !== null) nextOpsData.reviewerAssignee = reviewerAssignee || null;
   if (reviewerCollaboratorId !== null) nextOpsData.reviewerCollaboratorId = reviewerCollaboratorId || null;
   if (clientVisibleNote !== null) nextOpsData.clientVisibleNote = clientVisibleNote || null;
   if (internalNote !== null) nextOpsData.internalNote = internalNote || null;
 
   if (requestClientChanges) {
+    nextOpsData.editorialStatus = EditorialStatus.CHANGES_REQUESTED;
+  }
+  if (clientMessage) {
     nextOpsData.editorialStatus = EditorialStatus.CHANGES_REQUESTED;
   }
 
@@ -360,9 +402,6 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
           from: existingOps?.publicationStatus ?? defaultPublicationStatusForSubmission(submission),
           to: publicationStatus,
         });
-      }
-      if (reviewerAssignee !== null && (existingOps?.reviewerAssignee ?? null) !== (reviewerAssignee || null)) {
-        changes.push({ field: "reviewerAssignee", from: existingOps?.reviewerAssignee ?? null, to: reviewerAssignee || null });
       }
       if (reviewerCollaboratorId !== null && (existingOps?.reviewerCollaboratorId ?? null) !== (reviewerCollaboratorId || null)) {
         changes.push({
@@ -435,6 +474,53 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
 
       return ops;
     });
+
+    if (clientMessage) {
+      const editToken = createSubmissionEditToken({
+        submissionId: submission.id,
+        email: submission.contactEmail,
+        ttlSeconds: 30 * 24 * 60 * 60,
+      });
+      const editLink = `https://submit.boardgamegiveaways.com/submit?token=${encodeURIComponent(editToken)}`;
+      const emailSubject = clientMessageSubject || "Action required: please update your submission";
+
+      try {
+        await sendClientCommunicationEmail({
+          to: submission.contactEmail,
+          subject: emailSubject,
+          message: clientMessage,
+          editLink,
+        });
+        await prisma.submissionAuditEvent.create({
+          data: {
+            submissionId: submission.id,
+            actorRole: auth.role,
+            actorIdentifier: auth.actor,
+            eventType: "CLIENT_MESSAGE_EMAIL_SENT",
+            fieldName: "clientCommunication",
+            comment: `Email sent to ${submission.contactEmail}`,
+          },
+        });
+      } catch (error) {
+        await prisma.submissionAuditEvent.create({
+          data: {
+            submissionId: submission.id,
+            actorRole: auth.role,
+            actorIdentifier: auth.actor,
+            eventType: "CLIENT_MESSAGE_EMAIL_FAILED",
+            fieldName: "clientCommunication",
+            comment: error instanceof Error ? error.message.slice(0, 500) : "unknown_error",
+          },
+        });
+        return NextResponse.json(
+          {
+            code: "CLIENT_EMAIL_SEND_FAILED",
+            message: error instanceof Error ? error.message : "Unable to send client email",
+          },
+          { status: 502 }
+        );
+      }
+    }
 
     return NextResponse.json({ ok: true, workflow: updated });
   } catch (error) {
