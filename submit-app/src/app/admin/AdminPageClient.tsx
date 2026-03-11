@@ -1,20 +1,17 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { DayPicker } from "react-day-picker";
 import "react-day-picker/dist/style.css";
 import { CalendarClock, Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
-import { BrandHeader } from "@/components/BrandHeader";
-import { AdminSectionNav } from "@/components/admin/AdminSectionNav";
+import { AdminShell } from "@/components/admin/AdminShell";
 import { PostsAvailabilityPanel, type PostAvailabilityDay } from "@/components/admin/PostsAvailabilityPanel";
 import { PostsBookingForm } from "@/components/admin/PostsBookingForm";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -36,6 +33,7 @@ type ApiBooking = {
   product: "SPONSORSHIP" | "ADS" | "NEWS" | "PROMO" | "GIVEAWAY";
   slotLabel: string;
   companyName: string;
+  status: "DRAFT_RESERVED" | "SUBMITTED" | "CANCELLED" | "PUBLISHED";
   orderReference: string;
   bookingIds: string[];
   createdAt: string;
@@ -47,6 +45,7 @@ type UpcomingRow = {
   product: ApiBooking["product"];
   slotLabel: string;
   companyName: string;
+  status: ApiBooking["status"];
   orderReference: string;
 };
 
@@ -332,8 +331,13 @@ function BookingMetaFields({
   );
 }
 
+function compactOrderRef(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed.length <= 10) return trimmed;
+  return `${trimmed.slice(0, 10)}...`;
+}
+
 export default function AdminPage() {
-  const pathname = usePathname();
   const [active, setActive] = useState<ProductView>("sponsorship");
   const [token, setToken] = useState("");
   const [unauthorized, setUnauthorized] = useState(false);
@@ -779,6 +783,7 @@ export default function AdminPage() {
           product: b.product,
           slotLabel: b.slotLabel,
           companyName: b.companyName,
+          status: b.status,
           orderReference: b.orderReference,
         }));
     }
@@ -792,6 +797,7 @@ export default function AdminPage() {
           product: b.product,
           slotLabel: b.slotLabel,
           companyName: b.companyName,
+          status: b.status,
           orderReference: b.orderReference,
         }))
         .sort((a, b) => a.slotLabel.localeCompare(b.slotLabel))
@@ -810,6 +816,7 @@ export default function AdminPage() {
         product: b.product,
         slotLabel: b.slotLabel,
         companyName: b.companyName,
+        status: b.status,
         orderReference: b.orderReference,
       }));
   }, [active, bookings]);
@@ -937,39 +944,28 @@ export default function AdminPage() {
     setSponsorshipMonthsCount(1);
   };
 
-  const backToSubmissionsHref = useMemo(() => {
-    const match = /^\/admin\/([^/]+)/.exec(pathname || "");
-    return match ? `/admin/${match[1]}` : "/admin";
-  }, [pathname]);
-
   return (
-    <main className="min-h-screen bg-violet-50">
-      <header className="border-b border-violet-100 bg-white">
-        <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-6 py-4">
-          <BrandHeader
-            title="Booking Tools"
-            subtitle="Manage sponsorship, ads and post booking availability."
+    <AdminShell
+      title="Booking Tools"
+      subtitle="Manage sponsorship, ads and post booking availability."
+      themeClassName="bg-violet-50"
+      headerBorderClassName="border-violet-100"
+      contentClassName="grid grid-cols-1 gap-6 lg:grid-cols-[240px_1fr]"
+      headerRight={
+        <>
+          <Input
+            type="password"
+            placeholder="Admin token"
+            value={token}
+            onChange={(event) => updateToken(event.target.value)}
+            className="w-64"
           />
-          <div className="flex items-center gap-2">
-            <Input
-              type="password"
-              placeholder="Admin token"
-              value={token}
-              onChange={(event) => updateToken(event.target.value)}
-              className="w-64"
-            />
-            <Button type="button" variant="outline" onClick={clearToken}>
-              Clear
-            </Button>
-            <Link href={backToSubmissionsHref} className={buttonVariants({ variant: "outline", size: "sm" })}>
-              Back to Submissions
-            </Link>
-          </div>
-        </div>
-      </header>
-      <AdminSectionNav />
-
-      <div className="mx-auto grid w-full max-w-7xl grid-cols-1 gap-6 px-6 py-6 lg:grid-cols-[240px_1fr]">
+          <Button type="button" variant="outline" onClick={clearToken}>
+            Clear
+          </Button>
+        </>
+      }
+    >
         <aside className="rounded-lg border bg-background p-3">
           <nav className="grid gap-2">
             {(Object.keys(PRODUCT_LABELS) as ProductView[]).map((key) => (
@@ -1151,10 +1147,10 @@ export default function AdminPage() {
 
           {!loading && active === "ads" && (
             <div className="space-y-6">
-              <div className="grid gap-6 rounded-lg border bg-background p-5 lg:grid-cols-[360px_1fr]">
-                <div>
+              <div className="grid items-stretch gap-6 rounded-lg border bg-background p-5 lg:grid-cols-[360px_minmax(0,1fr)]">
+                <div className="h-full">
                   <h2 className="mb-2 text-lg font-semibold">Ads weeks (12 months)</h2>
-                  <div className="rounded-md border px-5 py-3">
+                  <div className="h-full rounded-md border px-5 py-3">
                   <DayPicker
                     mode="single"
                     selected={adsDate}
@@ -1182,7 +1178,7 @@ export default function AdminPage() {
                   />
                   </div>
                 </div>
-                <div className="space-y-4 px-4 sm:px-5">
+                <div className="flex h-full flex-col gap-4 px-4 sm:px-5">
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     <CalendarClock className="h-4 w-4" />
                     Selected week: <span className="font-medium text-foreground">{selectedAdsWeekKey || "-"}</span>
@@ -1193,7 +1189,7 @@ export default function AdminPage() {
                   {selectedAdsWeekStatus === "FULL" && (
                     <p className="text-sm text-muted-foreground">Week is full.</p>
                   )}
-                  <div className="grid gap-2 rounded-md border p-4 max-h-72 overflow-auto">
+                  <div className="grid flex-1 gap-2 rounded-md border p-4 overflow-auto min-h-[420px]">
                     {adsWeeks.map((week) => (
                       <button
                         key={week.weekKey}
@@ -1287,8 +1283,9 @@ export default function AdminPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Product</TableHead>
-                  <TableHead>Slot</TableHead>
+                  <TableHead className="whitespace-nowrap">Slot</TableHead>
                   <TableHead>Company</TableHead>
+                  <TableHead>Status</TableHead>
                   <TableHead>Order</TableHead>
                   <TableHead>Action</TableHead>
                 </TableRow>
@@ -1296,7 +1293,7 @@ export default function AdminPage() {
               <TableBody>
                 {upcomingRows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center text-muted-foreground">
+                    <TableCell colSpan={6} className="text-center text-muted-foreground">
                       No upcoming bookings found.
                     </TableCell>
                   </TableRow>
@@ -1304,13 +1301,36 @@ export default function AdminPage() {
                   upcomingRows.map((row) => (
                     <TableRow key={row.key}>
                       <TableCell>{row.product}</TableCell>
-                      <TableCell>{row.slotLabel}</TableCell>
+                      <TableCell className="whitespace-nowrap">{row.slotLabel}</TableCell>
                       <TableCell>{row.companyName}</TableCell>
-                      <TableCell>{row.orderReference}</TableCell>
+                      <TableCell>{row.status}</TableCell>
                       <TableCell>
-                        <Button variant="outline" size="sm" onClick={() => void deleteBookings(row)}>
-                          <Trash2 className="mr-1 h-3.5 w-3.5" />
-                          Delete
+                        <button
+                          type="button"
+                          className="font-mono text-xs hover:underline"
+                          title={row.orderReference}
+                          onClick={async () => {
+                            try {
+                              await navigator.clipboard.writeText(row.orderReference);
+                              toast.success("Order reference copied.");
+                            } catch {
+                              toast.error("Copy failed.");
+                            }
+                          }}
+                        >
+                          {compactOrderRef(row.orderReference)}
+                        </button>
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 w-8 p-0"
+                          title="Delete booking"
+                          aria-label="Delete booking"
+                          onClick={() => void deleteBookings(row)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -1320,8 +1340,6 @@ export default function AdminPage() {
             </Table>
           </div>
         </section>
-      </div>
-
-    </main>
+    </AdminShell>
   );
 }

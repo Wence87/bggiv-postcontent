@@ -1,4 +1,4 @@
-import { Prisma, Product } from "@prisma/client";
+import { BookingStatus, Prisma, Product } from "@prisma/client";
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/library";
 import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
@@ -33,6 +33,7 @@ type GroupedBookingItem = {
   product: Product;
   slotLabel: string;
   companyName: string;
+  status: BookingStatus;
   orderReference: string;
   bookingIds: string[];
   createdAt: string;
@@ -652,6 +653,7 @@ export async function GET(request: NextRequest) {
       monthKey: true,
       startsAtUtc: true,
       companyName: true,
+      status: true,
       orderRef: true,
       createdAt: true,
     },
@@ -665,6 +667,7 @@ export async function GET(request: NextRequest) {
       groupId: string | null;
       product: Product;
       companyName: string;
+      status: BookingStatus;
       orderRef: string;
       weekKeys: string[];
       monthKeys: string[];
@@ -682,6 +685,7 @@ export async function GET(request: NextRequest) {
         groupId: booking.groupId,
         product: booking.product,
         companyName: booking.companyName,
+        status: booking.status,
         orderRef: booking.orderRef,
         weekKeys: [],
         monthKeys: [],
@@ -720,6 +724,7 @@ export async function GET(request: NextRequest) {
       product: row.product,
       slotLabel,
       companyName: row.companyName,
+      status: row.status,
       orderReference: row.orderRef,
       bookingIds: row.bookingIds,
       createdAt: row.createdAt,

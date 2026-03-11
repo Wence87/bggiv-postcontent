@@ -1,7 +1,5 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname } from "next/navigation";
 import { type ComponentType, useCallback, useEffect, useMemo, useState } from "react";
 import {
   ArrowDown,
@@ -26,11 +24,10 @@ import {
   Video,
 } from "lucide-react";
 
-import { BrandHeader } from "@/components/BrandHeader";
-import { AdminSectionNav } from "@/components/admin/AdminSectionNav";
+import { AdminShell } from "@/components/admin/AdminShell";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -377,7 +374,6 @@ function SortHeader({
 }
 
 export default function AdminSubmissionsPageClient() {
-  const pathname = usePathname();
   const [token, setToken] = useState("");
   const [unauthorized, setUnauthorized] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -590,12 +586,6 @@ export default function AdminSubmissionsPageClient() {
     ["Wrong #4", getString(formData, "answer_wrong_4")],
   ] as const;
 
-  const legacyBookingToolsHref = useMemo(() => {
-    const match = /^\/admin\/([^/]+)/.exec(pathname || "");
-    if (!match) return null;
-    return `/admin/${match[1]}/booking-tools`;
-  }, [pathname]);
-
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
       setSortDir((prev) => (prev === "asc" ? "desc" : "asc"));
@@ -684,19 +674,19 @@ export default function AdminSubmissionsPageClient() {
   };
 
   return (
-    <main className="min-h-screen bg-sky-50">
-      <header className="border-b border-sky-100 bg-white">
-        <div className="mx-auto flex w-full max-w-[1400px] items-center justify-between px-6 py-4">
-          <BrandHeader title="Admin Submissions" subtitle="Daily submission operations (one row = one purchased submission)." />
-          <div className="flex items-center gap-2">
-            <Input type="password" placeholder="Admin token" value={token} onChange={(event) => updateToken(event.target.value)} className="w-64 bg-white" />
-            <Button type="button" variant="outline" onClick={clearToken}>Clear</Button>
-          </div>
-        </div>
-      </header>
-      <AdminSectionNav />
-
-      <div className="mx-auto w-full max-w-[1400px] space-y-3 px-6 py-4">
+    <>
+    <AdminShell
+      title="Admin Submissions"
+      subtitle="Daily submission operations (one row = one purchased submission)."
+      themeClassName="bg-sky-50"
+      headerBorderClassName="border-sky-100"
+      headerRight={
+        <>
+          <Input type="password" placeholder="Admin token" value={token} onChange={(event) => updateToken(event.target.value)} className="w-64 bg-white" />
+          <Button type="button" variant="outline" onClick={clearToken}>Clear</Button>
+        </>
+      }
+    >
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-300 bg-white p-3 shadow-sm">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Shield className="h-4 w-4" />
@@ -731,9 +721,6 @@ export default function AdminSubmissionsPageClient() {
               <Funnel className="mr-1 h-4 w-4" />
               Filters
             </Button>
-            {legacyBookingToolsHref ? (
-              <Link href={legacyBookingToolsHref} className={buttonVariants({ variant: "secondary", size: "sm" })}>Legacy Booking Tools</Link>
-            ) : null}
           </div>
         </div>
 
@@ -951,7 +938,7 @@ export default function AdminSubmissionsPageClient() {
             </div>
           )}
         </section>
-      </div>
+    </AdminShell>
 
       <Sheet open={Boolean(selectedId)} onOpenChange={(open) => (!open ? setSelectedId(null) : undefined)}>
         <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-4xl">
@@ -1132,6 +1119,6 @@ export default function AdminSubmissionsPageClient() {
           ) : null}
         </SheetContent>
       </Sheet>
-    </main>
+    </>
   );
 }

@@ -1,11 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
-import { BrandHeader } from "@/components/BrandHeader";
-import { AdminSectionNav } from "@/components/admin/AdminSectionNav";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { AdminShell } from "@/components/admin/AdminShell";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
@@ -89,29 +87,26 @@ export default function CollaboratorsPageClient() {
   };
 
   return (
-    <main className="min-h-screen bg-emerald-50">
-      <header className="border-b border-emerald-100 bg-white">
-        <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-6 py-4">
-          <BrandHeader title="Collaborators" subtitle="Manage collaborators, roles, assignment ownership and access tokens." />
-          <div className="flex items-center gap-2">
-            <Input
-              type="password"
-              placeholder="Admin token"
-              value={token}
-              onChange={(event) => {
-                const value = event.target.value;
-                setToken(value);
-                window.localStorage.setItem(ADMIN_TOKEN_KEY, value);
-              }}
-              className="w-64"
-            />
-            <Link href="../" className={buttonVariants({ variant: "outline" })}>Back to submissions</Link>
-          </div>
-        </div>
-      </header>
-      <AdminSectionNav />
-
-      <div className="mx-auto w-full max-w-6xl space-y-4 px-6 py-4">
+    <AdminShell
+      title="Collaborators"
+      subtitle="Manage collaborators, roles, assignment ownership and access tokens."
+      themeClassName="bg-emerald-50"
+      headerBorderClassName="border-emerald-100"
+      headerRight={
+        <Input
+          type="password"
+          placeholder="Admin token"
+          value={token}
+          onChange={(event) => {
+            const value = event.target.value;
+            setToken(value);
+            window.localStorage.setItem(ADMIN_TOKEN_KEY, value);
+          }}
+          className="w-64"
+        />
+      }
+      contentClassName="space-y-4"
+    >
         {plainToken ? (
           <div className="rounded border border-amber-300 bg-amber-50 p-3 text-sm">
             Generated collaborator token (show once): <span className="font-mono">{plainToken}</span>
@@ -171,7 +166,6 @@ export default function CollaboratorsPageClient() {
             ))}
           </div>
         </section>
-      </div>
-    </main>
+    </AdminShell>
   );
 }
