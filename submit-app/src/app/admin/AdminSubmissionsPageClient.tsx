@@ -8,19 +8,28 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
+  Clock3,
   Download,
   Eye,
   FileQuestion,
   FileText,
   Funnel,
   Image as ImageIcon,
+  Images,
   Link2,
   Loader2,
+  Mail,
   MapPinned,
+  Megaphone,
+  MessageSquare,
   Package,
+  PanelRight,
+  Pin,
   Search,
   Shield,
+  Sparkles,
   Tag,
+  Video,
 } from "lucide-react";
 
 import { BrandHeader } from "@/components/BrandHeader";
@@ -55,10 +64,12 @@ type ListRow = {
   assetsSummary: string;
   hasAssets: boolean;
   orderedOptionKeys: string[];
+  orderedOptionValues: Record<string, string>;
   previews: {
     title: string;
     shortDescription: string;
     body: string;
+    notes: string;
     quiz: string;
     shipping: string;
     audienceAmplifier: string;
@@ -147,7 +158,33 @@ type SortKey =
 
 type SortDir = "asc" | "desc";
 
-type PreviewItem = { label: string; text: string; Icon: ComponentType<{ className?: string }> };
+type PurchasedIconKey =
+  | "title"
+  | "short_description"
+  | "body"
+  | "notes"
+  | "shipping"
+  | "quiz"
+  | "audience_amplifier_config"
+  | "audience_amplifier"
+  | "duration"
+  | "social_boost"
+  | "hero_grid"
+  | "sticky_post"
+  | "sidebar_spotlight"
+  | "extended_text_limit"
+  | "additional_images"
+  | "embedded_video"
+  | "weekly_newsletter_feature";
+
+type PurchasedIconItem = {
+  key: PurchasedIconKey;
+  label: string;
+  family: "content" | "option";
+  active: boolean;
+  preview: string;
+  Icon: ComponentType<{ className?: string }>;
+};
 
 function compactText(text: string, max = 44): string {
   const value = text || "-";
@@ -228,6 +265,84 @@ function formatMoney(value: string): string {
   return amount.toFixed(2);
 }
 
+function clampPreview(value: string, max = 200): string {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (!normalized) return "";
+  return normalized.length <= max ? normalized : `${normalized.slice(0, max)}...`;
+}
+
+const CONTENT_KEYS_BY_PRODUCT: Record<string, PurchasedIconKey[]> = {
+  giveaway: ["title", "short_description", "body", "notes", "shipping", "quiz", "audience_amplifier_config"],
+  promo: ["title", "short_description", "body", "notes"],
+  news: ["title", "short_description", "body", "notes"],
+  ads: ["notes"],
+  sponsorship: ["notes"],
+};
+
+const OPTION_KEYS_BY_PRODUCT: Record<string, PurchasedIconKey[]> = {
+  giveaway: [
+    "audience_amplifier",
+    "duration",
+    "social_boost",
+    "hero_grid",
+    "sticky_post",
+    "sidebar_spotlight",
+    "extended_text_limit",
+    "additional_images",
+    "embedded_video",
+    "weekly_newsletter_feature",
+  ],
+  promo: ["social_boost", "hero_grid", "sticky_post", "sidebar_spotlight", "extended_text_limit", "additional_images", "embedded_video", "weekly_newsletter_feature"],
+  news: ["social_boost", "hero_grid", "sticky_post", "sidebar_spotlight", "extended_text_limit", "additional_images", "embedded_video", "weekly_newsletter_feature"],
+  ads: [],
+  sponsorship: [],
+};
+
+const ICON_META: Record<PurchasedIconKey, { label: string; family: "content" | "option"; Icon: ComponentType<{ className?: string }> }> = {
+  title: { label: "Title", family: "content", Icon: Tag },
+  short_description: { label: "Short description", family: "content", Icon: FileText },
+  body: { label: "Body", family: "content", Icon: AlignLeft },
+  notes: { label: "Notes to admin", family: "content", Icon: MessageSquare },
+  shipping: { label: "Shipping", family: "content", Icon: MapPinned },
+  quiz: { label: "Quiz", family: "content", Icon: FileQuestion },
+  audience_amplifier_config: { label: "Audience Amplifier config", family: "content", Icon: Link2 },
+  audience_amplifier: { label: "Audience Amplifier", family: "option", Icon: Sparkles },
+  duration: { label: "Duration", family: "option", Icon: Clock3 },
+  social_boost: { label: "Social Boost", family: "option", Icon: Megaphone },
+  hero_grid: { label: "Featured Spot in the Hero Grid", family: "option", Icon: Package },
+  sticky_post: { label: "Sticky Post", family: "option", Icon: Pin },
+  sidebar_spotlight: { label: "Sidebar Spotlight", family: "option", Icon: PanelRight },
+  extended_text_limit: { label: "Extended Text Limit", family: "option", Icon: AlignLeft },
+  additional_images: { label: "Additional Images", family: "option", Icon: Images },
+  embedded_video: { label: "Embedded Video", family: "option", Icon: Video },
+  weekly_newsletter_feature: { label: "Weekly Newsletter Feature", family: "option", Icon: Mail },
+};
+
+const OPTION_KEY_CANONICAL_MAP: Record<string, PurchasedIconKey> = {
+  audienceamplifier: "audience_amplifier",
+  multiactionentry: "audience_amplifier",
+  giveawayduration: "duration",
+  duration: "duration",
+  socialboost: "social_boost",
+  featuredspotherogrid: "hero_grid",
+  featuredspotintheherogrid: "hero_grid",
+  featuredspotintheherogrid7days: "hero_grid",
+  herogrid: "hero_grid",
+  stickypost: "sticky_post",
+  sidebarspotlight: "sidebar_spotlight",
+  extendedtextlimit: "extended_text_limit",
+  additionalimages: "additional_images",
+  embeddedvideo: "embedded_video",
+  weeklynewsletter: "weekly_newsletter_feature",
+  weeklynewsletterfeature: "weekly_newsletter_feature",
+  newsletterfeature: "weekly_newsletter_feature",
+};
+
+function canonicalizePurchasedOptionKey(rawKey: string): PurchasedIconKey | null {
+  const normalized = rawKey.toLowerCase().replace(/[^a-z0-9]/g, "");
+  return OPTION_KEY_CANONICAL_MAP[normalized] ?? null;
+}
+
 function summarizeAudienceAmplifier(formData: Record<string, unknown>): string {
   const raw = formData.audience_amplifier_actions;
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return "Not configured";
@@ -248,15 +363,25 @@ function summarizeAudienceAmplifier(formData: Record<string, unknown>): string {
   return labels.length ? labels.join("\n") : "Not configured";
 }
 
-function PreviewHint({ label, text, Icon }: { label: string; text: string; Icon: ComponentType<{ className?: string }> }) {
+function PurchasedOptionIcon({ item }: { item: PurchasedIconItem }) {
+  const tooltipPreview = clampPreview(item.preview, 200);
+  const line2 = tooltipPreview ? `${item.label}: ${tooltipPreview}` : `${item.label}: ${item.active ? "Enabled" : "Not used"}`;
+  const className = item.active
+    ? "border-emerald-300 bg-emerald-50 text-emerald-900"
+    : "border-slate-200 bg-slate-50/60 text-slate-400";
+
   return (
-    <span className="inline-flex">
+    <span className="group relative inline-flex">
       <span
-        className="inline-flex h-7 w-7 items-center justify-center rounded border text-[11px] text-muted-foreground"
-        title={`${label}: ${text || "-"}`}
-        aria-label={`${label}: ${text || "-"}`}
+        className={`inline-flex h-7 w-7 items-center justify-center rounded border ${className}`}
+        title={`${item.label} — ${line2}`}
+        aria-label={`${item.label} — ${line2}`}
       >
-        <Icon className="h-3 w-3" />
+        <item.Icon className="h-3.5 w-3.5" />
+      </span>
+      <span className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-1 hidden w-64 -translate-x-1/2 rounded-md bg-slate-900 px-2 py-1.5 text-[11px] leading-4 text-white shadow-lg group-hover:block">
+        <span className="block font-semibold">{item.label}</span>
+        <span className="block text-slate-100">{line2}</span>
       </span>
     </span>
   );
@@ -571,54 +696,68 @@ export default function AdminSubmissionsPageClient() {
     }
     download(`/api/admin/submissions/export?${params.toString()}`);
   };
-  const previewItemsForRow = (row: ListRow): PreviewItem[] => {
+  const purchasedIconsForRow = (row: ListRow): PurchasedIconItem[] => {
     const product = row.productType.trim().toLowerCase();
-    const items: PreviewItem[] = [];
-    const seen = new Set<string>();
+    const contentKeys = CONTENT_KEYS_BY_PRODUCT[product] ?? [];
+    const optionKeys = OPTION_KEYS_BY_PRODUCT[product] ?? [];
 
-    const push = (item: PreviewItem) => {
-      const key = item.label.toLowerCase();
-      if (seen.has(key)) return;
-      seen.add(key);
-      items.push(item);
+    const activeBusinessKeys = new Set<PurchasedIconKey>();
+    for (const rawKey of row.orderedOptionKeys ?? []) {
+      const canonical = canonicalizePurchasedOptionKey(rawKey);
+      if (canonical) activeBusinessKeys.add(canonical);
+    }
+    for (const rawKey of Object.keys(row.orderedOptionValues ?? {})) {
+      const canonical = canonicalizePurchasedOptionKey(rawKey);
+      if (canonical) activeBusinessKeys.add(canonical);
+    }
+
+    const contentState: Record<PurchasedIconKey, { active: boolean; preview: string }> = {
+      title: { active: row.previews.title !== "-", preview: clampPreview(row.previews.title) },
+      short_description: { active: row.previews.shortDescription !== "-", preview: clampPreview(row.previews.shortDescription) },
+      body: { active: row.previews.body !== "-", preview: clampPreview(row.previews.body) },
+      notes: { active: row.previews.notes !== "-", preview: clampPreview(row.previews.notes) },
+      shipping: { active: row.previews.shipping !== "-", preview: row.previews.shipping !== "-" ? row.previews.shipping : "Not provided" },
+      quiz: { active: row.previews.quiz !== "-", preview: row.previews.quiz !== "-" ? row.previews.quiz : "Not provided" },
+      audience_amplifier_config: {
+        active: row.previews.audienceAmplifier !== "-",
+        preview: row.previews.audienceAmplifier !== "-" ? clampPreview(row.previews.audienceAmplifier) : "Not configured",
+      },
+      audience_amplifier: { active: false, preview: "" },
+      duration: { active: false, preview: "" },
+      social_boost: { active: false, preview: "" },
+      hero_grid: { active: false, preview: "" },
+      sticky_post: { active: false, preview: "" },
+      sidebar_spotlight: { active: false, preview: "" },
+      extended_text_limit: { active: false, preview: "" },
+      additional_images: { active: false, preview: "" },
+      embedded_video: { active: false, preview: "" },
+      weekly_newsletter_feature: { active: false, preview: "" },
     };
 
-    if (row.previews.title !== "-") push({ label: "Title", text: row.previews.title, Icon: Tag });
-    if (row.previews.shortDescription !== "-") push({ label: "Short description", text: row.previews.shortDescription, Icon: FileText });
-    if (row.previews.body !== "-") push({ label: "Body", text: row.previews.body, Icon: AlignLeft });
+    const contentIcons: PurchasedIconItem[] = contentKeys.map((key) => ({
+      key,
+      label: ICON_META[key].label,
+      family: "content",
+      active: contentState[key].active,
+      preview: contentState[key].preview,
+      Icon: ICON_META[key].Icon,
+    }));
 
-    if (product === "giveaway" && row.previews.quiz !== "-") push({ label: "Quiz", text: row.previews.quiz, Icon: FileQuestion });
-    if (product === "giveaway" && row.previews.shipping !== "-") push({ label: "Shipping", text: row.previews.shipping, Icon: MapPinned });
-    if (product === "giveaway" && row.previews.audienceAmplifier !== "-") {
-      push({ label: "Audience Amplifier", text: row.previews.audienceAmplifier, Icon: Link2 });
-    }
+    const optionIcons: PurchasedIconItem[] = optionKeys.map((key) => {
+      const rawValue = row.orderedOptionValues?.[key] ?? "";
+      const value = clampPreview(rawValue || "Enabled");
+      const active = activeBusinessKeys.has(key);
+      return {
+        key,
+        label: ICON_META[key].label,
+        family: "option",
+        active,
+        preview: active ? value : "Not enabled",
+        Icon: ICON_META[key].Icon,
+      };
+    });
 
-    for (const key of row.orderedOptionKeys) {
-      const optionKey = key.toLowerCase();
-      if (optionKey === "audience_amplifier" && product === "giveaway" && row.previews.audienceAmplifier !== "-") {
-        push({ label: "Audience Amplifier", text: "Ordered and configured", Icon: Link2 });
-      } else if (optionKey === "social_boost") {
-        push({ label: "Social Boost", text: "Ordered option", Icon: Link2 });
-      } else if (optionKey === "duration") {
-        push({ label: "Duration", text: "Ordered option", Icon: FileText });
-      } else if (optionKey === "featured_spot_in_the_hero_grid" || optionKey === "hero_grid") {
-        push({ label: "Hero Grid", text: "Ordered option", Icon: Tag });
-      } else if (optionKey === "sticky_post") {
-        push({ label: "Sticky Post", text: "Ordered option", Icon: Tag });
-      } else if (optionKey === "sidebar_spotlight") {
-        push({ label: "Sidebar Spotlight", text: "Ordered option", Icon: Tag });
-      } else if (optionKey === "extended_text_limit") {
-        push({ label: "Extended Text Limit", text: "Ordered option", Icon: AlignLeft });
-      } else if (optionKey === "additional_images") {
-        push({ label: "Additional Images", text: "Ordered option", Icon: ImageIcon });
-      } else if (optionKey === "embedded_video") {
-        push({ label: "Embedded Video", text: "Ordered option", Icon: Package });
-      } else if (optionKey === "weekly_newsletter_feature") {
-        push({ label: "Weekly Newsletter Feature", text: "Ordered option", Icon: FileText });
-      }
-    }
-
-    return items;
+    return [...contentIcons, ...optionIcons];
   };
 
   return (
@@ -784,7 +923,9 @@ export default function AdminSubmissionsPageClient() {
                 <TableBody>
                   {sortedRows.map((row) => {
                     const urgency = urgencyFromCreated(row.createdAt);
-                    const previewItems = previewItemsForRow(row);
+                    const purchasedIcons = purchasedIconsForRow(row);
+                    const contentIcons = purchasedIcons.filter((item) => item.family === "content");
+                    const optionIcons = purchasedIcons.filter((item) => item.family === "option");
                     return (
                       <TableRow key={row.id} className="text-xs">
                         <TableCell className="whitespace-nowrap px-2 py-2">
@@ -858,9 +999,13 @@ export default function AdminSubmissionsPageClient() {
                         </TableCell>
                         <TableCell className="whitespace-nowrap px-2 py-2" title={row.reviewerAssignee}>{compactText(row.reviewerAssignee, 16)}</TableCell>
                         <TableCell className="px-2 py-2">
-                          <div className="flex flex-wrap gap-1" title={row.purchasedOptionsSummary}>
-                            {previewItems.map((item) => (
-                              <PreviewHint key={item.label} label={item.label} text={item.text} Icon={item.Icon} />
+                          <div className="flex flex-wrap items-center gap-1.5" title={row.purchasedOptionsSummary}>
+                            {contentIcons.map((item) => (
+                              <PurchasedOptionIcon key={`content-${item.key}`} item={item} />
+                            ))}
+                            {contentIcons.length > 0 && optionIcons.length > 0 ? <span className="mx-0.5 h-5 w-px bg-slate-200" /> : null}
+                            {optionIcons.map((item) => (
+                              <PurchasedOptionIcon key={`option-${item.key}`} item={item} />
                             ))}
                           </div>
                         </TableCell>

@@ -21,10 +21,12 @@ export type SubmissionListRow = {
   assetsSummary: string;
   hasAssets: boolean;
   orderedOptionKeys: string[];
+  orderedOptionValues: Record<string, string>;
   previews: {
     title: string;
     shortDescription: string;
     body: string;
+    notes: string;
     quiz: string;
     shipping: string;
     audienceAmplifier: string;
@@ -33,23 +35,128 @@ export type SubmissionListRow = {
 
 const OPTION_KEY_ALIASES: Record<string, string> = {
   audienceamplifier: "audience_amplifier",
-  multi_action_entry: "audience_amplifier",
   multiactionentry: "audience_amplifier",
-  audience_amplifier: "audience_amplifier",
+  giveawayduration: "duration",
+  duration: "duration",
+  socialboost: "social_boost",
+  featuredspotherogrid: "hero_grid",
+  featuredspotintheherogrid: "hero_grid",
+  featuredspotintheherogrid7days: "hero_grid",
+  herogrid: "hero_grid",
+  stickypost: "sticky_post",
+  sidebarspotlight: "sidebar_spotlight",
+  extendedtextlimit: "extended_text_limit",
+  additionalimages: "additional_images",
+  embeddedvideo: "embedded_video",
+  weeklynewsletter: "weekly_newsletter_feature",
+  weeklynewsletterfeature: "weekly_newsletter_feature",
+  newsletterfeature: "weekly_newsletter_feature",
   quiz: "quiz",
   shipping: "shipping",
-  social_boost: "social_boost",
-  socialboost: "social_boost",
 };
 
 function canonicalizeOptionKey(value: string): string {
-  const normalized = value
-    .trim()
-    .toLowerCase()
-    .replace(/&amp;/g, "and")
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "");
+  const normalized = value.toLowerCase().replace(/[^a-z0-9]/g, "");
   return OPTION_KEY_ALIASES[normalized] ?? normalized;
+}
+
+function decodeBasicHtmlEntities(value: string): string {
+  return value
+    .replace(/&amp;|&#0*38;/gi, "&")
+    .replace(/&quot;|&#0*34;/gi, "\"")
+    .replace(/&#0*39;|&apos;/gi, "'")
+    .replace(/&lt;|&#0*60;/gi, "<")
+    .replace(/&gt;|&#0*62;/gi, ">")
+    .replace(/&nbsp;|&#0*160;/gi, " ");
+}
+
+function stripTrailingPriceFragment(value: string): string {
+  const decodedDollar = value.replace(/&#0*36;|&dollar;/gi, "$").replace(/&nbsp;/gi, " ");
+  return decodedDollar.replace(/\s*\(\s*\+?\s*\$?\s*[\d\s.,]+(?:\s*[A-Za-z]{3})?\s*\)\s*$/u, "").trim();
+}
+
+function extractWeeksLabel(value: string): string | null {
+  const normalized = value.toLowerCase().trim();
+  const weekMatch = /([1-4])\s*week/.exec(normalized);
+  if (weekMatch) {
+    const weeks = Number(weekMatch[1]);
+    return `${weeks} Week${weeks > 1 ? "s" : ""}`;
+  }
+  const dayMatch = /(7|14|21|28)\s*day/.exec(normalized);
+  if (dayMatch) {
+    const weeks = Number(dayMatch[1]) / 7;
+    return `${weeks} Week${weeks > 1 ? "s" : ""}`;
+  }
+  return null;
+}
+
+function extractDaysLabel(value: string): string | null {
+  const normalized = value.toLowerCase().trim();
+  const dayMatch = /(1|2|3|4|5|6|7|14|21|28)\s*day/.exec(normalized);
+  if (dayMatch) {
+    const days = Number(dayMatch[1]);
+    return `${days} Day${days > 1 ? "s" : ""}`;
+  }
+  const weekMatch = /([1-4])\s*week/.exec(normalized);
+  if (weekMatch) {
+    const days = Number(weekMatch[1]) * 7;
+    return `${days} Days`;
+  }
+  return null;
+}
+
+function normalizeSocialBoostValue(value: string): string {
+  const decoded = decodeBasicHtmlEntities(value).replace(/\s+/g, " ").trim();
+  return decoded.replace(/\bX\s*&\s*TikTok\b/gi, "X, TikTok");
+}
+
+function resolveDurationFallback(context: Record<string, unknown>): string {
+  const reservation = safeJsonObject(context.reservation);
+  const derivedValues = safeJsonObject(context.derived_values);
+  const rawWeeks = reservation.giveaway_duration_weeks ?? derivedValues.giveaway_duration_weeks ?? context.giveaway_duration_weeks;
+  const rawDays = derivedValues.giveaway_duration_days ?? context.giveaway_duration_days;
+  if (typeof rawWeeks === "number" && rawWeeks >= 1 && rawWeeks <= 4) {
+    return `${rawWeeks} Week${rawWeeks > 1 ? "s" : ""}`;
+  }
+  if (typeof rawDays === "number" && [7, 14, 21, 28].includes(rawDays)) {
+    const weeks = rawDays / 7;
+    return `${weeks} Week${weeks > 1 ? "s" : ""}`;
+  }
+  return "Enabled";
+}
+
+function resolveOptionValue(canonical: string, option: Record<string, unknown>, context: Record<string, unknown>): string {
+  const selectedEn = decodeBasicHtmlEntities(String(option.selected_value_en ?? "")).trim();
+  if (selectedEn) {
+    return stripTrailingPriceFragment(selectedEn);
+  }
+  const raw = stripTrailingPriceFragment(decodeBasicHtmlEntities(String(option.selected_value ?? "")).trim());
+  const normalizedRaw = raw.toLowerCase();
+
+  if (canonical === "duration") {
+    if (raw) {
+      const weeks = extractWeeksLabel(raw);
+      if (weeks) return weeks;
+    }
+    return resolveDurationFallback(context);
+  }
+  if (canonical === "extended_text_limit") return "No character limit";
+  if (canonical === "additional_images") return "Up to 3 additional images";
+  if (canonical === "hero_grid" || canonical === "sticky_post" || canonical === "sidebar_spotlight") {
+    if (raw) {
+      const days = extractDaysLabel(raw);
+      if (days) return days;
+    }
+    return "Enabled";
+  }
+  if (canonical === "social_boost") return raw ? normalizeSocialBoostValue(raw) : "Enabled";
+  if (canonical === "embedded_video" || canonical === "weekly_newsletter_feature" || canonical === "audience_amplifier") {
+    return raw && !/^\d+$/.test(raw) ? raw : "Enabled";
+  }
+
+  if (!raw || /^\d+$/.test(raw)) return "Enabled";
+  if (normalizedRaw.includes("illimité")) return "No character limit";
+  return raw;
 }
 
 function extractOrderedOptionKeys(orderContextJson: Prisma.JsonValue | null): string[] {
@@ -78,6 +185,42 @@ function extractOrderedOptionKeys(orderContextJson: Prisma.JsonValue | null): st
   }
 
   return Array.from(keys);
+}
+
+function extractOrderedOptionValues(orderContextJson: Prisma.JsonValue | null): Record<string, string> {
+  const context = safeJsonObject(orderContextJson);
+  const optionValues = new Map<string, string>();
+  const enabledSet = new Set(
+    (Array.isArray(context.enabled_options) ? context.enabled_options : [])
+      .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+      .map((item) => canonicalizeOptionKey(item))
+  );
+
+  const options = Array.isArray(context.options)
+    ? context.options.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item))
+    : [];
+  for (const option of options) {
+    const enabledFlag = option.enabled;
+    const rawKey =
+      [option.canonical_key, option.option_key, option.key, option.code, option.slug, option.value, option.label, option.name].find(
+        (value) => typeof value === "string" && value.trim().length > 0
+      ) as string | undefined;
+    if (!rawKey) continue;
+
+    const canonical = canonicalizeOptionKey(rawKey);
+    if (!canonical) continue;
+    const isEnabled = Boolean(enabledFlag) || enabledSet.has(canonical);
+    if (!isEnabled) continue;
+    if (optionValues.has(canonical)) continue;
+
+    optionValues.set(canonical, resolveOptionValue(canonical, option, context));
+  }
+
+  for (const canonical of enabledSet) {
+    if (!optionValues.has(canonical)) optionValues.set(canonical, "Enabled");
+  }
+
+  return Object.fromEntries(optionValues);
 }
 
 function findNumericInMap(map: Record<string, unknown>, keys: string[]): number | null {
@@ -291,6 +434,7 @@ export function toListRow(submission: {
   const title = typeof form.title === "string" ? form.title.trim() : "-";
   const shortDescription = typeof form.short_product_description === "string" ? form.short_product_description.trim() : "-";
   const body = typeof form.body === "string" ? form.body.trim() : "-";
+  const notes = typeof form.notes === "string" ? form.notes.trim() : "-";
   return {
     id: submission.id,
     submissionId: submission.id,
@@ -312,10 +456,12 @@ export function toListRow(submission: {
     assetsSummary: assets.summary,
     hasAssets: assets.hasAssets,
     orderedOptionKeys: extractOrderedOptionKeys(submission.orderContextJson),
+    orderedOptionValues: extractOrderedOptionValues(submission.orderContextJson),
     previews: {
       title,
       shortDescription,
       body,
+      notes,
       quiz: summarizeQuiz(form),
       shipping: summarizeShipping(form),
       audienceAmplifier: summarizeAudienceAmplifier(form),
