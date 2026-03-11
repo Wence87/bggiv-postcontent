@@ -1,6 +1,7 @@
 "use client";
 
 import { type ComponentType, useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   ArrowDown,
   ArrowUp,
@@ -374,6 +375,8 @@ function SortHeader({
 }
 
 export default function AdminSubmissionsPageClient() {
+  const searchParams = useSearchParams();
+  const openSubmissionId = searchParams.get("openSubmissionId")?.trim() || "";
   const [token, setToken] = useState("");
   const [unauthorized, setUnauthorized] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -403,6 +406,7 @@ export default function AdminSubmissionsPageClient() {
   const [selectedRowIds, setSelectedRowIds] = useState<string[]>([]);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [openedFromQueryId, setOpenedFromQueryId] = useState<string | null>(null);
   const [detail, setDetail] = useState<DetailPayload | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [savingDetail, setSavingDetail] = useState(false);
@@ -494,7 +498,7 @@ export default function AdminSubmissionsPageClient() {
     void refresh();
   }, [refresh]);
 
-  const openDetail = async (id: string) => {
+  const openDetail = useCallback(async (id: string) => {
     setSelectedId(id);
     setDetail(null);
     setDetailLoading(true);
@@ -516,7 +520,14 @@ export default function AdminSubmissionsPageClient() {
     } finally {
       setDetailLoading(false);
     }
-  };
+  }, [adminFetch]);
+
+  useEffect(() => {
+    if (!token.trim() || !openSubmissionId) return;
+    if (openedFromQueryId === openSubmissionId) return;
+    setOpenedFromQueryId(openSubmissionId);
+    void openDetail(openSubmissionId);
+  }, [token, openSubmissionId, openedFromQueryId, openDetail]);
 
   const saveWorkflow = async () => {
     if (!selectedId) return;

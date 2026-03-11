@@ -26,13 +26,23 @@ final class BGGIV_Woo_Submit_Link {
         add_action('woocommerce_thankyou', [self::class, 'render_thank_you_link'], 20, 1);
         add_action('woocommerce_email_after_order_table', [self::class, 'render_email_link'], 20, 4);
         add_filter('woocommerce_my_account_my_orders_actions', [self::class, 'add_my_account_action'], 20, 2);
-        add_action('rest_api_init', [self::class, 'register_rest_routes']);
+        // Register late to avoid colliding with hardened bgg-order-context routes.
+        add_action('rest_api_init', [self::class, 'register_rest_routes'], 99);
     }
 
     public static function register_rest_routes(): void {
         // If hardened order-context plugin is active, do not override its route.
         if (class_exists('BGG_Order_Context_REST')) {
             return;
+        }
+
+        // Extra guard: if another plugin already registered this route, do not register legacy callback.
+        $server = rest_get_server();
+        if ($server && method_exists($server, 'get_routes')) {
+            $routes = $server->get_routes();
+            if (isset($routes['/bgg/v1/order-context'])) {
+                return;
+            }
         }
 
         register_rest_route(

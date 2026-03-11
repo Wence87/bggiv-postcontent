@@ -4,6 +4,7 @@ import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 
 export type AdminRole = "SUPER_ADMIN" | "CONTENT_ADMIN" | "OPS_ADMIN" | "PUBLISHER" | "CLIENT_PRO";
+const INTERNAL_COLLABORATOR_ROLES: AdminRole[] = ["SUPER_ADMIN", "CONTENT_ADMIN", "OPS_ADMIN"];
 
 export type AdminAuthContext = {
   role: AdminRole;
@@ -119,6 +120,14 @@ export async function authenticateAdminRequestWithCollaborators(request: NextReq
     },
   });
   if (!collaborator || !collaborator.isActive) return null;
+  if (!INTERNAL_COLLABORATOR_ROLES.includes(collaborator.role)) return null;
+
+  void prisma.collaborator
+    .update({
+      where: { id: collaborator.id },
+      data: { lastLoginAt: new Date() },
+    })
+    .catch(() => undefined);
 
   return {
     role: collaborator.role,
