@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { SubmissionDetailSheet, type SubmissionDetailPayload, type SubmissionWorkflowForm } from "@/components/admin/SubmissionDetailSheet";
 
 const ADMIN_TOKEN_KEY = "adminToken";
 
@@ -60,31 +61,7 @@ type CollaboratorDetail = {
   }>;
 };
 
-type SubmissionDetail = {
-  submission: {
-    id: string;
-    orderNumber: string | null;
-    linkedOrderId: string | null;
-    productType: string;
-    companyName: string;
-    contactEmail: string;
-    reservationStartsAt: string | null;
-    reservationMonthKey: string | null;
-    reservationWeekKey: string | null;
-    createdAt: string;
-    updatedAt: string;
-    formData: Record<string, unknown>;
-  };
-  workflow: {
-    editorialStatus: string;
-    publicationStatus: string;
-    reviewerAssignee: string;
-  };
-  pendingAction: {
-    label: string;
-    owner: "ADMIN" | "CLIENT" | "OPS";
-  };
-};
+type SubmissionDetail = SubmissionDetailPayload;
 
 const EMPTY_FORM = {
   firstName: "",
@@ -141,6 +118,19 @@ export default function CollaboratorsPageClient() {
   const [selectedSubmissionId, setSelectedSubmissionId] = useState<string | null>(null);
   const [submissionDetail, setSubmissionDetail] = useState<SubmissionDetail | null>(null);
   const [submissionLoading, setSubmissionLoading] = useState(false);
+  const [savingSubmission, setSavingSubmission] = useState(false);
+  const [submissionWorkflow, setSubmissionWorkflow] = useState<SubmissionWorkflowForm>({
+    orderPaymentStatus: "PAID",
+    editorialStatus: "SUBMITTED",
+    publicationStatus: "NOT_SCHEDULED",
+    reviewerAssignee: "",
+    reviewerCollaboratorId: "",
+    clientVisibleNote: "",
+    internalNote: "",
+    comment: "",
+    clientMessage: "",
+    requestClientChanges: false,
+  });
 
   useEffect(() => {
     const stored = window.localStorage.getItem(ADMIN_TOKEN_KEY) ?? "";
@@ -199,7 +189,42 @@ export default function CollaboratorsPageClient() {
     }
     const payload = (await response.json()) as SubmissionDetail;
     setSubmissionDetail(payload);
+    setSubmissionWorkflow({
+      orderPaymentStatus: payload.workflow.orderPaymentStatus,
+      editorialStatus: payload.workflow.editorialStatus,
+      publicationStatus: payload.workflow.publicationStatus,
+      reviewerAssignee: payload.workflow.reviewerAssignee || "",
+      reviewerCollaboratorId: payload.workflow.reviewerCollaboratorId || "",
+      clientVisibleNote: payload.workflow.clientVisibleNote || "",
+      internalNote: payload.workflow.internalNote || "",
+      comment: "",
+      clientMessage: "",
+      requestClientChanges: false,
+    });
     setSubmissionLoading(false);
+  };
+
+  const saveSubmissionWorkflow = async () => {
+    if (!selectedSubmissionId) return;
+    setSavingSubmission(true);
+    try {
+      const response = await fetch(`/api/admin/submissions/${selectedSubmissionId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...authHeaders },
+        body: JSON.stringify(submissionWorkflow),
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as { message?: string; code?: string };
+        setError(payload.message || payload.code || "Unable to save submission workflow.");
+        return;
+      }
+      await openSubmissionDetail(selectedSubmissionId);
+      if (selectedId) {
+        await openDetail(selectedId);
+      }
+    } finally {
+      setSavingSubmission(false);
+    }
   };
 
   const createCollaborator = async () => {
@@ -486,36 +511,18 @@ export default function CollaboratorsPageClient() {
         </SheetContent>
       </Sheet>
 
-      <Sheet open={Boolean(selectedSubmissionId)} onOpenChange={(open) => (!open ? setSelectedSubmissionId(null) : undefined)}>
-        <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-3xl">
-          <SheetHeader>
-            <SheetTitle>Submission detail</SheetTitle>
-            <SheetDescription>
-              Opened from collaborator: {detail?.collaborator.displayName ?? "-"}
-            </SheetDescription>
-          </SheetHeader>
-          {submissionLoading ? <div className="mt-8 text-sm text-muted-foreground">Loading...</div> : null}
-          {submissionDetail ? (
-            <div className="mt-6 space-y-4 text-sm">
-              <section className="rounded-md border p-4">
-                <p><span className="text-muted-foreground">Submission:</span> {submissionDetail.submission.id}</p>
-                <p><span className="text-muted-foreground">Order #:</span> {submissionDetail.submission.orderNumber ?? submissionDetail.submission.linkedOrderId ?? "-"}</p>
-                <p><span className="text-muted-foreground">Product:</span> {productLabel(submissionDetail.submission.productType)}</p>
-                <p><span className="text-muted-foreground">Company:</span> {submissionDetail.submission.companyName}</p>
-                <p><span className="text-muted-foreground">Contact:</span> {submissionDetail.submission.contactEmail}</p>
-                <p><span className="text-muted-foreground">Created:</span> {iso(submissionDetail.submission.createdAt)}</p>
-                <p><span className="text-muted-foreground">Updated:</span> {iso(submissionDetail.submission.updatedAt)}</p>
-              </section>
-              <section className="rounded-md border p-4">
-                <p><span className="text-muted-foreground">Editorial:</span> {submissionDetail.workflow.editorialStatus}</p>
-                <p><span className="text-muted-foreground">Publication:</span> {submissionDetail.workflow.publicationStatus}</p>
-                <p><span className="text-muted-foreground">Reviewer:</span> {submissionDetail.workflow.reviewerAssignee || "—"}</p>
-                <p><span className="text-muted-foreground">Pending action:</span> {submissionDetail.pendingAction.label} ({submissionDetail.pendingAction.owner})</p>
-              </section>
-            </div>
-          ) : null}
-        </SheetContent>
-      </Sheet>
+      <SubmissionDetailSheet
+        open={Boolean(selectedSubmissionId)}
+        onOpenChange={(open) => (!open ? setSelectedSubmissionId(null) : undefined)}
+        loading={submissionLoading}
+        detail={submissionDetail}
+        workflow={submissionWorkflow}
+        setWorkflow={setSubmissionWorkflow}
+        saving={savingSubmission}
+        onSave={() => void saveSubmissionWorkflow()}
+        canSeeInternalNotes={viewerRole !== "PUBLISHER" && viewerRole !== "CLIENT_PRO"}
+        contextSubtitle={`Opened from collaborator: ${detail?.collaborator.displayName ?? "-"}`}
+      />
 
       <Dialog open={Boolean(deleteTarget)} onOpenChange={(open) => (!open ? setDeleteTarget(null) : undefined)}>
         <DialogContent className="sm:max-w-md">

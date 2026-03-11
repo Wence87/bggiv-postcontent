@@ -158,6 +158,7 @@ model SubmitFormSubmission {
   updatedAt           DateTime @updatedAt
   ops                 SubmissionOps?
   auditEvents         SubmissionAuditEvent[]
+  clientMessages      SubmissionClientMessage[]
 
   @@index([linkedOrderId])
   @@index([orderNumber])
@@ -219,6 +220,19 @@ model SubmissionAuditEvent {
   fromValue       String?
   toValue         String?
   comment         String?
+  createdAt       DateTime  @default(now())
+
+  submission      SubmitFormSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@index([submissionId, createdAt])
+}
+
+model SubmissionClientMessage {
+  id              String    @id @default(cuid())
+  submissionId    String
+  actorRole       AdminRole
+  actorIdentifier String?
+  message         String
   createdAt       DateTime  @default(now())
 
   submission      SubmitFormSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
