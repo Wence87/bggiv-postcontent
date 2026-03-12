@@ -223,6 +223,17 @@ function hasChanged(left: string, right: string): boolean {
   return normalizeDiffValue(left) !== normalizeDiffValue(right);
 }
 
+const EXTRA_DIFF_FIELDS: Array<{ key: string; label: string }> = [
+  { key: "target_url", label: "Destination URL" },
+  { key: "website_url", label: "Website URL" },
+  { key: "embedded_video_link", label: "Embedded video link" },
+  { key: "prize_name", label: "Prize name" },
+  { key: "prize_short_description", label: "Prize short description" },
+  { key: "giveaway_category", label: "Giveaway category" },
+  { key: "ad_format", label: "Ad format" },
+  { key: "minimum_age", label: "Minimum age" },
+];
+
 type DiffSegment = {
   kind: "equal" | "add" | "remove";
   tokens: string[];
@@ -360,6 +371,16 @@ export function SubmissionDetailSheet({
       </p>
     );
   };
+
+  const shippingCurrent = shipping.length ? shipping.join(", ") : "-";
+  const shippingPrevious = previousFormData ? getStringList(previousFormData, "shipping_countries").join(", ") || "-" : "-";
+  const audienceAmplifierCurrent = summarizeAudienceAmplifier(formData);
+  const audienceAmplifierPrevious = previousFormData ? summarizeAudienceAmplifier(previousFormData) : "Not configured";
+  const visibleExtraFields = EXTRA_DIFF_FIELDS.filter(({ key }) => {
+    const current = getString(formData, key);
+    const previous = previousFormData ? getString(previousFormData, key) : "-";
+    return current !== "-" || previous !== "-";
+  });
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -559,9 +580,7 @@ export function SubmissionDetailSheet({
               <div className="mt-3 space-y-3 text-sm">
                 <div className="grid gap-3 md:grid-cols-2">
                   <div className="space-y-3">
-                    <div className="rounded border bg-white p-3">
-                      <p className="text-[11px] font-semibold uppercase text-muted-foreground">Previous</p>
-                    </div>
+                    <p className="px-1 text-[11px] font-semibold uppercase text-muted-foreground">Previous</p>
                     <div className="rounded border bg-white p-3">
                       <p className="text-xs uppercase text-muted-foreground">Title</p>
                       <p className="whitespace-pre-wrap">{previousFormData ? getString(previousFormData, "title") : "-"}</p>
@@ -578,11 +597,27 @@ export function SubmissionDetailSheet({
                       <p className="text-xs uppercase text-muted-foreground">Notes to admin</p>
                       <p className="whitespace-pre-wrap">{previousFormData ? getString(previousFormData, "notes") : "-"}</p>
                     </div>
+                    {visibleExtraFields.map((field) => (
+                      <div key={`prev-extra-${field.key}`} className="rounded border bg-white p-3">
+                        <p className="text-xs uppercase text-muted-foreground">{field.label}</p>
+                        <p className="whitespace-pre-wrap">{previousFormData ? getString(previousFormData, field.key) : "-"}</p>
+                      </div>
+                    ))}
+                    {(shippingCurrent !== "-" || shippingPrevious !== "-") ? (
+                      <div className="rounded border bg-white p-3">
+                        <p className="text-xs uppercase text-muted-foreground">Shipping countries</p>
+                        <p className="whitespace-pre-wrap">{shippingPrevious}</p>
+                      </div>
+                    ) : null}
+                    {(audienceAmplifierCurrent !== "Not configured" || audienceAmplifierPrevious !== "Not configured") ? (
+                      <div className="rounded border bg-white p-3">
+                        <p className="text-xs uppercase text-muted-foreground">Audience Amplifier configuration</p>
+                        <p className="whitespace-pre-wrap">{audienceAmplifierPrevious}</p>
+                      </div>
+                    ) : null}
                   </div>
                   <div className="space-y-3">
-                    <div className="rounded border bg-white p-3">
-                      <p className="text-[11px] font-semibold uppercase text-muted-foreground">Current</p>
-                    </div>
+                    <p className="px-1 text-[11px] font-semibold uppercase text-muted-foreground">Current</p>
                     <div className="rounded border bg-white p-3">
                       <p className="text-xs uppercase text-muted-foreground">Title</p>
                       {renderCurrentValue(previousFormData ? getString(previousFormData, "title") : null, getString(formData, "title"))}
@@ -602,6 +637,24 @@ export function SubmissionDetailSheet({
                       <p className="text-xs uppercase text-muted-foreground">Notes to admin</p>
                       {renderCurrentValue(previousFormData ? getString(previousFormData, "notes") : null, getString(formData, "notes"))}
                     </div>
+                    {visibleExtraFields.map((field) => (
+                      <div key={`curr-extra-${field.key}`} className="rounded border bg-white p-3">
+                        <p className="text-xs uppercase text-muted-foreground">{field.label}</p>
+                        {renderCurrentValue(previousFormData ? getString(previousFormData, field.key) : null, getString(formData, field.key))}
+                      </div>
+                    ))}
+                    {(shippingCurrent !== "-" || shippingPrevious !== "-") ? (
+                      <div className="rounded border bg-white p-3">
+                        <p className="text-xs uppercase text-muted-foreground">Shipping countries</p>
+                        {renderCurrentValue(previousFormData ? shippingPrevious : null, shippingCurrent)}
+                      </div>
+                    ) : null}
+                    {(audienceAmplifierCurrent !== "Not configured" || audienceAmplifierPrevious !== "Not configured") ? (
+                      <div className="rounded border bg-white p-3">
+                        <p className="text-xs uppercase text-muted-foreground">Audience Amplifier configuration</p>
+                        {renderCurrentValue(previousFormData ? audienceAmplifierPrevious : null, audienceAmplifierCurrent)}
+                      </div>
+                    ) : null}
                   </div>
                 </div>
 
