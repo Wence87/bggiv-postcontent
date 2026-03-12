@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import { Check, Copy } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -594,6 +595,7 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isReserving, setIsReserving] = useState(false);
   const [reservationConfirmed, setReservationConfirmed] = useState(false);
+  const [deliveryTipCopied, setDeliveryTipCopied] = useState(false);
   const [reservationChoice, setReservationChoice] = useState<ReservationChoice>({});
 
   const [selectedAdsWeek, setSelectedAdsWeek] = useState<AdsWeek | null>(null);
@@ -1228,8 +1230,15 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
 
     if (!field.required) return true;
     if (field.type === "file") {
+      const existingByField: Record<string, string | null> = {
+        banner_image_upload: currentContext.existing_submission?.assets?.banner_image_name ?? null,
+        cover_image_upload: currentContext.existing_submission?.assets?.banner_image_name ?? null,
+        additional_image_1: currentContext.existing_submission?.assets?.additional_image_1_name ?? null,
+        additional_image_2: currentContext.existing_submission?.assets?.additional_image_2_name ?? null,
+        additional_image_3: currentContext.existing_submission?.assets?.additional_image_3_name ?? null,
+      };
+      if (existingByField[field.key]) return true;
       if (fileValues[field.key]) return true;
-      if ((field.key === "cover_image_upload" || field.key === "banner_image_upload") && hasExistingBannerImage) return true;
       return false;
     }
     if (field.key === "body") return (values.body ?? "").trim().length > 0;
@@ -1273,10 +1282,12 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
 
       if (field.type === "file" && field.key === "banner_image_upload") {
         const file = fileValues.banner_image_upload;
-        if (!file) {
+        const existingBanner = currentContext.existing_submission?.assets?.banner_image_name ?? null;
+        if (!file && !existingBanner) {
           setValidationError("Missing required field: Banner image");
           return false;
         }
+        if (!file) continue;
 
         const lowerName = file.name.toLowerCase();
         const hasValidExtension = lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg");
@@ -1293,10 +1304,12 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
 
       if (field.type === "file" && field.key === "cover_image_upload") {
         const file = fileValues.cover_image_upload;
-        if (!file) {
+        const existingCover = currentContext.existing_submission?.assets?.banner_image_name ?? null;
+        if (!file && !existingCover) {
           setValidationError("Missing required field: Cover image");
           return false;
         }
+        if (!file) continue;
         const lowerName = file.name.toLowerCase();
         if (!lowerName.endsWith(".jpg") && !lowerName.endsWith(".jpeg") && !lowerName.endsWith(".webp")) {
           setValidationError("Invalid image format. Only WEBP/JPG/JPEG files are allowed.");
@@ -1461,6 +1474,35 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
       setSubmitError(submitRequestError instanceof Error ? submitRequestError.message : "Submission failed");
     } finally {
       setIsSubmitting(false);
+    }
+  }
+
+  function hasMissingRequiredFields(): boolean {
+    const fieldsToCheck = isPostsProduct ? effectivePostsFields : formFields;
+    return fieldsToCheck.some((field) => {
+      if (!field.required) return false;
+      if (field.type === "file") {
+        const existingByField: Record<string, string | null> = {
+          banner_image_upload: currentContext.existing_submission?.assets?.banner_image_name ?? null,
+          cover_image_upload: currentContext.existing_submission?.assets?.banner_image_name ?? null,
+          additional_image_1: currentContext.existing_submission?.assets?.additional_image_1_name ?? null,
+          additional_image_2: currentContext.existing_submission?.assets?.additional_image_2_name ?? null,
+          additional_image_3: currentContext.existing_submission?.assets?.additional_image_3_name ?? null,
+        };
+        return !fileValues[field.key] && !existingByField[field.key];
+      }
+      if (field.key === "body") return (values.body ?? "").trim().length === 0;
+      return !values[field.key] || values[field.key].trim().length === 0;
+    });
+  }
+
+  async function handleCopyDeliveryAddress() {
+    try {
+      await navigator.clipboard.writeText("noreply@boardgamegiveaways.com");
+      setDeliveryTipCopied(true);
+      window.setTimeout(() => setDeliveryTipCopied(false), 1500);
+    } catch {
+      setDeliveryTipCopied(false);
     }
   }
 
@@ -1738,7 +1780,6 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
   }
 
   const productType = currentContext.product.product_type;
-  const hasExistingBannerImage = Boolean(currentContext.existing_submission?.assets?.banner_image_name);
   const existingAssetNames = {
     banner_image_upload: currentContext.existing_submission?.assets?.banner_image_name ?? null,
     cover_image_upload: currentContext.existing_submission?.assets?.banner_image_name ?? null,
@@ -1750,6 +1791,7 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
   const hasConfirmedReservation =
     reservationConfirmed &&
     Boolean(reservationChoice.weekKey || reservationChoice.monthKey || reservationChoice.startsAtUtc);
+  const submitDisabled = isSubmitting || !hasConfirmedReservation || hasMissingRequiredFields();
   const candidatePostStartsAtUtc =
     selectedPostDayKey && selectedPostHour != null
       ? (() => {
@@ -2231,7 +2273,37 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
             )}
             {validationError ? <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{validationError}</div> : null}
             {submitError ? <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{submitError}</div> : null}
-            <Button type="submit" disabled={isSubmitting || !hasConfirmedReservation}>
+            {hasConfirmedReservation ? (
+              <div className="rounded-md border border-yellow-200 bg-yellow-50 p-3">
+                <div className="flex items-start gap-2">
+                  <span aria-hidden="true" className="text-base leading-5">💡</span>
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <p className="text-sm font-semibold text-yellow-900">Tip</p>
+                    <p className="text-xs text-yellow-900">
+                      To make sure you receive update requests regarding your submission, please add this address to your contacts:
+                    </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <code className="rounded bg-yellow-100 px-2 py-1 font-mono text-xs text-yellow-900">noreply@boardgamegiveaways.com</code>
+                      <button
+                        type="button"
+                        onClick={() => void handleCopyDeliveryAddress()}
+                        className="inline-flex h-7 w-7 items-center justify-center rounded border border-yellow-300 bg-white text-yellow-900 hover:bg-yellow-100"
+                        title="Copy email address"
+                        aria-label="Copy email address"
+                      >
+                        {deliveryTipCopied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                      </button>
+                      {deliveryTipCopied ? <span className="text-xs font-medium text-emerald-700">Copied!</span> : null}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+            <Button
+              type="submit"
+              disabled={submitDisabled}
+              className={submitDisabled ? "cursor-not-allowed opacity-60" : ""}
+            >
               {isSubmitting ? "Submitting..." : "Validate form"}
             </Button>
           </form>
