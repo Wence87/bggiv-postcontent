@@ -501,7 +501,20 @@ export default function CollaboratorsPageClient() {
                     </TableHeader>
                     <TableBody>
                       {detail.assignments.map((row) => (
-                        <TableRow key={row.submissionId}>
+                        <TableRow
+                          key={row.submissionId}
+                          role="button"
+                          tabIndex={0}
+                          aria-label={`Open submission detail for order ${row.orderNumber}`}
+                          className="cursor-pointer hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-sky-200"
+                          onClick={() => void openSubmissionDetail(row.submissionId)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              void openSubmissionDetail(row.submissionId);
+                            }
+                          }}
+                        >
                           <TableCell>
                             <Button
                               type="button"
@@ -510,7 +523,10 @@ export default function CollaboratorsPageClient() {
                               className="h-8 w-8 p-0"
                               title="Open submission detail"
                               aria-label="Open submission detail"
-                              onClick={() => void openSubmissionDetail(row.submissionId)}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void openSubmissionDetail(row.submissionId);
+                              }}
                             >
                               <Eye className="h-4 w-4" />
                             </Button>
