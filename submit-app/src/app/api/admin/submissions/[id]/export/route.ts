@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { authenticateAdminRequestWithCollaborators, buildSubmissionScopeWhere, canDownloadExports } from "@/lib/adminAuth";
-import { formatReservedSlot, summarizePurchasedOptions } from "@/lib/adminSubmissions";
+import { formatReservedSlot, summarizeAssets, summarizePurchasedOptions } from "@/lib/adminSubmissions";
 import { prisma } from "@/lib/prisma";
 import { createZip } from "@/lib/zip";
 
@@ -22,12 +22,172 @@ function toCsvRow(values: string[]): string {
     .join(",");
 }
 
-function asString(value: unknown): string {
-  return typeof value === "string" ? value : "";
-}
-
 function asStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : [];
+}
+
+function rtfEscape(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/\{/g, "\\{").replace(/\}/g, "\\}");
+}
+
+function toRtfParagraph(value: string): string {
+  return rtfEscape(value).replace(/\r?\n/g, "\\line ");
+}
+
+type EditorialSection = {
+  title: string;
+  rows: Array<{ label: string; value: string }>;
+};
+
+function appendIfPresent(rows: Array<{ label: string; value: string }>, label: string, value: unknown) {
+  if (typeof value !== "string") return;
+  const trimmed = value.trim();
+  if (!trimmed) return;
+  rows.push({ label, value: trimmed });
+}
+
+function buildEditorialSections(input: {
+  submission: {
+    orderNumber: string | null;
+    linkedOrderId: string | null;
+    productType: string;
+    companyName: string;
+    contactEmail: string;
+  };
+  form: Record<string, unknown>;
+  reservedSlot: string;
+  purchasedOptionsSummary: string;
+}): EditorialSection[] {
+  const { submission, form, reservedSlot, purchasedOptionsSummary } = input;
+  const sections: EditorialSection[] = [];
+
+  sections.push({
+    title: "Submission summary",
+    rows: [
+      { label: "Order number", value: submission.orderNumber || "-" },
+      { label: "Linked order ID", value: submission.linkedOrderId || "-" },
+      { label: "Product type", value: submission.productType },
+      { label: "Company", value: submission.companyName },
+      { label: "Contact email", value: submission.contactEmail },
+      { label: "Reserved slot", value: reservedSlot },
+      { label: "Purchased options", value: purchasedOptionsSummary || "-" },
+    ],
+  });
+
+  const editorialRows: Array<{ label: string; value: string }> = [];
+  appendIfPresent(editorialRows, "Title", form.title);
+  appendIfPresent(editorialRows, "Short product description", form.short_product_description);
+  appendIfPresent(editorialRows, "Body", form.body);
+  appendIfPresent(editorialRows, "Notes to admin", form.notes);
+  if (editorialRows.length) {
+    sections.push({ title: "Editorial content", rows: editorialRows });
+  }
+
+  const linksRows: Array<{ label: string; value: string }> = [];
+  appendIfPresent(linksRows, "Destination URL", form.destination_url);
+  appendIfPresent(linksRows, "Website URL", form.website_url);
+  appendIfPresent(linksRows, "Product URL", form.product_url);
+  appendIfPresent(linksRows, "Target URL", form.target_url);
+  appendIfPresent(linksRows, "Visit page URL", form.visit_page_url);
+  appendIfPresent(linksRows, "Embedded video link", form.embedded_video_link);
+  appendIfPresent(linksRows, "Embedded video URL", form.embedded_video_url);
+  appendIfPresent(linksRows, "Call to action URL", form.call_to_action_url);
+  if (linksRows.length) {
+    sections.push({ title: "Links", rows: linksRows });
+  }
+
+  const giveawayRows: Array<{ label: string; value: string }> = [];
+  appendIfPresent(giveawayRows, "Prize name", form.prize_name);
+  appendIfPresent(giveawayRows, "Prize short description", form.prize_short_description);
+  appendIfPresent(giveawayRows, "Giveaway category", form.giveaway_category);
+  appendIfPresent(giveawayRows, "Prize unit value (USD)", String(form.prize_unit_value_usd ?? ""));
+  appendIfPresent(giveawayRows, "Number of units offered", String(form.prize_units_count ?? ""));
+  appendIfPresent(giveawayRows, "Minimum age", String(form.minimum_age ?? ""));
+  const shipping = asStringArray(form.shipping_countries);
+  if (shipping.length) {
+    giveawayRows.push({ label: "Shipping countries", value: shipping.join(", ") });
+  }
+  if (giveawayRows.length) {
+    sections.push({ title: "Giveaway details", rows: giveawayRows });
+  }
+
+  const quizRows: Array<{ label: string; value: string }> = [];
+  appendIfPresent(quizRows, "Question", form.giveaway_question);
+  appendIfPresent(quizRows, "Correct answer", form.answer_correct);
+  appendIfPresent(quizRows, "Wrong answer 1", form.answer_wrong_1);
+  appendIfPresent(quizRows, "Wrong answer 2", form.answer_wrong_2);
+  appendIfPresent(quizRows, "Wrong answer 3", form.answer_wrong_3);
+  appendIfPresent(quizRows, "Wrong answer 4", form.answer_wrong_4);
+  if (quizRows.length) {
+    sections.push({ title: "Quiz", rows: quizRows });
+  }
+
+  const audienceRows: Array<{ label: string; value: string }> = [];
+  const audienceActions =
+    form.audience_amplifier_actions && typeof form.audience_amplifier_actions === "object" && !Array.isArray(form.audience_amplifier_actions)
+      ? (form.audience_amplifier_actions as Record<string, unknown>)
+      : null;
+  if (audienceActions) {
+    const actionLabels: Record<string, string> = {
+      boardgamegeek_thread_url: "BoardGameGeek thread URL",
+      tweet_message_text: "Tweet message text",
+      newsletter_signup_url: "Newsletter signup URL",
+      instagram_url: "Instagram URL",
+      tiktok_url: "TikTok URL",
+      youtube_channel_url: "YouTube channel URL",
+      x_profile_url: "X profile URL",
+      youtube_video_url: "YouTube video URL",
+      visit_page_url: "Visit page URL",
+    };
+    for (const [key, label] of Object.entries(actionLabels)) {
+      appendIfPresent(audienceRows, label, audienceActions[key]);
+    }
+    const referFriend =
+      audienceActions.refer_a_friend && typeof audienceActions.refer_a_friend === "object" && !Array.isArray(audienceActions.refer_a_friend)
+        ? (audienceActions.refer_a_friend as Record<string, unknown>)
+        : null;
+    if (referFriend) {
+      appendIfPresent(audienceRows, "Refer a friend message", referFriend.referral_message);
+      appendIfPresent(audienceRows, "Refer a friend target URL", referFriend.target_url);
+    }
+  }
+  if (audienceRows.length) {
+    sections.push({ title: "Audience amplifier", rows: audienceRows });
+  }
+
+  return sections;
+}
+
+function buildEditorialRtf(input: {
+  submission: {
+    orderNumber: string | null;
+    linkedOrderId: string | null;
+    productType: string;
+    companyName: string;
+    contactEmail: string;
+  };
+  form: Record<string, unknown>;
+  reservedSlot: string;
+  purchasedOptionsSummary: string;
+}): string {
+  const sections = buildEditorialSections(input);
+  const lines: string[] = [];
+  lines.push("{\\rtf1\\ansi\\deff0");
+  lines.push("{\\fonttbl{\\f0 Arial;}}");
+  lines.push("\\fs24");
+  lines.push("\\b Submission content export\\b0\\par");
+  lines.push("\\par");
+
+  for (const section of sections) {
+    lines.push(`\\b ${toRtfParagraph(section.title)}\\b0\\par`);
+    for (const row of section.rows) {
+      lines.push(`\\b ${toRtfParagraph(row.label)}:\\b0 ${toRtfParagraph(row.value)}\\par`);
+    }
+    lines.push("\\par");
+  }
+
+  lines.push("}");
+  return lines.join("\n");
 }
 
 export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }) {
@@ -54,34 +214,9 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
   const form = submission.formDataJson && typeof submission.formDataJson === "object"
     ? (submission.formDataJson as Record<string, unknown>)
     : {};
-  const title = typeof form.title === "string" ? form.title : "";
-  const shortDescription = typeof form.short_product_description === "string" ? form.short_product_description : "";
-  const body = typeof form.body === "string" ? form.body : "";
-  const notesToAdmin = typeof form.notes === "string" ? form.notes : "";
-  const giveawayDetails = [
-    asString(form.prize_name),
-    asString(form.giveaway_category),
-    asString(form.prize_units_count),
-    asString(form.prize_unit_value_usd),
-  ]
-    .filter(Boolean)
-    .join(" | ");
-  const quizQuestion = asString(form.giveaway_question);
-  const quizAnswers = [
-    asString(form.answer_correct),
-    asString(form.answer_wrong_1),
-    asString(form.answer_wrong_2),
-    asString(form.answer_wrong_3),
-    asString(form.answer_wrong_4),
-  ]
-    .filter(Boolean)
-    .join(" | ");
-  const shippingCountries = asStringArray(form.shipping_countries).join(", ");
-  const audienceAmplifier = form.audience_amplifier_actions && typeof form.audience_amplifier_actions === "object"
-    ? JSON.stringify(form.audience_amplifier_actions)
-    : "";
   const purchasedOptionsSummary = summarizePurchasedOptions(submission);
   const reservedSlot = formatReservedSlot(submission);
+  const assetsSummary = summarizeAssets(submission).summary;
 
   if (format === "csv") {
     const header = toCsvRow([
@@ -97,18 +232,10 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
       "payment_status",
       "editorial_status",
       "publication_status",
-      "assignee",
+      "reviewer_assignee",
       "reserved_slot",
-      "title",
-      "short_description",
-      "body",
-      "notes_to_admin",
+      "assets_summary",
       "purchased_options_summary",
-      "giveaway_details",
-      "quiz_question",
-      "quiz_answers",
-      "shipping_countries",
-      "audience_amplifier_configuration",
       "created_at",
       "updated_at",
     ]);
@@ -127,16 +254,8 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
       submission.ops?.publicationStatus || "NOT_SCHEDULED",
       submission.ops?.reviewerAssignee || "",
       reservedSlot,
-      title,
-      shortDescription,
-      body,
-      notesToAdmin,
+      assetsSummary,
       purchasedOptionsSummary,
-      giveawayDetails,
-      quizQuestion,
-      quizAnswers,
-      shippingCountries,
-      audienceAmplifier,
       submission.createdAt.toISOString(),
       submission.updatedAt.toISOString(),
     ]);
@@ -145,67 +264,74 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
       status: 200,
       headers: {
         "Content-Type": "text/csv; charset=utf-8",
-        "Content-Disposition": `attachment; filename=\"${orderPrefix}-submission.csv\"`,
+        "Content-Disposition": `attachment; filename=\"${orderPrefix}-metadata.csv\"`,
       },
     });
   }
 
   if (format === "package") {
-    const packageHeader = toCsvRow([
+    const metadataHeader = toCsvRow([
       "submission_id",
       "order_number",
       "linked_order_id",
       "product_type",
       "company",
       "contact_email",
+      "reservation_month_key",
+      "reservation_week_key",
+      "reservation_starts_at",
       "reserved_slot",
       "payment_status",
       "editorial_status",
       "publication_status",
       "reviewer_assignee",
-      "title",
-      "short_product_description",
-      "body",
-      "notes_to_admin",
+      "assets_summary",
       "purchased_options_summary",
-      "giveaway_details",
-      "quiz_question",
-      "quiz_answers",
-      "shipping_countries",
-      "audience_amplifier_configuration",
       "created_at",
       "updated_at",
     ]);
-    const packageRow = toCsvRow([
+    const metadataRow = toCsvRow([
       submission.id,
       submission.orderNumber || "",
       submission.linkedOrderId || "",
       submission.productType,
       submission.companyName,
       submission.contactEmail,
+      submission.reservationMonthKey || "",
+      submission.reservationWeekKey || "",
+      submission.reservationStartsAt?.toISOString() || "",
       reservedSlot,
       submission.ops?.orderPaymentStatus || "PAID",
       submission.ops?.editorialStatus || "SUBMITTED",
       submission.ops?.publicationStatus || "NOT_SCHEDULED",
       submission.ops?.reviewerAssignee || "",
-      title,
-      shortDescription,
-      body,
-      notesToAdmin,
+      assetsSummary,
       purchasedOptionsSummary,
-      giveawayDetails,
-      quizQuestion,
-      quizAnswers,
-      shippingCountries,
-      audienceAmplifier,
       submission.createdAt.toISOString(),
       submission.updatedAt.toISOString(),
     ]);
+    const editorialRtf = buildEditorialRtf({
+      submission: {
+        orderNumber: submission.orderNumber,
+        linkedOrderId: submission.linkedOrderId,
+        productType: submission.productType,
+        companyName: submission.companyName,
+        contactEmail: submission.contactEmail,
+      },
+      form,
+      reservedSlot,
+      purchasedOptionsSummary,
+    });
 
     const zip = createZip([
       {
-        name: `${orderPrefix}-submission.csv`,
-        data: new TextEncoder().encode(`${packageHeader}\n${packageRow}\n`),
+        name: `${orderPrefix}-metadata.csv`,
+        data: new TextEncoder().encode(`${metadataHeader}\n${metadataRow}\n`),
+        modifiedAt: submission.updatedAt,
+      },
+      {
+        name: `${orderPrefix}-content.rtf`,
+        data: new TextEncoder().encode(editorialRtf),
         modifiedAt: submission.updatedAt,
       },
       {
