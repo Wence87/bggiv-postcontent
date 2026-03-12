@@ -78,22 +78,9 @@ function buildEditorialSections(input: {
   appendIfPresent(editorialRows, "Title", form.title);
   appendIfPresent(editorialRows, "Short product description", form.short_product_description);
   appendIfPresent(editorialRows, "Body", form.body);
-  appendIfPresent(editorialRows, "Notes to admin", form.notes);
+  appendIfPresent(editorialRows, "Embedded video link", form.embedded_video_link);
   if (editorialRows.length) {
     sections.push({ title: "Editorial content", rows: editorialRows });
-  }
-
-  const linksRows: Array<{ label: string; value: string }> = [];
-  appendIfPresent(linksRows, "Destination URL", form.destination_url);
-  appendIfPresent(linksRows, "Website URL", form.website_url);
-  appendIfPresent(linksRows, "Product URL", form.product_url);
-  appendIfPresent(linksRows, "Target URL", form.target_url);
-  appendIfPresent(linksRows, "Visit page URL", form.visit_page_url);
-  appendIfPresent(linksRows, "Embedded video link", form.embedded_video_link);
-  appendIfPresent(linksRows, "Embedded video URL", form.embedded_video_url);
-  appendIfPresent(linksRows, "Call to action URL", form.call_to_action_url);
-  if (linksRows.length) {
-    sections.push({ title: "Links", rows: linksRows });
   }
 
   const giveawayRows: Array<{ label: string; value: string }> = [];
@@ -180,6 +167,15 @@ function buildEditorialRtf(input: {
 
   for (const section of sections) {
     lines.push(`\\b ${toRtfParagraph(section.title)}\\b0\\par`);
+    if (section.title === "Editorial content") {
+      lines.push("\\par");
+      for (const row of section.rows) {
+        lines.push(`\\b ${toRtfParagraph(row.label)}\\b0\\par`);
+        lines.push(`${toRtfParagraph(row.value)}\\par`);
+        lines.push("\\par");
+      }
+      continue;
+    }
     for (const row of section.rows) {
       lines.push(`\\b ${toRtfParagraph(row.label)}:\\b0 ${toRtfParagraph(row.value)}\\par`);
     }
