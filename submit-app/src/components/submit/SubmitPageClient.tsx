@@ -147,6 +147,21 @@ type OrderContextResponse = {
     validation: string;
   }>;
   config_version: number | null;
+  existing_submission?: {
+    submission_id: string;
+    linked_order_id: string | null;
+    order_number: string | null;
+    reservation_month_key: string | null;
+    reservation_week_key: string | null;
+    reservation_starts_at: string | null;
+    form_data: Record<string, unknown>;
+    assets?: {
+      banner_image_name?: string | null;
+      additional_image_1_name?: string | null;
+      additional_image_2_name?: string | null;
+      additional_image_3_name?: string | null;
+    };
+  };
 };
 
 type ReservationChoice = {
@@ -330,6 +345,38 @@ function isValidOrderContextPayload(payload: unknown): payload is OrderContextRe
   if (!record.product || typeof record.product !== "object") return false;
   const product = record.product as Record<string, unknown>;
   return typeof product.product_type === "string" && typeof product.product_key === "string";
+}
+
+function brusselsDayHourFromIso(iso: string): { dayKey: string; hour: number } | null {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+  const formatter = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Brussels",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    hour12: false,
+  });
+  const parts: Record<string, string> = {};
+  for (const part of formatter.formatToParts(date)) {
+    if (part.type !== "literal") parts[part.type] = part.value;
+  }
+  const year = parts.year;
+  const month = parts.month;
+  const day = parts.day;
+  const hour = Number(parts.hour);
+  if (!year || !month || !day || !Number.isFinite(hour)) return null;
+  return { dayKey: `${year}-${month}-${day}`, hour };
+}
+
+function toStringMap(input: Record<string, unknown>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(input)) {
+    if (typeof value === "string") out[key] = value;
+    else if (typeof value === "number" || typeof value === "boolean") out[key] = String(value);
+  }
+  return out;
 }
 
 function weekKeyToDate(weekKey: string): string {
@@ -624,21 +671,86 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
         if (!cancelled) {
           setContext(parsed as OrderContextResponse);
           const parsedContext = parsed as OrderContextResponse;
+          const existingFormData =
+            parsedContext.existing_submission?.form_data &&
+            typeof parsedContext.existing_submission.form_data === "object" &&
+            !Array.isArray(parsedContext.existing_submission.form_data)
+              ? parsedContext.existing_submission.form_data
+              : null;
+          const existingFormStrings = existingFormData ? toStringMap(existingFormData) : {};
+          const existingAudienceAmplifier =
+            existingFormData && existingFormData.audience_amplifier_actions && typeof existingFormData.audience_amplifier_actions === "object" && !Array.isArray(existingFormData.audience_amplifier_actions)
+              ? (existingFormData.audience_amplifier_actions as Record<string, unknown>)
+              : null;
+          const existingReferAFriend =
+            existingAudienceAmplifier?.refer_a_friend && typeof existingAudienceAmplifier.refer_a_friend === "object" && !Array.isArray(existingAudienceAmplifier.refer_a_friend)
+              ? (existingAudienceAmplifier.refer_a_friend as Record<string, unknown>)
+              : null;
+
           setValues({
+            ...existingFormStrings,
             company_name: parsedContext.prefill?.company_name ?? "",
             contact_email: parsedContext.prefill?.contact_email ?? "",
+            audience_amplifier_boardgamegeek_thread_url:
+              typeof existingAudienceAmplifier?.boardgamegeek_thread_url === "string" ? existingAudienceAmplifier.boardgamegeek_thread_url : "",
+            audience_amplifier_tweet_message_text:
+              typeof existingAudienceAmplifier?.tweet_message_text === "string" ? existingAudienceAmplifier.tweet_message_text : "",
+            audience_amplifier_newsletter_signup_url:
+              typeof existingAudienceAmplifier?.newsletter_signup_url === "string" ? existingAudienceAmplifier.newsletter_signup_url : "",
+            audience_amplifier_instagram_url:
+              typeof existingAudienceAmplifier?.instagram_url === "string" ? existingAudienceAmplifier.instagram_url : "",
+            audience_amplifier_tiktok_url:
+              typeof existingAudienceAmplifier?.tiktok_url === "string" ? existingAudienceAmplifier.tiktok_url : "",
+            audience_amplifier_youtube_channel_url:
+              typeof existingAudienceAmplifier?.youtube_channel_url === "string" ? existingAudienceAmplifier.youtube_channel_url : "",
+            audience_amplifier_x_profile_url:
+              typeof existingAudienceAmplifier?.x_profile_url === "string" ? existingAudienceAmplifier.x_profile_url : "",
+            audience_amplifier_referral_message:
+              typeof existingReferAFriend?.referral_message === "string" ? existingReferAFriend.referral_message : "",
+            audience_amplifier_referral_target_url:
+              typeof existingReferAFriend?.target_url === "string" ? existingReferAFriend.target_url : "",
+            audience_amplifier_youtube_video_url:
+              typeof existingAudienceAmplifier?.youtube_video_url === "string" ? existingAudienceAmplifier.youtube_video_url : "",
+            audience_amplifier_visit_page_url:
+              typeof existingAudienceAmplifier?.visit_page_url === "string" ? existingAudienceAmplifier.visit_page_url : "",
           });
           setFileValues({});
+          const existingReservationChoice: ReservationChoice = {
+            monthKey: parsedContext.existing_submission?.reservation_month_key ?? undefined,
+            weekKey: parsedContext.existing_submission?.reservation_week_key ?? undefined,
+            startsAtUtc: parsedContext.existing_submission?.reservation_starts_at ?? undefined,
+          };
+          const hasExistingReservation = Boolean(
+            existingReservationChoice.monthKey || existingReservationChoice.weekKey || existingReservationChoice.startsAtUtc
+          );
+          setReservationChoice(hasExistingReservation ? existingReservationChoice : {});
+          setReservationConfirmed(hasExistingReservation);
+          if (existingReservationChoice.weekKey) {
+            setReservedAdsWeekKeys([existingReservationChoice.weekKey]);
+          } else {
+            setReservedAdsWeekKeys([]);
+          }
+          setSelectedAdsWeek(null);
+          setSelectedSponsorshipMonth(null);
+          if (existingReservationChoice.startsAtUtc) {
+            const slot = brusselsDayHourFromIso(existingReservationChoice.startsAtUtc);
+            setSelectedPostDayKey(slot?.dayKey ?? null);
+            setSelectedPostHour(slot?.hour ?? null);
+          } else {
+            setSelectedPostDayKey(null);
+            setSelectedPostHour(null);
+          }
+          const shippingFromExisting = Array.isArray(existingFormData?.shipping_countries)
+            ? existingFormData!.shipping_countries.filter((entry): entry is string => typeof entry === "string")
+            : [];
+          setSelectedShippingCountries(shippingFromExisting);
+          const highlightsFromExisting = Array.isArray(existingFormData?.selected_highlight_options)
+            ? existingFormData!.selected_highlight_options.filter((entry): entry is string => typeof entry === "string")
+            : [];
+          setSelectedHighlightOptions(highlightsFromExisting);
           setValidationError(null);
           setSubmitError(null);
           setReservationError(null);
-          setReservationConfirmed(false);
-          setReservationChoice({});
-          setSelectedAdsWeek(null);
-          setReservedAdsWeekKeys([]);
-          setSelectedSponsorshipMonth(null);
-          setSelectedPostDayKey(null);
-          setSelectedPostHour(null);
           setDiagnostic({
             endpoint: contextEndpoint,
             status: response.status,
@@ -1115,7 +1227,11 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
     }
 
     if (!field.required) return true;
-    if (field.type === "file") return Boolean(fileValues[field.key]);
+    if (field.type === "file") {
+      if (fileValues[field.key]) return true;
+      if ((field.key === "cover_image_upload" || field.key === "banner_image_upload") && hasExistingBannerImage) return true;
+      return false;
+    }
     if (field.key === "body") return (values.body ?? "").trim().length > 0;
     const rawValue = values[field.key];
     return typeof rawValue === "string" && rawValue.trim().length > 0;
@@ -1614,6 +1730,7 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
   }
 
   const productType = currentContext.product.product_type;
+  const hasExistingBannerImage = Boolean(currentContext.existing_submission?.assets?.banner_image_name);
   const productBadgeLabel = productType === "promo" ? "Promo Deal" : productType.toUpperCase();
   const hasConfirmedReservation =
     reservationConfirmed &&

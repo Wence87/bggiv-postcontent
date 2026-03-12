@@ -423,6 +423,39 @@ export async function POST(request: NextRequest) {
   if (!linkedOrderId) {
     return apiError(422, "ORDER_ID_MISSING", "Valid WooCommerce order id is missing from order context");
   }
+  const existingSubmissionId = typeof context.existing_submission?.submission_id === "string"
+    ? context.existing_submission.submission_id
+    : null;
+  const existingSubmissionForEdit = existingSubmissionId
+    ? await prisma.submitFormSubmission.findUnique({
+        where: { id: existingSubmissionId },
+        select: {
+          id: true,
+          productType: true,
+          linkedOrderId: true,
+          contactEmail: true,
+          reservationMonthKey: true,
+          reservationWeekKey: true,
+          reservationStartsAt: true,
+          bannerImageName: true,
+          bannerImageMimeType: true,
+          bannerImageSize: true,
+          bannerImageData: true,
+          additionalImage1Name: true,
+          additionalImage1MimeType: true,
+          additionalImage1Size: true,
+          additionalImage1Data: true,
+          additionalImage2Name: true,
+          additionalImage2MimeType: true,
+          additionalImage2Size: true,
+          additionalImage2Data: true,
+          additionalImage3Name: true,
+          additionalImage3MimeType: true,
+          additionalImage3Size: true,
+          additionalImage3Data: true,
+        },
+      })
+    : null;
 
   const companyName = normalizeString(formData.company_name);
   const contactEmail = normalizeString(formData.contact_email);
@@ -459,6 +492,15 @@ export async function POST(request: NextRequest) {
   const prefilledContactEmail = normalizeString((context as { prefill?: { contact_email?: string } }).prefill?.contact_email);
   const effectiveCompanyName = prefilledCompanyName || companyName;
   const effectiveContactEmail = prefilledContactEmail || contactEmail;
+  if (
+    existingSubmissionForEdit &&
+    (
+      (existingSubmissionForEdit.linkedOrderId && existingSubmissionForEdit.linkedOrderId !== linkedOrderId) ||
+      existingSubmissionForEdit.contactEmail.trim().toLowerCase() !== effectiveContactEmail.trim().toLowerCase()
+    )
+  ) {
+    return apiError(403, "TOKEN_INVALID", "Invalid or expired token");
+  }
   let effectiveStartDate = startDate;
   let effectiveEndDate = normalizeString(formData.end_date);
   const isPostsProduct =
@@ -597,14 +639,16 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  if (!file) {
+  if (!file && !existingSubmissionForEdit) {
     return badRequest("Missing banner_image_upload");
   }
 
   const allowedMimes = isPostsProduct ? ALLOWED_POSTS_IMAGE_MIMES : ALLOWED_JPEG_MIMES;
-  const hasValidExtension = isPostsProduct ? hasValidPostsImageExtension(file.name || "") : hasValidJpegExtension(file.name || "");
+  const hasValidExtension = file
+    ? (isPostsProduct ? hasValidPostsImageExtension(file.name || "") : hasValidJpegExtension(file.name || ""))
+    : true;
   const maxSize = isPostsProduct ? POSTS_IMAGE_MAX_SIZE_BYTES : ADS_SPONSOR_IMAGE_MAX_SIZE_BYTES;
-  if (!allowedMimes.has(file.type) || !hasValidExtension) {
+  if (file && (!allowedMimes.has(file.type) || !hasValidExtension)) {
     return badRequest(
       isPostsProduct
         ? "Invalid image format. Only WEBP/JPG/JPEG files are allowed."
@@ -612,7 +656,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  if (file.size <= 0 || file.size > maxSize) {
+  if (file && (file.size <= 0 || file.size > maxSize)) {
     return badRequest(
       isPostsProduct
         ? "Image too large. Maximum allowed size is 500 KB."
@@ -621,24 +665,37 @@ export async function POST(request: NextRequest) {
   }
 
   const activeReservations = await getActiveReservationsByToken(token);
-  if (!activeReservations.length) {
+  const hasEditReservationContext = Boolean(
+    existingSubmissionForEdit &&
+      (existingSubmissionForEdit.reservationMonthKey || existingSubmissionForEdit.reservationWeekKey || existingSubmissionForEdit.reservationStartsAt)
+  );
+  if (!activeReservations.length && !hasEditReservationContext) {
     return apiError(409, "RESERVATION_REQUIRED", "No active reservation found");
   }
   const activeReservation = activeReservations[0]!;
 
   const expectedProduct = mapProductType(context.product.product_type);
-  if (activeReservation.product !== expectedProduct || activeReservations.some((r) => r.product !== expectedProduct)) {
+  if (activeReservations.length > 0 && (activeReservation.product !== expectedProduct || activeReservations.some((r) => r.product !== expectedProduct))) {
     return apiError(409, "RESERVATION_PRODUCT_MISMATCH", "Reservation does not match product");
   }
 
-  if (expectedProduct === Product.SPONSORSHIP && activeReservation.monthKey !== reservationMonthKey) {
+  const effectiveReservationMonthKey = activeReservations.length > 0 ? activeReservation.monthKey : existingSubmissionForEdit?.reservationMonthKey ?? null;
+  const effectiveReservationWeekKey = activeReservations.length > 0 ? activeReservation.weekKey : existingSubmissionForEdit?.reservationWeekKey ?? null;
+  const effectiveReservationStartsAtIso =
+    activeReservations.length > 0
+      ? activeReservation.startsAtUtc?.toISOString() ?? null
+      : existingSubmissionForEdit?.reservationStartsAt?.toISOString() ?? null;
+
+  if (expectedProduct === Product.SPONSORSHIP && effectiveReservationMonthKey !== reservationMonthKey) {
     return apiError(409, "RESERVATION_MISMATCH", "Reserved month does not match");
   }
-  if (expectedProduct === Product.ADS && activeReservation.weekKey !== reservationWeekKey) {
+  if (expectedProduct === Product.ADS && effectiveReservationWeekKey !== reservationWeekKey) {
     return apiError(409, "RESERVATION_MISMATCH", "Reserved week does not match");
   }
   if (expectedProduct === Product.ADS) {
-    const activeWeekKeys = activeReservations.map((entry) => entry.weekKey).filter((v): v is string => Boolean(v)).sort();
+    const activeWeekKeys = activeReservations.length > 0
+      ? activeReservations.map((entry) => entry.weekKey).filter((v): v is string => Boolean(v)).sort()
+      : (effectiveReservationWeekKey ? [effectiveReservationWeekKey] : []);
     if (reservationWeekKeys.length > 0) {
       const selectedSorted = [...reservationWeekKeys].sort();
       if (JSON.stringify(selectedSorted) !== JSON.stringify(activeWeekKeys)) {
@@ -648,7 +705,7 @@ export async function POST(request: NextRequest) {
   }
   if (
     (expectedProduct === Product.NEWS || expectedProduct === Product.PROMO || expectedProduct === Product.GIVEAWAY) &&
-    activeReservation.startsAtUtc?.toISOString() !== reservationStartsAt
+    effectiveReservationStartsAtIso !== reservationStartsAt
   ) {
     return apiError(409, "RESERVATION_MISMATCH", "Reserved slot does not match");
   }
@@ -682,7 +739,17 @@ export async function POST(request: NextRequest) {
     return badRequest("Missing required start_date");
   }
 
-  const imageBuffer = await file.arrayBuffer();
+  const imageBuffer = file
+    ? await file.arrayBuffer()
+    : existingSubmissionForEdit
+      ? existingSubmissionForEdit.bannerImageData.buffer.slice(
+          existingSubmissionForEdit.bannerImageData.byteOffset,
+          existingSubmissionForEdit.bannerImageData.byteOffset + existingSubmissionForEdit.bannerImageData.byteLength
+        )
+      : null;
+  if (!imageBuffer) {
+    return badRequest("Missing banner_image_upload");
+  }
   if (expectedProduct === Product.ADS) {
     const imageBytes = new Uint8Array(imageBuffer);
     const dimensions = getJpegDimensions(imageBytes);
@@ -716,19 +783,58 @@ export async function POST(request: NextRequest) {
         },
         orderContext: context as unknown as Record<string, unknown>,
         bannerImage: {
-          name: file.name || "banner-image",
-          mimeType: file.type,
-          size: file.size,
+          name: file?.name || existingSubmissionForEdit?.bannerImageName || "banner-image",
+          mimeType: file?.type || existingSubmissionForEdit?.bannerImageMimeType || "image/jpeg",
+          size: file?.size || existingSubmissionForEdit?.bannerImageSize || 0,
           data: imageBuffer,
         },
-        additionalImages: await Promise.all(
-          additionalFiles.slice(0, 3).map(async (image) => ({
-            name: image.name || "image",
-            mimeType: image.type,
-            size: image.size,
-            data: await image.arrayBuffer(),
-          }))
-        ),
+        additionalImages:
+          additionalFiles.length > 0
+            ? await Promise.all(
+                additionalFiles.slice(0, 3).map(async (image) => ({
+                  name: image.name || "image",
+                  mimeType: image.type,
+                  size: image.size,
+                  data: await image.arrayBuffer(),
+                }))
+              )
+            : existingSubmissionForEdit
+              ? [
+                  existingSubmissionForEdit.additionalImage1Data
+                    ? {
+                        name: existingSubmissionForEdit.additionalImage1Name || "image-1",
+                        mimeType: existingSubmissionForEdit.additionalImage1MimeType || "image/jpeg",
+                        size: existingSubmissionForEdit.additionalImage1Size || 0,
+                        data: existingSubmissionForEdit.additionalImage1Data.buffer.slice(
+                          existingSubmissionForEdit.additionalImage1Data.byteOffset,
+                          existingSubmissionForEdit.additionalImage1Data.byteOffset + existingSubmissionForEdit.additionalImage1Data.byteLength
+                        ),
+                      }
+                    : null,
+                  existingSubmissionForEdit.additionalImage2Data
+                    ? {
+                        name: existingSubmissionForEdit.additionalImage2Name || "image-2",
+                        mimeType: existingSubmissionForEdit.additionalImage2MimeType || "image/jpeg",
+                        size: existingSubmissionForEdit.additionalImage2Size || 0,
+                        data: existingSubmissionForEdit.additionalImage2Data.buffer.slice(
+                          existingSubmissionForEdit.additionalImage2Data.byteOffset,
+                          existingSubmissionForEdit.additionalImage2Data.byteOffset + existingSubmissionForEdit.additionalImage2Data.byteLength
+                        ),
+                      }
+                    : null,
+                  existingSubmissionForEdit.additionalImage3Data
+                    ? {
+                        name: existingSubmissionForEdit.additionalImage3Name || "image-3",
+                        mimeType: existingSubmissionForEdit.additionalImage3MimeType || "image/jpeg",
+                        size: existingSubmissionForEdit.additionalImage3Size || 0,
+                        data: existingSubmissionForEdit.additionalImage3Data.buffer.slice(
+                          existingSubmissionForEdit.additionalImage3Data.byteOffset,
+                          existingSubmissionForEdit.additionalImage3Data.byteOffset + existingSubmissionForEdit.additionalImage3Data.byteLength
+                        ),
+                      }
+                    : null,
+                ].filter((entry): entry is { name: string; mimeType: string; size: number; data: ArrayBuffer } => Boolean(entry))
+              : [],
         formData: {
           ...formData,
           title: title || undefined,
@@ -744,25 +850,27 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      const updated = await tx.booking.updateMany({
-        where: {
-          reservedByOrderId: tokenReservationRef(token),
-          status: BookingStatus.DRAFT_RESERVED,
-          product: expectedProduct,
-          reservationLocked: false,
-        },
-        data: {
-          status: BookingStatus.SUBMITTED,
-          reservationSource: ReservationSource.WOOCOMMERCE_PAID_ORDER,
-          reservationLocked: true,
-          linkedOrderId,
-          expiresAt: null,
-          companyName: effectiveCompanyName,
-          customerEmail: effectiveContactEmail,
-        },
-      });
-      if (updated.count < 1) {
-        throw new Error("RESERVATION_STATE_CHANGED");
+      if (activeReservations.length > 0) {
+        const updated = await tx.booking.updateMany({
+          where: {
+            reservedByOrderId: tokenReservationRef(token),
+            status: BookingStatus.DRAFT_RESERVED,
+            product: expectedProduct,
+            reservationLocked: false,
+          },
+          data: {
+            status: BookingStatus.SUBMITTED,
+            reservationSource: ReservationSource.WOOCOMMERCE_PAID_ORDER,
+            reservationLocked: true,
+            linkedOrderId,
+            expiresAt: null,
+            companyName: effectiveCompanyName,
+            customerEmail: effectiveContactEmail,
+          },
+        });
+        if (updated.count < 1) {
+          throw new Error("RESERVATION_STATE_CHANGED");
+        }
       }
 
       return saved;
