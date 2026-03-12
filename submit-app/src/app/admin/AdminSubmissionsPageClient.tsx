@@ -130,6 +130,7 @@ function iso(value: string): string {
 function statusClass(group: "payment" | "editorial" | "publication", status: string): string {
   if (group === "editorial") {
     if (status === "SUBMITTED") return "bg-slate-100 text-slate-700 border-slate-200";
+    if (status === "RESUBMITTED") return "bg-red-100 text-red-800 border-red-200";
     if (status === "UNDER_REVIEW") return "bg-blue-100 text-blue-800 border-blue-200";
     if (status === "CHANGES_REQUESTED") return "bg-amber-100 text-amber-800 border-amber-200";
     if (status === "APPROVED") return "bg-emerald-100 text-emerald-800 border-emerald-200";
@@ -347,7 +348,6 @@ export default function AdminSubmissionsPageClient() {
     reviewerCollaboratorId: "",
     clientVisibleNote: "",
     internalNote: "",
-    comment: "",
     clientMessage: "",
     requestClientChanges: false,
   });
@@ -445,7 +445,6 @@ export default function AdminSubmissionsPageClient() {
         reviewerCollaboratorId: payload.workflow.reviewerCollaboratorId || "",
         clientVisibleNote: payload.workflow.clientVisibleNote || "",
         internalNote: payload.workflow.internalNote || "",
-        comment: "",
         clientMessage: "",
         requestClientChanges: false,
       });
@@ -662,7 +661,7 @@ export default function AdminSubmissionsPageClient() {
               <div>
                 <Label className="mb-1 block text-xs uppercase">Editorial</Label>
                 <select className="h-9 w-full rounded-md border px-2 text-sm" value={editorialStatus} onChange={(event) => setEditorialStatus(event.target.value)}>
-                  <option value="">All</option><option value="SUBMITTED">SUBMITTED</option><option value="UNDER_REVIEW">UNDER_REVIEW</option><option value="CHANGES_REQUESTED">CHANGES_REQUESTED</option><option value="APPROVED">APPROVED</option><option value="REJECTED">REJECTED</option>
+                  <option value="">All</option><option value="SUBMITTED">SUBMITTED</option><option value="RESUBMITTED">RESUBMITTED</option><option value="UNDER_REVIEW">UNDER_REVIEW</option><option value="CHANGES_REQUESTED">CHANGES_REQUESTED</option><option value="APPROVED">APPROVED</option><option value="REJECTED">REJECTED</option>
                 </select>
               </div>
               <div>
@@ -799,6 +798,7 @@ export default function AdminSubmissionsPageClient() {
                               aria-label="Edit editorial status"
                             >
                               <option>SUBMITTED</option>
+                              <option>RESUBMITTED</option>
                               <option>UNDER_REVIEW</option>
                               <option>CHANGES_REQUESTED</option>
                               <option>APPROVED</option>

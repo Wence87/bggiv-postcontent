@@ -431,12 +431,17 @@ export async function POST(request: NextRequest) {
         where: { id: existingSubmissionId },
         select: {
           id: true,
+          productKey: true,
           productType: true,
+          companyName: true,
           linkedOrderId: true,
           contactEmail: true,
+          notes: true,
           reservationMonthKey: true,
           reservationWeekKey: true,
           reservationStartsAt: true,
+          formDataJson: true,
+          orderContextJson: true,
           bannerImageName: true,
           bannerImageMimeType: true,
           bannerImageSize: true,
@@ -760,8 +765,34 @@ export async function POST(request: NextRequest) {
 
   try {
     const submission = await prisma.$transaction(async (tx) => {
+      if (existingSubmissionForEdit) {
+        await tx.submissionVersion.create({
+          data: {
+            submissionId: existingSubmissionForEdit.id,
+            productKey: existingSubmissionForEdit.productKey,
+            productType: existingSubmissionForEdit.productType,
+            companyName: existingSubmissionForEdit.companyName,
+            contactEmail: existingSubmissionForEdit.contactEmail,
+            notes: existingSubmissionForEdit.notes,
+            reservationMonthKey: existingSubmissionForEdit.reservationMonthKey,
+            reservationWeekKey: existingSubmissionForEdit.reservationWeekKey,
+            reservationStartsAt: existingSubmissionForEdit.reservationStartsAt,
+            formDataJson: JSON.parse(JSON.stringify(existingSubmissionForEdit.formDataJson)),
+            orderContextJson:
+              existingSubmissionForEdit.orderContextJson == null
+                ? null
+                : JSON.parse(JSON.stringify(existingSubmissionForEdit.orderContextJson)),
+            bannerImageName: existingSubmissionForEdit.bannerImageName,
+            additionalImage1Name: existingSubmissionForEdit.additionalImage1Name,
+            additionalImage2Name: existingSubmissionForEdit.additionalImage2Name,
+            additionalImage3Name: existingSubmissionForEdit.additionalImage3Name,
+          },
+        });
+      }
+
       const saved = await saveAdsSubmissionWithDb(tx, {
         token,
+        existingSubmissionId: existingSubmissionForEdit?.id ?? undefined,
         linkedOrderId,
         orderNumber:
           typeof (context as { order_number?: unknown }).order_number === "string"
@@ -871,6 +902,32 @@ export async function POST(request: NextRequest) {
         if (updated.count < 1) {
           throw new Error("RESERVATION_STATE_CHANGED");
         }
+      }
+
+      if (existingSubmissionForEdit) {
+        await tx.submissionOps.upsert({
+          where: { submissionId: saved.id },
+          create: {
+            submissionId: saved.id,
+            editorialStatus: "RESUBMITTED",
+          },
+          update: {
+            editorialStatus: "RESUBMITTED",
+          },
+        });
+
+        await tx.submissionAuditEvent.create({
+          data: {
+            submissionId: saved.id,
+            actorRole: "PUBLISHER",
+            actorIdentifier: effectiveContactEmail,
+            eventType: "CLIENT_RESUBMITTED",
+            fieldName: "editorialStatus",
+            fromValue: "CHANGES_REQUESTED",
+            toValue: "RESUBMITTED",
+            comment: "Client submitted a corrected version.",
+          },
+        });
       }
 
       return saved;

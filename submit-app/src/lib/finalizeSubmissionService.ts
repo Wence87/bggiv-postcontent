@@ -5,6 +5,7 @@ import type { PrismaClient } from "@prisma/client";
 
 export type AdsSubmissionInput = {
   token: string;
+  existingSubmissionId?: string;
   linkedOrderId?: string;
   orderNumber?: string;
   productKey: string;
@@ -74,82 +75,92 @@ export async function saveAdsSubmissionWithDb(
   const additional3 = additionalImageBuffers[2];
   const formDataJson = JSON.parse(JSON.stringify(input.formData)) as Prisma.InputJsonValue;
 
+  const createData = {
+      tokenHash: hashedToken,
+      linkedOrderId: input.linkedOrderId || null,
+      orderNumber: input.orderNumber || null,
+      productKey: input.productKey,
+      productType: input.productType,
+      companyName: input.companyName,
+      contactEmail: input.contactEmail,
+      websiteUrl: input.websiteUrl,
+      targetUrl: input.targetUrl,
+      adFormat: input.adFormat,
+      startDate: parsedStartDate,
+      notes: input.notes || null,
+      bannerImageName: input.bannerImage.name,
+      bannerImageMimeType: input.bannerImage.mimeType,
+      bannerImageSize: input.bannerImage.size,
+      bannerImageData: imageBuffer,
+      additionalImage1Name: additional1?.name ?? null,
+      additionalImage1MimeType: additional1?.mimeType ?? null,
+      additionalImage1Size: additional1?.size ?? null,
+      additionalImage1Data: additional1?.data ?? null,
+      additionalImage2Name: additional2?.name ?? null,
+      additionalImage2MimeType: additional2?.mimeType ?? null,
+      additionalImage2Size: additional2?.size ?? null,
+      additionalImage2Data: additional2?.data ?? null,
+      additionalImage3Name: additional3?.name ?? null,
+      additionalImage3MimeType: additional3?.mimeType ?? null,
+      additionalImage3Size: additional3?.size ?? null,
+      additionalImage3Data: additional3?.data ?? null,
+      reservationMonthKey: input.reservation?.monthKey || null,
+      reservationWeekKey: input.reservation?.weekKey || null,
+      reservationStartsAt: parsedReservationStartsAt,
+      orderContextJson: input.orderContext
+        ? (JSON.parse(JSON.stringify(input.orderContext)) as Prisma.InputJsonValue)
+        : Prisma.JsonNull,
+      formDataJson,
+    };
+  const updateData = {
+      linkedOrderId: input.linkedOrderId || null,
+      orderNumber: input.orderNumber || null,
+      productKey: input.productKey,
+      productType: input.productType,
+      companyName: input.companyName,
+      contactEmail: input.contactEmail,
+      websiteUrl: input.websiteUrl,
+      targetUrl: input.targetUrl,
+      adFormat: input.adFormat,
+      startDate: parsedStartDate,
+      notes: input.notes || null,
+      bannerImageName: input.bannerImage.name,
+      bannerImageMimeType: input.bannerImage.mimeType,
+      bannerImageSize: input.bannerImage.size,
+      bannerImageData: imageBuffer,
+      additionalImage1Name: additional1?.name ?? null,
+      additionalImage1MimeType: additional1?.mimeType ?? null,
+      additionalImage1Size: additional1?.size ?? null,
+      additionalImage1Data: additional1?.data ?? null,
+      additionalImage2Name: additional2?.name ?? null,
+      additionalImage2MimeType: additional2?.mimeType ?? null,
+      additionalImage2Size: additional2?.size ?? null,
+      additionalImage2Data: additional2?.data ?? null,
+      additionalImage3Name: additional3?.name ?? null,
+      additionalImage3MimeType: additional3?.mimeType ?? null,
+      additionalImage3Size: additional3?.size ?? null,
+      additionalImage3Data: additional3?.data ?? null,
+      reservationMonthKey: input.reservation?.monthKey || null,
+      reservationWeekKey: input.reservation?.weekKey || null,
+      reservationStartsAt: parsedReservationStartsAt,
+      orderContextJson: input.orderContext
+        ? (JSON.parse(JSON.stringify(input.orderContext)) as Prisma.InputJsonValue)
+        : Prisma.JsonNull,
+      formDataJson,
+    };
+
+  if (input.existingSubmissionId) {
+    return db.submitFormSubmission.update({
+      where: { id: input.existingSubmissionId },
+      data: updateData,
+    });
+  }
+
   return db.submitFormSubmission.upsert({
     where: {
       tokenHash: hashedToken,
     },
-    create: {
-      tokenHash: hashedToken,
-      linkedOrderId: input.linkedOrderId || null,
-      orderNumber: input.orderNumber || null,
-      productKey: input.productKey,
-      productType: input.productType,
-      companyName: input.companyName,
-      contactEmail: input.contactEmail,
-      websiteUrl: input.websiteUrl,
-      targetUrl: input.targetUrl,
-      adFormat: input.adFormat,
-      startDate: parsedStartDate,
-      notes: input.notes || null,
-      bannerImageName: input.bannerImage.name,
-      bannerImageMimeType: input.bannerImage.mimeType,
-      bannerImageSize: input.bannerImage.size,
-      bannerImageData: imageBuffer,
-      additionalImage1Name: additional1?.name ?? null,
-      additionalImage1MimeType: additional1?.mimeType ?? null,
-      additionalImage1Size: additional1?.size ?? null,
-      additionalImage1Data: additional1?.data ?? null,
-      additionalImage2Name: additional2?.name ?? null,
-      additionalImage2MimeType: additional2?.mimeType ?? null,
-      additionalImage2Size: additional2?.size ?? null,
-      additionalImage2Data: additional2?.data ?? null,
-      additionalImage3Name: additional3?.name ?? null,
-      additionalImage3MimeType: additional3?.mimeType ?? null,
-      additionalImage3Size: additional3?.size ?? null,
-      additionalImage3Data: additional3?.data ?? null,
-      reservationMonthKey: input.reservation?.monthKey || null,
-      reservationWeekKey: input.reservation?.weekKey || null,
-      reservationStartsAt: parsedReservationStartsAt,
-      orderContextJson: input.orderContext
-        ? (JSON.parse(JSON.stringify(input.orderContext)) as Prisma.InputJsonValue)
-        : Prisma.JsonNull,
-      formDataJson,
-    },
-    update: {
-      linkedOrderId: input.linkedOrderId || null,
-      orderNumber: input.orderNumber || null,
-      productKey: input.productKey,
-      productType: input.productType,
-      companyName: input.companyName,
-      contactEmail: input.contactEmail,
-      websiteUrl: input.websiteUrl,
-      targetUrl: input.targetUrl,
-      adFormat: input.adFormat,
-      startDate: parsedStartDate,
-      notes: input.notes || null,
-      bannerImageName: input.bannerImage.name,
-      bannerImageMimeType: input.bannerImage.mimeType,
-      bannerImageSize: input.bannerImage.size,
-      bannerImageData: imageBuffer,
-      additionalImage1Name: additional1?.name ?? null,
-      additionalImage1MimeType: additional1?.mimeType ?? null,
-      additionalImage1Size: additional1?.size ?? null,
-      additionalImage1Data: additional1?.data ?? null,
-      additionalImage2Name: additional2?.name ?? null,
-      additionalImage2MimeType: additional2?.mimeType ?? null,
-      additionalImage2Size: additional2?.size ?? null,
-      additionalImage2Data: additional2?.data ?? null,
-      additionalImage3Name: additional3?.name ?? null,
-      additionalImage3MimeType: additional3?.mimeType ?? null,
-      additionalImage3Size: additional3?.size ?? null,
-      additionalImage3Data: additional3?.data ?? null,
-      reservationMonthKey: input.reservation?.monthKey || null,
-      reservationWeekKey: input.reservation?.weekKey || null,
-      reservationStartsAt: parsedReservationStartsAt,
-      orderContextJson: input.orderContext
-        ? (JSON.parse(JSON.stringify(input.orderContext)) as Prisma.InputJsonValue)
-        : Prisma.JsonNull,
-      formDataJson,
-    },
+    create: createData,
+    update: updateData,
   });
 }

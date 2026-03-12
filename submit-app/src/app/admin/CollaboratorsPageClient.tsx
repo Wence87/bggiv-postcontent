@@ -91,6 +91,15 @@ function urgencyBadge(bucket: "green" | "yellow" | "orange" | "red") {
   return "bg-red-100 text-red-800 border-red-200";
 }
 
+function editorialBadgeClass(status: string): string {
+  if (status === "RESUBMITTED") return "bg-red-100 text-red-800 border-red-200";
+  if (status === "SUBMITTED") return "bg-slate-100 text-slate-700 border-slate-200";
+  if (status === "UNDER_REVIEW") return "bg-blue-100 text-blue-800 border-blue-200";
+  if (status === "CHANGES_REQUESTED") return "bg-amber-100 text-amber-800 border-amber-200";
+  if (status === "APPROVED") return "bg-emerald-100 text-emerald-800 border-emerald-200";
+  return "bg-red-100 text-red-800 border-red-200";
+}
+
 function productLabel(value: string): string {
   const normalized = value.trim().toLowerCase();
   if (normalized === "promo") return "Promodeal";
@@ -127,7 +136,6 @@ export default function CollaboratorsPageClient() {
     reviewerCollaboratorId: "",
     clientVisibleNote: "",
     internalNote: "",
-    comment: "",
     clientMessage: "",
     requestClientChanges: false,
   });
@@ -197,7 +205,6 @@ export default function CollaboratorsPageClient() {
       reviewerCollaboratorId: payload.workflow.reviewerCollaboratorId || "",
       clientVisibleNote: payload.workflow.clientVisibleNote || "",
       internalNote: payload.workflow.internalNote || "",
-      comment: "",
       clientMessage: "",
       requestClientChanges: false,
     });
@@ -478,13 +485,13 @@ export default function CollaboratorsPageClient() {
                     <TableHeader>
                       <TableRow>
                         <TableHead>Submission</TableHead>
+                        <TableHead>Urgency</TableHead>
                         <TableHead>Order</TableHead>
                         <TableHead>Product</TableHead>
                         <TableHead>Company</TableHead>
                         <TableHead>Editorial</TableHead>
                         <TableHead>Publication</TableHead>
                         <TableHead>Pending action</TableHead>
-                        <TableHead>Urgency</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -501,15 +508,19 @@ export default function CollaboratorsPageClient() {
                               {row.submissionId.slice(0, 8)}...
                             </button>
                           </TableCell>
-                          <TableCell>{row.orderNumber}</TableCell>
-                          <TableCell>{productLabel(row.productType)}</TableCell>
-                          <TableCell>{row.company}</TableCell>
-                          <TableCell>{row.editorialStatus}</TableCell>
-                          <TableCell>{row.publicationStatus}</TableCell>
-                          <TableCell>{row.pendingAction.label} ({row.pendingAction.owner})</TableCell>
                           <TableCell>
                             <Badge className={`border ${urgencyBadge(row.urgency.bucket)}`} variant="outline">{row.urgency.label}</Badge>
                           </TableCell>
+                          <TableCell>{row.orderNumber}</TableCell>
+                          <TableCell>{productLabel(row.productType)}</TableCell>
+                          <TableCell>{row.company}</TableCell>
+                          <TableCell>
+                            <Badge className={`border ${editorialBadgeClass(row.editorialStatus)}`} variant="outline">
+                              {row.editorialStatus}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>{row.publicationStatus}</TableCell>
+                          <TableCell>{row.pendingAction.label} ({row.pendingAction.owner})</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>

@@ -43,6 +43,7 @@ function urgency(createdAt: Date): { label: string; bucket: "green" | "yellow" |
 function derivePendingAction(editorialStatus: EditorialStatus, publicationStatus: PublicationStatus): { label: string; owner: "ADMIN" | "CLIENT" | "OPS" } {
   if (editorialStatus === EditorialStatus.REJECTED) return { label: "Rejected", owner: "ADMIN" };
   if (editorialStatus === EditorialStatus.CHANGES_REQUESTED) return { label: "Waiting for client updates", owner: "CLIENT" };
+  if (editorialStatus === EditorialStatus.RESUBMITTED) return { label: "Client correction received", owner: "ADMIN" };
   if (editorialStatus === EditorialStatus.APPROVED && publicationStatus !== PublicationStatus.PUBLISHED) {
     return { label: "Ready for publication workflow", owner: "OPS" };
   }

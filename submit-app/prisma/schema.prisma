@@ -54,6 +54,7 @@ enum OrderPaymentStatus {
 
 enum EditorialStatus {
   SUBMITTED
+  RESUBMITTED
   UNDER_REVIEW
   CHANGES_REQUESTED
   APPROVED
@@ -159,6 +160,7 @@ model SubmitFormSubmission {
   ops                 SubmissionOps?
   auditEvents         SubmissionAuditEvent[]
   clientMessages      SubmissionClientMessage[]
+  versions            SubmissionVersion[]
 
   @@index([linkedOrderId])
   @@index([orderNumber])
@@ -236,6 +238,30 @@ model SubmissionClientMessage {
   createdAt       DateTime  @default(now())
 
   submission      SubmitFormSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@index([submissionId, createdAt])
+}
+
+model SubmissionVersion {
+  id                  String   @id @default(cuid())
+  submissionId        String
+  productKey          String
+  productType         String
+  companyName         String
+  contactEmail        String
+  notes               String?
+  reservationMonthKey String?
+  reservationWeekKey  String?
+  reservationStartsAt DateTime?
+  formDataJson        Json
+  orderContextJson    Json?
+  bannerImageName     String
+  additionalImage1Name String?
+  additionalImage2Name String?
+  additionalImage3Name String?
+  createdAt           DateTime @default(now())
+
+  submission          SubmitFormSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
 
   @@index([submissionId, createdAt])
 }

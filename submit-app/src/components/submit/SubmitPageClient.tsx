@@ -1627,6 +1627,8 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
     }
 
     if (field.type === "file") {
+      const existingName = existingAssetNames[field.key as keyof typeof existingAssetNames] ?? null;
+      const hasReplacement = Boolean(fileValues[field.key]);
       return (
         <div key={field.key} className="space-y-2">
           <Label htmlFor={field.key}>{label}</Label>
@@ -1634,10 +1636,16 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
             id={field.key}
             name={field.key}
             type="file"
-            required={Boolean(field.required)}
+            required={Boolean(field.required) && !existingName}
             accept={field.accept}
             onChange={(event) => setFieldFileValue(field.key, event.target.files?.[0] ?? null)}
           />
+          {existingName ? (
+            <p className="text-xs text-muted-foreground">
+              Existing image kept: <span className="font-medium">{existingName}</span>
+              {hasReplacement ? " (will be replaced by the new upload)" : ""}
+            </p>
+          ) : null}
           {field.key === "banner_image_upload" ? (
             <p className="text-xs text-muted-foreground">
               {currentContext.product.product_type === "sponsorship"
@@ -1731,6 +1739,13 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
 
   const productType = currentContext.product.product_type;
   const hasExistingBannerImage = Boolean(currentContext.existing_submission?.assets?.banner_image_name);
+  const existingAssetNames = {
+    banner_image_upload: currentContext.existing_submission?.assets?.banner_image_name ?? null,
+    cover_image_upload: currentContext.existing_submission?.assets?.banner_image_name ?? null,
+    additional_image_1: currentContext.existing_submission?.assets?.additional_image_1_name ?? null,
+    additional_image_2: currentContext.existing_submission?.assets?.additional_image_2_name ?? null,
+    additional_image_3: currentContext.existing_submission?.assets?.additional_image_3_name ?? null,
+  };
   const productBadgeLabel = productType === "promo" ? "Promo Deal" : productType.toUpperCase();
   const hasConfirmedReservation =
     reservationConfirmed &&

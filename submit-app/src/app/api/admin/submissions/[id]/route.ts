@@ -39,6 +39,9 @@ function derivePendingAction(editorialStatus: EditorialStatus, publicationStatus
   if (editorialStatus === EditorialStatus.CHANGES_REQUESTED) {
     return { key: "CLIENT_FEEDBACK", label: "Waiting for client updates", owner: "CLIENT" };
   }
+  if (editorialStatus === EditorialStatus.RESUBMITTED) {
+    return { key: "ADMIN_REVIEW", label: "Client correction received", owner: "ADMIN" };
+  }
   if (editorialStatus === EditorialStatus.APPROVED && publicationStatus !== PublicationStatus.PUBLISHED) {
     return { key: "READY_PUBLICATION", label: "Ready for publication workflow", owner: "OPS" };
   }
@@ -132,21 +135,17 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
   const canUpdatePayment = canEditPayment(auth.role);
   const canUpdateNotes = canEditNotes(auth.role);
   const collaborators = canUpdateNotes ? await listReviewerCollaborators() : [];
-  const previousVersion = submission.linkedOrderId
-    ? await prisma.submitFormSubmission.findFirst({
-        where: {
-          linkedOrderId: submission.linkedOrderId,
-          id: { not: submission.id },
-          createdAt: { lt: submission.createdAt },
-        },
-        orderBy: { createdAt: "desc" },
-        select: {
-          id: true,
-          createdAt: true,
-          formDataJson: true,
-        },
-      })
-    : null;
+  const previousVersion = await prisma.submissionVersion.findFirst({
+    where: {
+      submissionId: submission.id,
+    },
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      createdAt: true,
+      formDataJson: true,
+    },
+  });
 
   const staleReviewerState =
     submission.ops &&
@@ -275,6 +274,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
   const payload = (await request.json()) as Record<string, unknown>;
   const editorialStatus = parseEnum(payload.editorialStatus, [
     "SUBMITTED",
+    "RESUBMITTED",
     "UNDER_REVIEW",
     "CHANGES_REQUESTED",
     "APPROVED",
@@ -295,7 +295,6 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
   const clientMessage = typeof payload.clientMessage === "string" ? payload.clientMessage.trim() : null;
   const clientMessageSubject = typeof payload.clientMessageSubject === "string" ? payload.clientMessageSubject.trim() : null;
   const requestClientChanges = payload.requestClientChanges === true;
-  const comment = typeof payload.comment === "string" ? payload.comment.trim() : null;
 
   if (editorialStatus && !canEditEditorial(auth.role)) {
     return forbidden("Role cannot update editorial status");
@@ -339,7 +338,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     nextOpsData.editorialStatus = EditorialStatus.CHANGES_REQUESTED;
   }
 
-  const noChanges = Object.keys(nextOpsData).length === 0 && !comment && !clientMessage;
+  const noChanges = Object.keys(nextOpsData).length === 0 && !clientMessage;
   if (noChanges) {
     return NextResponse.json({ code: "BAD_REQUEST", message: "No changes provided" }, { status: 400 });
   }
@@ -434,19 +433,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
             fieldName: change.field,
             fromValue: change.from,
             toValue: change.to,
-            comment: comment || null,
-          },
-        });
-      }
-
-      if (changes.length === 0 && comment) {
-        await tx.submissionAuditEvent.create({
-          data: {
-            submissionId: submission.id,
-            actorRole: auth.role,
-            actorIdentifier: auth.actor,
-            eventType: "COMMENT",
-            comment,
+            comment: null,
           },
         });
       }

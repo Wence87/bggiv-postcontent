@@ -4,7 +4,6 @@ import { Dispatch, SetStateAction, useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 
@@ -92,7 +91,6 @@ export type SubmissionWorkflowForm = {
   reviewerCollaboratorId: string;
   clientVisibleNote: string;
   internalNote: string;
-  comment: string;
   clientMessage: string;
   requestClientChanges: boolean;
 };
@@ -122,6 +120,7 @@ function formatProductLabel(productType: string): string {
 function statusClass(group: "payment" | "editorial" | "publication", status: string): string {
   if (group === "editorial") {
     if (status === "SUBMITTED") return "bg-slate-100 text-slate-700 border-slate-200";
+    if (status === "RESUBMITTED") return "bg-red-100 text-red-800 border-red-200";
     if (status === "UNDER_REVIEW") return "bg-blue-100 text-blue-800 border-blue-200";
     if (status === "CHANGES_REQUESTED") return "bg-amber-100 text-amber-800 border-amber-200";
     if (status === "APPROVED") return "bg-emerald-100 text-emerald-800 border-emerald-200";
@@ -343,7 +342,7 @@ export function SubmissionDetailSheet({
                   <div>
                     <Label className="mb-1 block text-xs">EDITORIAL STATUS</Label>
                     <select className="h-10 w-full rounded-md border px-3 text-sm" value={workflow.editorialStatus} onChange={(event) => setWorkflow((prev) => ({ ...prev, editorialStatus: event.target.value }))}>
-                      <option>SUBMITTED</option><option>UNDER_REVIEW</option><option>CHANGES_REQUESTED</option><option>APPROVED</option><option>REJECTED</option>
+                      <option>SUBMITTED</option><option>RESUBMITTED</option><option>UNDER_REVIEW</option><option>CHANGES_REQUESTED</option><option>APPROVED</option><option>REJECTED</option>
                     </select>
                   </div>
                 ) : (
@@ -444,12 +443,6 @@ export function SubmissionDetailSheet({
                   </div>
                 </div>
 
-                {canSave ? (
-                  <div className="md:col-span-2">
-                    <Label className="mb-1 block text-xs">AUDIT COMMENT (OPTIONAL)</Label>
-                    <Input value={workflow.comment} onChange={(event) => setWorkflow((prev) => ({ ...prev, comment: event.target.value }))} />
-                  </div>
-                ) : null}
               </div>
               {canSave ? (
                 <div className="mt-3 flex justify-end">
