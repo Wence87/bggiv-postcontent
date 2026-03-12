@@ -282,12 +282,43 @@ export function SubmissionDetailSheet({
       )
   );
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [clientHistoryOpen, setClientHistoryOpen] = useState(false);
+  const [showChanges, setShowChanges] = useState(true);
   const containerTone = themeVariant === "collaborators" ? "bg-sky-50 border-sky-200" : "bg-sky-50 border-sky-200";
   const panelTone = themeVariant === "collaborators" ? "bg-sky-50 border-sky-200" : "bg-sky-50 border-sky-200";
 
   useEffect(() => {
     setHistoryOpen(false);
+    setClientHistoryOpen(false);
+    setShowChanges(true);
   }, [detail?.id]);
+
+  const renderComparedText = (label: string, currentValue: string, previousValue: string | null) => {
+    const changed = previousValue != null && hasChanged(previousValue, currentValue);
+    if (!showChanges || previousValue == null || !changed) {
+      return (
+        <div className="rounded border p-3">
+          <p className="text-xs uppercase text-muted-foreground">{label}</p>
+          <p className="whitespace-pre-wrap">{currentValue}</p>
+        </div>
+      );
+    }
+    return (
+      <div className="rounded border p-3 space-y-2">
+        <p className="text-xs uppercase text-muted-foreground">{label}</p>
+        <div className="grid gap-2 md:grid-cols-2">
+          <div className="rounded border bg-red-50 p-2">
+            <p className="text-[11px] uppercase text-muted-foreground">Previous</p>
+            <p className="whitespace-pre-wrap line-through text-red-700">{previousValue}</p>
+          </div>
+          <div className="rounded border bg-yellow-50 p-2">
+            <p className="text-[11px] uppercase text-muted-foreground">Current</p>
+            <p className="whitespace-pre-wrap">{currentValue}</p>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -426,20 +457,38 @@ export function SubmissionDetailSheet({
                     />
                     Mark editorial status as CHANGES_REQUESTED
                   </label>
-                  <div className="mt-2 space-y-2 text-xs">
-                    {(detail.clientMessages ?? []).length === 0 ? (
-                      <p className="text-muted-foreground">No client messages yet.</p>
-                    ) : (
-                      (detail.clientMessages ?? []).map((message) => (
-                        <div key={message.id} className="rounded border p-2">
-                          <div className="flex items-center justify-between">
-                            <p className="font-medium">{message.actorRole} ({message.actorIdentifier || "-"})</p>
-                            <p className="text-muted-foreground">{iso(message.createdAt)}</p>
-                          </div>
-                          <p className="mt-1 whitespace-pre-wrap">{message.message}</p>
-                        </div>
-                      ))
-                    )}
+                  <div className="mt-3 rounded border p-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-xs font-semibold uppercase text-muted-foreground">Client communication history</p>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7 px-2 text-xs"
+                        onClick={() => setClientHistoryOpen((prev) => !prev)}
+                        title={clientHistoryOpen ? "Hide client communication history" : "Show client communication history"}
+                        aria-label={clientHistoryOpen ? "Hide client communication history" : "Show client communication history"}
+                      >
+                        {clientHistoryOpen ? "Hide" : "Show"}
+                      </Button>
+                    </div>
+                    {clientHistoryOpen ? (
+                      <div className="mt-2 space-y-2 text-xs">
+                        {(detail.clientMessages ?? []).length === 0 ? (
+                          <p className="text-muted-foreground">No client messages yet.</p>
+                        ) : (
+                          (detail.clientMessages ?? []).map((message) => (
+                            <div key={message.id} className="rounded border p-2">
+                              <div className="flex items-center justify-between">
+                                <p className="font-medium">{message.actorRole} ({message.actorIdentifier || "-"})</p>
+                                <p className="text-muted-foreground">{iso(message.createdAt)}</p>
+                              </div>
+                              <p className="mt-1 whitespace-pre-wrap">{message.message}</p>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    ) : null}
                   </div>
                 </div>
 
@@ -452,12 +501,25 @@ export function SubmissionDetailSheet({
             </section>
 
             <section className={`rounded-md border p-4 ${panelTone}`}>
-              <h3 className="text-sm font-semibold uppercase">Client submission data</h3>
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-sm font-semibold uppercase">Client submission data</h3>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 px-3"
+                  onClick={() => setShowChanges((prev) => !prev)}
+                  title={showChanges ? "Hide changes" : "Show changes"}
+                  aria-label={showChanges ? "Hide changes" : "Show changes"}
+                >
+                  {showChanges ? "Hide changes" : "Show changes"}
+                </Button>
+              </div>
               <div className="mt-3 space-y-3 text-sm">
-                <div className="rounded border p-3"><p className="text-xs uppercase text-muted-foreground">Title</p><p>{getString(formData, "title")}</p></div>
-                <div className="rounded border p-3"><p className="text-xs uppercase text-muted-foreground">Short product description</p><p className="whitespace-pre-wrap">{getString(formData, "short_product_description")}</p></div>
-                <div className="rounded border p-3"><p className="text-xs uppercase text-muted-foreground">Body</p><p className="whitespace-pre-wrap">{getString(formData, "body")}</p></div>
-                <div className="rounded border p-3"><p className="text-xs uppercase text-muted-foreground">Notes to admin</p><p className="whitespace-pre-wrap">{getString(formData, "notes")}</p></div>
+                {renderComparedText("Title", getString(formData, "title"), previousFormData ? getString(previousFormData, "title") : null)}
+                {renderComparedText("Short product description", getString(formData, "short_product_description"), previousFormData ? getString(previousFormData, "short_product_description") : null)}
+                {renderComparedText("Body", getString(formData, "body"), previousFormData ? getString(previousFormData, "body") : null)}
+                {renderComparedText("Notes to admin", getString(formData, "notes"), previousFormData ? getString(previousFormData, "notes") : null)}
 
                 {detail.submission.productType === "giveaway" ? (
                   <>
@@ -469,7 +531,7 @@ export function SubmissionDetailSheet({
                     </div>
                     <div className="rounded border p-3">
                       <p className="text-xs uppercase text-muted-foreground">Quiz question and answers</p>
-                      {previousQuiz ? (
+                      {previousQuiz && showChanges ? (
                         <div className="mt-2 space-y-2">
                           <div className="grid grid-cols-2 gap-2 text-[11px] uppercase text-muted-foreground">
                             <p>Previous version ({iso(detail.previousVersion?.createdAt || "")})</p>
@@ -530,7 +592,7 @@ export function SubmissionDetailSheet({
 
             <section className={`rounded-md border p-4 ${panelTone}`}>
               <div className="flex items-center justify-between gap-3">
-                <h3 className="text-sm font-semibold uppercase">History</h3>
+                <h3 className="text-sm font-semibold uppercase">Workflow history</h3>
                 <Button
                   type="button"
                   variant="outline"

@@ -110,6 +110,11 @@ function productLabel(value: string): string {
   return value.toUpperCase();
 }
 
+function compactText(value: string, max = 25): string {
+  if (!value) return "-";
+  return value.length <= max ? value : `${value.slice(0, max)}...`;
+}
+
 export default function CollaboratorsPageClient() {
   const [token, setToken] = useState("");
   const [viewerRole, setViewerRole] = useState("");
@@ -470,7 +475,7 @@ export default function CollaboratorsPageClient() {
 
           {detail ? (
             <div className="mt-6 space-y-4">
-              <section className="rounded-md border p-4 text-sm">
+              <section className="rounded-md border border-slate-300 bg-white p-4 text-sm shadow-sm">
                 <p><span className="text-muted-foreground">Display:</span> {detail.collaborator.displayName}</p>
                 <p><span className="text-muted-foreground">Name:</span> {detail.collaborator.firstName} {detail.collaborator.lastName}</p>
                 <p><span className="text-muted-foreground">Email:</span> {detail.collaborator.email}</p>
@@ -478,49 +483,64 @@ export default function CollaboratorsPageClient() {
                 <p><span className="text-muted-foreground">Last login:</span> {iso(detail.collaborator.lastLoginAt)}</p>
               </section>
 
-              <section className="rounded-md border p-4">
+              <section className="rounded-md border border-slate-300 bg-white p-4 shadow-sm">
                 <h3 className="mb-2 text-sm font-semibold uppercase">Assigned submissions</h3>
                 <div className="overflow-x-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Submission</TableHead>
+                        <TableHead>View</TableHead>
                         <TableHead>Urgency</TableHead>
                         <TableHead>Order</TableHead>
                         <TableHead>Product</TableHead>
-                        <TableHead>Company</TableHead>
+                        <TableHead className="whitespace-nowrap">Company</TableHead>
                         <TableHead>Editorial</TableHead>
                         <TableHead>Publication</TableHead>
-                        <TableHead>Pending action</TableHead>
+                        <TableHead className="whitespace-nowrap">Pending action</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {detail.assignments.map((row) => (
                         <TableRow key={row.submissionId}>
                           <TableCell>
-                            <button
+                            <Button
                               type="button"
-                              className="text-blue-700 hover:underline"
+                              variant="outline"
+                              size="sm"
+                              className="h-8 w-8 p-0"
                               title="Open submission detail"
                               aria-label="Open submission detail"
                               onClick={() => void openSubmissionDetail(row.submissionId)}
                             >
-                              {row.submissionId.slice(0, 8)}...
-                            </button>
+                              <Eye className="h-4 w-4" />
+                            </Button>
                           </TableCell>
                           <TableCell>
                             <Badge className={`border ${urgencyBadge(row.urgency.bucket)}`} variant="outline">{row.urgency.label}</Badge>
                           </TableCell>
                           <TableCell>{row.orderNumber}</TableCell>
                           <TableCell>{productLabel(row.productType)}</TableCell>
-                          <TableCell>{row.company}</TableCell>
+                          <TableCell className="max-w-[260px] whitespace-nowrap" title={row.company}>{compactText(row.company, 25)}</TableCell>
                           <TableCell>
                             <Badge className={`border ${editorialBadgeClass(row.editorialStatus)}`} variant="outline">
                               {row.editorialStatus}
                             </Badge>
                           </TableCell>
                           <TableCell>{row.publicationStatus}</TableCell>
-                          <TableCell>{row.pendingAction.label} ({row.pendingAction.owner})</TableCell>
+                          <TableCell className="max-w-[220px]">
+                            <div
+                              className="text-sm leading-5"
+                              style={{
+                                display: "-webkit-box",
+                                WebkitLineClamp: 2,
+                                WebkitBoxOrient: "vertical",
+                                overflow: "hidden",
+                              }}
+                              title={`${row.pendingAction.label} (${row.pendingAction.owner})`}
+                            >
+                              {row.pendingAction.label} ({row.pendingAction.owner})
+                            </div>
+                          </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
