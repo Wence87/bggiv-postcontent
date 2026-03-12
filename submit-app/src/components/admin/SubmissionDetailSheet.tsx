@@ -223,6 +223,53 @@ function hasChanged(left: string, right: string): boolean {
   return normalizeDiffValue(left) !== normalizeDiffValue(right);
 }
 
+type DiffSegment = {
+  kind: "equal" | "add" | "remove";
+  tokens: string[];
+};
+
+function buildWordDiffSegments(previousValue: string, currentValue: string): DiffSegment[] {
+  const a = normalizeDiffValue(previousValue).split(" ").filter((token) => token.length > 0);
+  const b = normalizeDiffValue(currentValue).split(" ").filter((token) => token.length > 0);
+  const dp: number[][] = Array.from({ length: a.length + 1 }, () => Array<number>(b.length + 1).fill(0));
+
+  for (let i = 1; i <= a.length; i += 1) {
+    for (let j = 1; j <= b.length; j += 1) {
+      if (a[i - 1] === b[j - 1]) dp[i][j] = dp[i - 1][j - 1] + 1;
+      else dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+    }
+  }
+
+  const reversed: Array<{ kind: DiffSegment["kind"]; token: string }> = [];
+  let i = a.length;
+  let j = b.length;
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && a[i - 1] === b[j - 1]) {
+      reversed.push({ kind: "equal", token: a[i - 1] });
+      i -= 1;
+      j -= 1;
+    } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
+      reversed.push({ kind: "add", token: b[j - 1] });
+      j -= 1;
+    } else {
+      reversed.push({ kind: "remove", token: a[i - 1] });
+      i -= 1;
+    }
+  }
+
+  const flat = reversed.reverse();
+  const segments: DiffSegment[] = [];
+  for (const part of flat) {
+    const previous = segments[segments.length - 1];
+    if (!previous || previous.kind !== part.kind) {
+      segments.push({ kind: part.kind, tokens: [part.token] });
+    } else {
+      previous.tokens.push(part.token);
+    }
+  }
+  return segments;
+}
+
 export function SubmissionDetailSheet({
   open,
   onOpenChange,
@@ -293,30 +340,24 @@ export function SubmissionDetailSheet({
     setShowChanges(true);
   }, [detail?.id]);
 
-  const renderComparedText = (label: string, currentValue: string, previousValue: string | null) => {
-    const changed = previousValue != null && hasChanged(previousValue, currentValue);
-    if (!showChanges || previousValue == null || !changed) {
-      return (
-        <div className="rounded border p-3">
-          <p className="text-xs uppercase text-muted-foreground">{label}</p>
-          <p className="whitespace-pre-wrap">{currentValue}</p>
-        </div>
-      );
+  const renderCurrentValue = (previousValue: string | null, currentValue: string) => {
+    if (!showChanges || previousValue == null || !hasChanged(previousValue, currentValue)) {
+      return <p className="whitespace-pre-wrap">{currentValue}</p>;
     }
+    const segments = buildWordDiffSegments(previousValue, currentValue);
     return (
-      <div className="rounded border p-3 space-y-2">
-        <p className="text-xs uppercase text-muted-foreground">{label}</p>
-        <div className="grid gap-2 md:grid-cols-2">
-          <div className="rounded border bg-red-50 p-2">
-            <p className="text-[11px] uppercase text-muted-foreground">Previous</p>
-            <p className="whitespace-pre-wrap line-through text-red-700">{previousValue}</p>
-          </div>
-          <div className="rounded border bg-yellow-50 p-2">
-            <p className="text-[11px] uppercase text-muted-foreground">Current</p>
-            <p className="whitespace-pre-wrap">{currentValue}</p>
-          </div>
-        </div>
-      </div>
+      <p className="whitespace-pre-wrap">
+        {segments.map((segment, index) => {
+          const content = segment.tokens.join(" ");
+          if (segment.kind === "equal") {
+            return <span key={`seg-${index}`}>{content} </span>;
+          }
+          if (segment.kind === "add") {
+            return <span key={`seg-${index}`} className="rounded bg-yellow-100 px-0.5">{content} </span>;
+          }
+          return <span key={`seg-${index}`} className="rounded bg-red-100 px-0.5 text-red-700 line-through">{content} </span>;
+        })}
+      </p>
     );
   };
 
@@ -516,10 +557,53 @@ export function SubmissionDetailSheet({
                 </Button>
               </div>
               <div className="mt-3 space-y-3 text-sm">
-                {renderComparedText("Title", getString(formData, "title"), previousFormData ? getString(previousFormData, "title") : null)}
-                {renderComparedText("Short product description", getString(formData, "short_product_description"), previousFormData ? getString(previousFormData, "short_product_description") : null)}
-                {renderComparedText("Body", getString(formData, "body"), previousFormData ? getString(previousFormData, "body") : null)}
-                {renderComparedText("Notes to admin", getString(formData, "notes"), previousFormData ? getString(previousFormData, "notes") : null)}
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="space-y-3">
+                    <div className="rounded border bg-white p-3">
+                      <p className="text-[11px] font-semibold uppercase text-muted-foreground">Previous</p>
+                    </div>
+                    <div className="rounded border bg-white p-3">
+                      <p className="text-xs uppercase text-muted-foreground">Title</p>
+                      <p className="whitespace-pre-wrap">{previousFormData ? getString(previousFormData, "title") : "-"}</p>
+                    </div>
+                    <div className="rounded border bg-white p-3">
+                      <p className="text-xs uppercase text-muted-foreground">Short product description</p>
+                      <p className="whitespace-pre-wrap">{previousFormData ? getString(previousFormData, "short_product_description") : "-"}</p>
+                    </div>
+                    <div className="rounded border bg-white p-3">
+                      <p className="text-xs uppercase text-muted-foreground">Body</p>
+                      <p className="whitespace-pre-wrap">{previousFormData ? getString(previousFormData, "body") : "-"}</p>
+                    </div>
+                    <div className="rounded border bg-white p-3">
+                      <p className="text-xs uppercase text-muted-foreground">Notes to admin</p>
+                      <p className="whitespace-pre-wrap">{previousFormData ? getString(previousFormData, "notes") : "-"}</p>
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    <div className="rounded border bg-white p-3">
+                      <p className="text-[11px] font-semibold uppercase text-muted-foreground">Current</p>
+                    </div>
+                    <div className="rounded border bg-white p-3">
+                      <p className="text-xs uppercase text-muted-foreground">Title</p>
+                      {renderCurrentValue(previousFormData ? getString(previousFormData, "title") : null, getString(formData, "title"))}
+                    </div>
+                    <div className="rounded border bg-white p-3">
+                      <p className="text-xs uppercase text-muted-foreground">Short product description</p>
+                      {renderCurrentValue(
+                        previousFormData ? getString(previousFormData, "short_product_description") : null,
+                        getString(formData, "short_product_description")
+                      )}
+                    </div>
+                    <div className="rounded border bg-white p-3">
+                      <p className="text-xs uppercase text-muted-foreground">Body</p>
+                      {renderCurrentValue(previousFormData ? getString(previousFormData, "body") : null, getString(formData, "body"))}
+                    </div>
+                    <div className="rounded border bg-white p-3">
+                      <p className="text-xs uppercase text-muted-foreground">Notes to admin</p>
+                      {renderCurrentValue(previousFormData ? getString(previousFormData, "notes") : null, getString(formData, "notes"))}
+                    </div>
+                  </div>
+                </div>
 
                 {detail.submission.productType === "giveaway" ? (
                   <>
@@ -531,48 +615,56 @@ export function SubmissionDetailSheet({
                     </div>
                     <div className="rounded border p-3">
                       <p className="text-xs uppercase text-muted-foreground">Quiz question and answers</p>
-                      {previousQuiz && showChanges ? (
-                        <div className="mt-2 space-y-2">
-                          <div className="grid grid-cols-2 gap-2 text-[11px] uppercase text-muted-foreground">
-                            <p>Previous version ({iso(detail.previousVersion?.createdAt || "")})</p>
-                            <p>Current version</p>
-                          </div>
-                          <div className="grid gap-2">
-                            <div className="grid grid-cols-2 gap-2">
-                              <div className={`rounded border p-2 ${hasChanged(previousQuiz.question, currentQuiz.question) ? "bg-red-50" : "bg-white"}`}>
-                                <p className="text-[11px] uppercase text-muted-foreground">Question</p>
-                                <p className={`whitespace-pre-wrap ${hasChanged(previousQuiz.question, currentQuiz.question) ? "line-through text-red-700" : ""}`}>{previousQuiz.question}</p>
-                              </div>
-                              <div className={`rounded border p-2 ${hasChanged(previousQuiz.question, currentQuiz.question) ? "bg-yellow-50" : "bg-white"}`}>
-                                <p className="text-[11px] uppercase text-muted-foreground">Question</p>
-                                <p className="whitespace-pre-wrap">{currentQuiz.question}</p>
-                              </div>
+                      {previousQuiz ? (
+                        <div className="mt-2 grid gap-2 md:grid-cols-2">
+                          <div className="space-y-2">
+                            <div className="rounded border bg-white p-2">
+                              <p className="text-[11px] font-semibold uppercase text-muted-foreground">Previous</p>
                             </div>
-                            {currentQuiz.answers.map((currentAnswer, index) => {
-                              const prevAnswer = previousQuiz.answers[index] ?? "-";
-                              const changed = hasChanged(prevAnswer, currentAnswer);
-                              const isPrevCorrect = previousQuiz.correctIndex === index;
-                              const isCurrentCorrect = currentQuiz.correctIndex === index;
-                              return (
-                                <div key={`quiz-answer-${index}`} className="grid grid-cols-2 gap-2">
-                                  <div className={`rounded border p-2 ${changed ? "bg-red-50" : "bg-white"}`}>
-                                    <p className="text-[11px] uppercase text-muted-foreground">Answer {index + 1}{isPrevCorrect ? " · Correct" : ""}</p>
-                                    <p className={`${changed ? "line-through text-red-700" : ""}`}>{prevAnswer}</p>
-                                  </div>
-                                  <div className={`rounded border p-2 ${changed ? "bg-yellow-50" : "bg-white"}`}>
-                                    <p className="text-[11px] uppercase text-muted-foreground">Answer {index + 1}{isCurrentCorrect ? " · Correct" : ""}</p>
-                                    <p>{currentAnswer}</p>
-                                  </div>
-                                </div>
-                              );
-                            })}
+                            <div className="rounded border bg-white p-2">
+                              <p className="text-[11px] uppercase text-muted-foreground">Question</p>
+                              <p className="whitespace-pre-wrap">{previousQuiz.question}</p>
+                            </div>
+                            {previousQuiz.answers.map((answer, index) => (
+                              <div key={`prev-quiz-${index}`} className="rounded border bg-white p-2">
+                                <p className="text-[11px] uppercase text-muted-foreground">
+                                  Answer {index + 1}{previousQuiz.correctIndex === index ? " · Correct" : ""}
+                                </p>
+                                <p>{answer}</p>
+                              </div>
+                            ))}
+                            <div className="rounded border bg-white p-2">
+                              <p className="text-[11px] uppercase text-muted-foreground">Correct answer</p>
+                              <p>{previousQuiz.correctLabel}</p>
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <div className="rounded border bg-white p-2">
+                              <p className="text-[11px] font-semibold uppercase text-muted-foreground">Current</p>
+                            </div>
+                            <div className="rounded border bg-white p-2">
+                              <p className="text-[11px] uppercase text-muted-foreground">Question</p>
+                              {renderCurrentValue(previousQuiz.question, currentQuiz.question)}
+                            </div>
+                            {currentQuiz.answers.map((answer, index) => (
+                              <div key={`curr-quiz-${index}`} className="rounded border bg-white p-2">
+                                <p className="text-[11px] uppercase text-muted-foreground">
+                                  Answer {index + 1}{currentQuiz.correctIndex === index ? " · Correct" : ""}
+                                </p>
+                                {renderCurrentValue(previousQuiz.answers[index] ?? "-", answer)}
+                              </div>
+                            ))}
+                            <div className="rounded border bg-white p-2">
+                              <p className="text-[11px] uppercase text-muted-foreground">Correct answer</p>
+                              {renderCurrentValue(previousQuiz.correctLabel, currentQuiz.correctLabel)}
+                            </div>
                           </div>
                           {previousQuiz.correctIndex !== currentQuiz.correctIndex ? (
-                            <p className="rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs text-amber-800">
+                            <p className="md:col-span-2 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs text-amber-800">
                               Correct answer changed: {previousQuiz.correctLabel} → {currentQuiz.correctLabel}
                             </p>
                           ) : hasQuizDiff ? null : (
-                            <p className="text-xs text-muted-foreground">No quiz changes detected.</p>
+                            <p className="md:col-span-2 text-xs text-muted-foreground">No quiz changes detected.</p>
                           )}
                         </div>
                       ) : (
