@@ -1937,6 +1937,10 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
                       </div>
                     ) : null}
                     {renderFieldsByKeys(["minimum_age"])}
+                    <div className="space-y-3 border-t border-slate-200 pt-3">
+                      <h5 className="text-sm font-semibold">Quiz question and answers</h5>
+                      {renderFieldsByKeys(["giveaway_question", "answer_correct", "answer_wrong_1", "answer_wrong_2", "answer_wrong_3", "answer_wrong_4"])}
+                    </div>
                   </div>
                 ) : null}
 
@@ -2075,10 +2079,6 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
                       </div>
                     </div>
 
-                    <div className="rounded-md border bg-slate-50 p-4 space-y-3">
-                      <h4 className="text-sm font-semibold">QUIZ QUESTION AND ANSWERS</h4>
-                      {renderFieldsByKeys(["giveaway_question", "answer_correct", "answer_wrong_1", "answer_wrong_2", "answer_wrong_3", "answer_wrong_4"])}
-                    </div>
                     {hasAudienceAmplifier ? (
                       <div className="rounded-md border bg-slate-50 p-4 space-y-3">
                         <h4 className="text-sm font-semibold">AUDIENCE AMPLIFIER</h4>
