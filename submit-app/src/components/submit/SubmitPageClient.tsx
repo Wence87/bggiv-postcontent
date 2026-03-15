@@ -10,6 +10,12 @@ import { Label } from "@/components/ui/label";
 import { AdsCalendar, type AdsWeek } from "@/components/public/AdsCalendar";
 import { SponsorshipCalendar, type SponsorshipMonth } from "@/components/public/SponsorshipCalendar";
 import { PostsCalendar, type PublicPostProduct } from "@/components/public/PostsCalendar";
+import {
+  extractBusinessOptionSelections,
+  hasSelectedBusinessOption,
+  normalizeOptionKey,
+  resolvePostBodyMaxLengthFromContext,
+} from "@/lib/orderContextOptions";
 import { resolveTimeZoneDateTimeToUtc } from "@/lib/timezone";
 import { COUNTRY_GROUPS } from "@/lib/country-groups";
 
@@ -79,7 +85,7 @@ const BODY_HELPER_TEXT =
   "This is the main content of the post. Use it to describe the product, explain the giveaway, and provide any relevant information players should know.";
 
 const COVER_IMAGE_HELPER =
-  "Maximum image size: 1200 × 675 px. Allowed file extensions: webp, jpg, jpeg. Max file size: 500 KB.";
+  "Minimum size: 1200 x 675 px. Allowed file extensions: webp, jpg, jpeg. Images larger than this may be cropped automatically to fit. Max file size: 500 KB.";
 
 const ADDITIONAL_IMAGES_HELPER =
   "To help us place the images correctly in your post, insert the image file names between the relevant paragraphs of your text.";
@@ -304,6 +310,10 @@ type ContextFailure = {
   reason: string;
 };
 
+type ProcessedCoverImageResult =
+  | { file: File; message?: string }
+  | { error: string };
+
 function resolveTokenContextEndpoint(token: string, diag: boolean): string {
   return `/api/submit/order-context?token=${encodeURIComponent(token)}${diag ? "&diag=1" : ""}`;
 }
@@ -412,46 +422,6 @@ function productToPostsView(productType: OrderContextResponse["product"]["produc
   return "NEWS";
 }
 
-function normalizeOptionKey(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]/g, "");
-}
-
-function hasOption(enabledOptions: string[], optionKey: string): boolean {
-  const target = normalizeOptionKey(optionKey);
-  return enabledOptions.some((value) => {
-    const normalized = normalizeOptionKey(value);
-    return normalized === target || normalized.includes(target);
-  });
-}
-
-function stripTrailingPriceFragment(value: string): string {
-  const decodedDollar = value.replace(/&#0*36;|&dollar;/gi, "$").replace(/&nbsp;/gi, " ");
-  return decodedDollar.replace(/\s*\(\s*\+?\s*\$?\s*[\d\s.,]+(?:\s*[A-Za-z]{3})?\s*\)\s*$/u, "").trim();
-}
-
-function decodeBasicHtmlEntities(value: string): string {
-  return value
-    .replace(/&amp;|&#0*38;/gi, "&")
-    .replace(/&quot;|&#0*34;/gi, "\"")
-    .replace(/&#0*39;|&apos;/gi, "'")
-    .replace(/&lt;|&#0*60;/gi, "<")
-    .replace(/&gt;|&#0*62;/gi, ">")
-    .replace(/&nbsp;|&#0*160;/gi, " ");
-}
-
-function normalizeOptionSelectionLabel(value: string): string {
-  const normalized = stripTrailingPriceFragment(decodeBasicHtmlEntities(value).replace(/\s+/g, " ").trim());
-  if (!normalized) return "";
-  return normalized.replace(/\bX\s*&\s*TikTok\b/gi, "X & TikTok");
-}
-
-function resolvePostBodyMaxLength(derivedValues: Record<string, unknown>, enabledOptions: string[]): number | null {
-  const direct = derivedValues.post_body_max_length;
-  if (typeof direct === "number" && Number.isFinite(direct) && direct > 0) return Math.trunc(direct);
-  if (direct === null) return null;
-  return hasOption(enabledOptions, "extended_textlimit") ? null : 1000;
-}
-
 function resolveGiveawayDurationDays(derivedValues: Record<string, unknown>): number {
   const directDays = derivedValues.giveaway_duration_days;
   if (typeof directDays === "number" && [7, 14, 21, 28].includes(directDays)) return directDays;
@@ -543,6 +513,71 @@ function resolveGiveawayDurationDaysFromContext(
   return 7;
 }
 
+async function loadImageElement(file: File): Promise<HTMLImageElement> {
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    return await new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error("IMAGE_LOAD_FAILED"));
+      image.src = objectUrl;
+    });
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+async function processPostsCoverImage(file: File): Promise<ProcessedCoverImageResult> {
+  const image = await loadImageElement(file);
+  if (image.naturalWidth < 1200 || image.naturalHeight < 675) {
+    return { error: "Cover image is too small. Minimum size is 1200 x 675 px." };
+  }
+
+  if (image.naturalWidth === 1200 && image.naturalHeight === 675) {
+    return { file };
+  }
+
+  const targetWidth = 1200;
+  const targetHeight = 675;
+  const targetRatio = targetWidth / targetHeight;
+  const sourceRatio = image.naturalWidth / image.naturalHeight;
+  let sourceWidth = image.naturalWidth;
+  let sourceHeight = image.naturalHeight;
+  let sourceX = 0;
+  let sourceY = 0;
+
+  if (sourceRatio > targetRatio) {
+    sourceWidth = image.naturalHeight * targetRatio;
+    sourceX = (image.naturalWidth - sourceWidth) / 2;
+  } else if (sourceRatio < targetRatio) {
+    sourceHeight = image.naturalWidth / targetRatio;
+    sourceY = (image.naturalHeight - sourceHeight) / 2;
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.width = targetWidth;
+  canvas.height = targetHeight;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    return { error: "Unable to process cover image." };
+  }
+
+  ctx.drawImage(image, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, targetWidth, targetHeight);
+
+  const outputType = file.type === "image/webp" ? "image/webp" : "image/jpeg";
+  const blob = await new Promise<Blob | null>((resolve) => {
+    canvas.toBlob((value) => resolve(value), outputType, 0.92);
+  });
+  if (!blob) {
+    return { error: "Unable to process cover image." };
+  }
+
+  return {
+    file: new File([blob], file.name, { type: outputType }),
+    message: "Image accepted. It will be center-cropped automatically to 1200 x 675 px.",
+  };
+}
+
 export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -559,6 +594,7 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
   const [isReserving, setIsReserving] = useState(false);
   const [reservationConfirmed, setReservationConfirmed] = useState(false);
   const [deliveryTipCopied, setDeliveryTipCopied] = useState(false);
+  const [coverImageFeedback, setCoverImageFeedback] = useState<string | null>(null);
   const [reservationChoice, setReservationChoice] = useState<ReservationChoice>({});
 
   const [selectedAdsWeek, setSelectedAdsWeek] = useState<AdsWeek | null>(null);
@@ -840,37 +876,10 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
     currentContext.product.product_type === "promo" ||
     currentContext.product.product_type === "giveaway";
   const isGiveaway = currentContext.product.product_type === "giveaway";
-  const postBodyMaxLength = isPostsProduct
-    ? resolvePostBodyMaxLength(currentContext.derived_values ?? {}, currentContext.enabled_options ?? [])
-    : null;
-  const hasEmbeddedVideo =
-    isPostsProduct &&
-    (hasOption(currentContext.enabled_options ?? [], "embedded_video") ||
-      (currentContext.options ?? []).some(
-        (entry) => Boolean(entry.enabled) && normalizeOptionKey(entry.option_key).includes("embeddedvideo")
-      ));
-  const hasAdditionalImages =
-    isPostsProduct &&
-    ((currentContext.enabled_options ?? []).some((value) => normalizeOptionKey(value).includes("additionalimages")) ||
-      (currentContext.options ?? []).some(
-        (entry) => Boolean(entry.enabled) && normalizeOptionKey(entry.option_key).includes("additionalimages")
-      ) ||
-      hasOption(currentContext.enabled_options ?? [], "additional_images"));
-  const hasAudienceAmplifier =
-    isGiveaway &&
-    (hasOption(currentContext.enabled_options ?? [], "audience_amplifier") ||
-      (currentContext.options ?? []).some(
-        (entry) =>
-          Boolean(entry.enabled) &&
-          (
-            normalizeOptionKey(entry.option_key).includes("audienceamplifier") ||
-            normalizeOptionKey(entry.canonical_key ?? "").includes("audienceamplifier") ||
-            normalizeOptionKey(entry.display_label ?? "").includes("audienceamplifier") ||
-            normalizeOptionKey(entry.option_key).includes("multiactionentry") ||
-            normalizeOptionKey(entry.canonical_key ?? "").includes("multiactionentry") ||
-            normalizeOptionKey(entry.display_label ?? "").includes("multiactionentry")
-          )
-      ));
+  const postBodyMaxLength = isPostsProduct ? resolvePostBodyMaxLengthFromContext(currentContext) : null;
+  const hasEmbeddedVideo = isPostsProduct && hasSelectedBusinessOption(currentContext, "embedded_video");
+  const hasAdditionalImages = isPostsProduct && hasSelectedBusinessOption(currentContext, "additional_images");
+  const hasAudienceAmplifier = isGiveaway && hasSelectedBusinessOption(currentContext, "audience_amplifier");
   const giveawayUnitsCount = Number(values.prize_units_count || 0);
   const hasUnlimitedBody = isPostsProduct && postBodyMaxLength == null;
   const unlockedHighlightCount = isGiveaway ? computeUnlockedHighlights(giveawayUnitsCount) : 0;
@@ -926,89 +935,11 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
     currentContext.order?.order_id ??
     (typeof currentContext.order?.id === "number" ? String(currentContext.order.id) : null);
   const destinationRequiredMessage = "You must select at least one destination where the prize can be shipped.";
-  const optionSummaries = (() => {
-    const options = Array.isArray(currentContext.options) ? currentContext.options : [];
-    const labelByCanonical: Record<string, string> = {
-      audience_amplifier: "Audience Amplifier",
-      duration: "Duration",
-      social_boost: "Social Boost",
-      hero_grid: "Featured Spot in the Hero Grid",
-      sticky_post: "Sticky Post",
-      sidebar_spotlight: "Sidebar Spotlight",
-      extended_text_limit: "Extended Text Limit",
-      additional_images: "Additional Images",
-      embedded_video: "Embedded Video",
-      weekly_newsletter_feature: "Weekly Newsletter Feature",
-    };
-    const summaryByCanonical = new Map<string, { key: string; label: string; value: string }>();
-
-    const toCanonical = (rawKey: string): string => {
-      const normalized = normalizeOptionKey(rawKey);
-      const aliasToCanonical: Record<string, string> = {
-        audienceamplifier: "audience_amplifier",
-        giveawayduration: "duration",
-        duration: "duration",
-        socialboost: "social_boost",
-        featuredspotherogrid: "hero_grid",
-        herogrid: "hero_grid",
-        featuredspotherogrid7days: "hero_grid",
-        stickypost: "sticky_post",
-        sidebarspotlight: "sidebar_spotlight",
-        extendedtextlimit: "extended_text_limit",
-        extendedtext_limit: "extended_text_limit",
-        additionalimages: "additional_images",
-        additional_images: "additional_images",
-        embeddedvideo: "embedded_video",
-        embedded_video: "embedded_video",
-        weeklynewsletter: "weekly_newsletter_feature",
-        weeklynewsletterfeature: "weekly_newsletter_feature",
-        newsletterfeature: "weekly_newsletter_feature",
-        newsletter_feature: "weekly_newsletter_feature",
-      };
-      if (aliasToCanonical[normalized]) return aliasToCanonical[normalized];
-      if (normalized.includes("herogrid")) return "hero_grid";
-      if (normalized.includes("newsletter")) return "weekly_newsletter_feature";
-      if (normalized.includes("extendedtext")) return "extended_text_limit";
-      if (normalized.includes("additionalimages")) return "additional_images";
-      if (normalized.includes("embeddedvideo")) return "embedded_video";
-      if (normalized.includes("socialboost")) return "social_boost";
-      if (normalized.includes("stickypost")) return "sticky_post";
-      if (normalized.includes("sidebarspotlight")) return "sidebar_spotlight";
-      if (normalized.includes("duration")) return "duration";
-      if (normalized.includes("audienceamplifier")) return "audience_amplifier";
-      return normalized;
-    };
-
-    for (const option of options) {
-      const canonical = option.canonical_key ? toCanonical(option.canonical_key) : toCanonical(option.option_key);
-      if (!canonical || summaryByCanonical.has(canonical)) continue;
-      if (!labelByCanonical[canonical]) continue;
-      const value = normalizeOptionSelectionLabel(option.selected_value_en ?? option.selected_value ?? "");
-      if (!value) continue;
-      summaryByCanonical.set(canonical, {
-        key: canonical,
-        label: option.display_label && option.display_label.trim() ? option.display_label.trim() : labelByCanonical[canonical],
-        value,
-      });
-    }
-
-    const displayOrder = [
-      "audience_amplifier",
-      "duration",
-      "social_boost",
-      "hero_grid",
-      "sticky_post",
-      "sidebar_spotlight",
-      "extended_text_limit",
-      "additional_images",
-      "embedded_video",
-      "weekly_newsletter_feature",
-    ];
-
-    return displayOrder
-      .map((key) => summaryByCanonical.get(key))
-      .filter((entry): entry is { key: string; label: string; value: string } => Boolean(entry));
-  })();
+  const optionSummaries = extractBusinessOptionSelections(currentContext).map((entry) => ({
+    key: entry.key,
+    label: entry.label,
+    value: entry.selectedLabel,
+  }));
   const getGroupSelectionState = (countries: string[]) => {
     if (!countries.length) return "none" as const;
     const selectedCount = countries.reduce((count, country) => count + (selectedShippingCountries.includes(country) ? 1 : 0), 0);
@@ -1028,6 +959,26 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
 
   function setFieldFileValue(key: string, file: File | null) {
     setFileValues((previous) => ({ ...previous, [key]: file }));
+  }
+
+  async function handleFileFieldChange(key: string, file: File | null) {
+    if (key === "cover_image_upload") {
+      setCoverImageFeedback(null);
+    }
+
+    if (key === "cover_image_upload" && file && isPostsProduct) {
+      const processed = await processPostsCoverImage(file);
+      if ("error" in processed) {
+        setFieldFileValue(key, null);
+        setCoverImageFeedback(processed.error);
+        return;
+      }
+      setFieldFileValue(key, processed.file);
+      setCoverImageFeedback(processed.message ?? null);
+      return;
+    }
+
+    setFieldFileValue(key, file);
   }
 
   function setIntegerFieldValue(key: string, raw: string) {
@@ -1510,7 +1461,7 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
             value={values[field.key] ?? ""}
             onChange={(event) => setFieldValue(field.key, event.target.value)}
             required={Boolean(field.required)}
-            maxLength={showShortDescCounter || showPrizeShortCounter ? 300 : undefined}
+            maxLength={showBodyCounter ? (postBodyMaxLength ?? undefined) : showShortDescCounter || showPrizeShortCounter ? 300 : undefined}
             rows={showBodyCounter ? 10 : 4}
             className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 break-words [overflow-wrap:anywhere]"
           />
@@ -1569,7 +1520,7 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
             type="file"
             required={Boolean(field.required) && !existingName}
             accept={field.accept}
-            onChange={(event) => setFieldFileValue(field.key, event.target.files?.[0] ?? null)}
+            onChange={(event) => void handleFileFieldChange(field.key, event.target.files?.[0] ?? null)}
           />
           {existingName ? (
             <p className="text-xs text-muted-foreground">
@@ -1577,11 +1528,19 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
               {hasReplacement ? " (will be replaced by the new upload)" : ""}
             </p>
           ) : null}
+          {field.key === "cover_image_upload" && coverImageFeedback ? (
+            <p className={`text-xs ${coverImageFeedback.includes("too small") ? "text-red-700" : "text-emerald-700"}`}>{coverImageFeedback}</p>
+          ) : null}
           {field.key === "banner_image_upload" ? (
             <p className="text-xs text-muted-foreground">
               {currentContext.product.product_type === "sponsorship"
                 ? "Upload your sponsorship banner, JPG/JPEG only. Maximum file size: 200 KB."
                 : "Upload a Medium Rectangle banner (680 × 680 px), JPG/JPEG only. Maximum file size: 200 KB."}
+            </p>
+          ) : null}
+          {field.key === "cover_image_upload" ? (
+            <p className="text-xs text-muted-foreground">
+              Minimum size: 1200 x 675 px. Images larger than this may be cropped automatically to fit.
             </p>
           ) : null}
           {field.key === "additional_image_3" ? (
@@ -1875,6 +1834,15 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
           </div>
         ) : null}
 
+        {isGiveaway ? (
+          <div className="rounded-md border bg-slate-50 p-4 space-y-3">
+            <h4 className="text-sm font-semibold">PUBLICATION / TIMING</h4>
+            <p className="text-xs text-muted-foreground">Dates are derived from your reservation and purchased duration.</p>
+            <p className="text-xs text-muted-foreground">{GIVEAWAY_DATES_HELPER}</p>
+            {renderFieldsByKeys(["start_date", "end_date"])}
+          </div>
+        ) : null}
+
         {reservationError ? <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{reservationError}</div> : null}
         {hasConfirmedReservation ? (
           <div className="rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-700">Reservation confirmed.</div>
@@ -1937,6 +1905,7 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
                           {unlockedHighlightCount === 2 ? "Select up to 2 highlight options to activate for free." : null}
                           {unlockedHighlightCount >= 3 ? "Select up to 3 highlight options to activate for free." : null}
                         </p>
+                        <p className="text-xs text-emerald-900">We will contact you if your choice requires clarification.</p>
                         {availableHighlightOptions.length > 0 ? (
                           <div className="grid gap-2 sm:grid-cols-2">
                             {availableHighlightOptions.map((option) => (
@@ -1969,13 +1938,6 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
 
                 {isGiveaway ? (
                   <>
-                    <div className="rounded-md border bg-slate-50 p-4 space-y-3">
-                      <h4 className="text-sm font-semibold">PUBLICATION / TIMING</h4>
-                      <p className="text-xs text-muted-foreground">Dates are derived from your reservation and purchased duration.</p>
-                      <p className="text-xs text-muted-foreground">{GIVEAWAY_DATES_HELPER}</p>
-                      {renderFieldsByKeys(["start_date", "end_date"])}
-                    </div>
-
                     <div className="rounded-md border bg-slate-50 p-4 space-y-3">
                       <h4 className="text-sm font-semibold">DISTRIBUTION / ELIGIBILITY</h4>
                       <p className="text-xs text-muted-foreground">Select where you can ship the giveaway prize.</p>
@@ -2169,12 +2131,12 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
               <div className="rounded-md border border-yellow-200 bg-yellow-50 p-3">
                 <div className="flex items-start gap-2">
                   <span aria-hidden="true" className="text-base leading-5">💡</span>
-                  <div className="min-w-0 flex-1 space-y-2">
+                  <div className="min-w-0 flex-1">
                     <p className="text-sm font-semibold text-yellow-900">Tip</p>
-                    <p className="text-xs text-yellow-900">
-                      To make sure you receive update requests regarding your submission, please add this address to your contacts:
-                    </p>
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-yellow-900 md:flex-nowrap">
+                      <span className="whitespace-nowrap">
+                        To make sure you receive update requests regarding your submission, please add this address to your contacts:
+                      </span>
                       <code className="rounded bg-yellow-100 px-2 py-1 font-mono text-xs text-yellow-900">noreply@boardgamegiveaways.com</code>
                       <button
                         type="button"

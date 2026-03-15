@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { allowRateLimited, getClientIp, isAllowedOrigin } from "@/lib/apiSecurity";
 import { fetchWPOrderContextByToken, resolveLinkedOrderIdFromContext } from "@/lib/wpOrderContext";
 import { saveAdsSubmissionWithDb } from "@/lib/finalizeSubmissionService";
+import {
+  hasSelectedBusinessOption,
+  normalizeOptionKey,
+  resolvePostBodyMaxLengthFromContext,
+} from "@/lib/orderContextOptions";
 import { getActiveReservationsByToken, tokenReservationRef } from "@/lib/submitReservationService";
 import { BookingStatus, Product, ReservationSource } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
@@ -77,27 +82,6 @@ function getDateKeyInBrussels(date: Date): string {
     if (part.type !== "literal") parts[part.type] = part.value;
   }
   return `${parts.year}-${parts.month}-${parts.day}`;
-}
-
-function resolvePostBodyMaxLength(context: Record<string, unknown>): number | null {
-  const derived = context.derived_values;
-  if (!derived || typeof derived !== "object") return 1000;
-  const direct = (derived as Record<string, unknown>).post_body_max_length;
-  if (typeof direct === "number" && Number.isFinite(direct) && direct > 0) return Math.trunc(direct);
-  if (direct === null) return null;
-  const enabled = Array.isArray(context.enabled_options) ? context.enabled_options : [];
-  if (
-    enabled.some(
-      (value) => typeof value === "string" && normalizeOptionKey(value).includes(normalizeOptionKey("extended_textlimit"))
-    )
-  ) {
-    return null;
-  }
-  return 1000;
-}
-
-function normalizeOptionKey(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
 function resolveGiveawayDurationDays(context: Record<string, unknown>): number {
@@ -216,36 +200,7 @@ function isValidHttpUrl(value: string): boolean {
 }
 
 function hasAudienceAmplifierEnabled(context: Record<string, unknown>): boolean {
-  const enabledOptions = Array.isArray(context.enabled_options) ? context.enabled_options : [];
-  if (
-    enabledOptions.some(
-      (value) =>
-        typeof value === "string" &&
-        (
-          normalizeOptionKey(value).includes(normalizeOptionKey("audience_amplifier")) ||
-          normalizeOptionKey(value).includes("multiactionentry")
-        )
-    )
-  ) {
-    return true;
-  }
-  const options = Array.isArray(context.options) ? context.options : [];
-  return options.some((option) => {
-    if (!option || typeof option !== "object") return false;
-    const map = option as Record<string, unknown>;
-    if (!Boolean(map.enabled)) return false;
-    const optionKey = typeof map.option_key === "string" ? normalizeOptionKey(map.option_key) : "";
-    const canonicalKey = typeof map.canonical_key === "string" ? normalizeOptionKey(map.canonical_key) : "";
-    const displayLabel = typeof map.display_label === "string" ? normalizeOptionKey(map.display_label) : "";
-    return (
-      optionKey.includes("audienceamplifier") ||
-      canonicalKey.includes("audienceamplifier") ||
-      displayLabel.includes("audienceamplifier") ||
-      optionKey.includes("multiactionentry") ||
-      canonicalKey.includes("multiactionentry") ||
-      displayLabel.includes("multiactionentry")
-    );
-  });
+  return hasSelectedBusinessOption(context, "audience_amplifier");
 }
 
 function monthKeyToRange(monthKey: string): { startDate: string; endDate: string } | null {
@@ -513,6 +468,7 @@ export async function POST(request: NextRequest) {
     context.product.product_type === "promo" ||
     context.product.product_type === "giveaway";
   const isGiveaway = context.product.product_type === "giveaway";
+  const hasEmbeddedVideoSelected = isPostsProduct && hasSelectedBusinessOption(context as unknown as Record<string, unknown>, "embedded_video");
   const hasAudienceAmplifier = isGiveaway && hasAudienceAmplifierEnabled(context as unknown as Record<string, unknown>);
   const selectedHighlightOptions = isGiveaway
     ? Array.from(
@@ -558,12 +514,15 @@ export async function POST(request: NextRequest) {
     if (!bodyText) {
       return badRequest("Missing required body");
     }
-    const bodyMax = resolvePostBodyMaxLength(context as unknown as Record<string, unknown>);
+    const bodyMax = resolvePostBodyMaxLengthFromContext(context as unknown as Record<string, unknown>);
     if (bodyMax != null && bodyText.length > bodyMax) {
       return badRequest(`Body is too long. Maximum allowed length is ${bodyMax} characters.`);
     }
     if (shortProductDescription.length < 100 || shortProductDescription.length > 300) {
       return badRequest("Short product description must be between 100 and 300 characters.");
+    }
+    if (embeddedVideoLink && !hasEmbeddedVideoSelected) {
+      return badRequest("Embedded video link is not available for this order.");
     }
     if (embeddedVideoLink) {
       try {
