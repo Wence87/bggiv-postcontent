@@ -141,7 +141,7 @@ final class BGG_Order_Context_Resolver {
                 (string) ($option['option_name'] ?? ''),
                 (string) ($option['technical_slug'] ?? '')
             );
-            $selected_raw = !empty($match['enabled']) && is_string($match['raw_value'])
+            $selected_raw = is_string($match['raw_value'])
                 ? self::clean_selected_value((string) $match['raw_value'])
                 : null;
 
@@ -504,10 +504,28 @@ final class BGG_Order_Context_Resolver {
         $normalized = strtolower($raw);
 
         if ($canonical_key === 'extended_text_limit') {
-            return 'No character limit';
+            if ($raw === '') {
+                return null;
+            }
+            if (strpos($normalized, '1,000') !== false || strpos($normalized, '1000') !== false) {
+                return 'I limit my post to 1,000 characters.';
+            }
+            if (strpos($normalized, 'illimité') !== false || strpos($normalized, 'illimite') !== false || strpos($normalized, 'no character limit') !== false) {
+                return 'No character limit.';
+            }
+            return 'I limit my post to 1,000 characters.';
         }
         if ($canonical_key === 'additional_images') {
-            return 'Up to 3 additional images';
+            if ($raw === '') {
+                return null;
+            }
+            if (strpos($normalized, 'cover image only') !== false) {
+                return 'I use the cover image only.';
+            }
+            if (strpos($normalized, 'additional image') !== false) {
+                return 'I enrich my post with up to three additional images.';
+            }
+            return 'I use the cover image only.';
         }
         if ($canonical_key === 'embedded_video' || $canonical_key === 'weekly_newsletter_feature') {
             return 'Enabled';
