@@ -527,8 +527,29 @@ final class BGG_Order_Context_Resolver {
             }
             return 'I use the cover image only.';
         }
-        if ($canonical_key === 'embedded_video' || $canonical_key === 'weekly_newsletter_feature') {
-            return 'Enabled';
+        if ($canonical_key === 'embedded_video') {
+            if ($raw === '') {
+                return null;
+            }
+            if (strpos($normalized, 'do not include') !== false || strpos($normalized, 'without') !== false) {
+                return 'I do not include an embedded video.';
+            }
+            if (strpos($normalized, 'embedded video') !== false || strpos($normalized, 'enhance my post') !== false) {
+                return 'I enhance my post with an embedded video.';
+            }
+            return null;
+        }
+        if ($canonical_key === 'weekly_newsletter_feature') {
+            if ($raw === '') {
+                return null;
+            }
+            if (strpos($normalized, 'do not feature') !== false) {
+                return 'I do not feature my giveaway in the weekly newsletter.';
+            }
+            if (strpos($normalized, 'feature my post in the weekly newsletter') !== false || strpos($normalized, 'feature my giveaway in the weekly newsletter') !== false) {
+                return 'I feature my giveaway in the weekly newsletter.';
+            }
+            return null;
         }
 
         if ($canonical_key === 'duration') {

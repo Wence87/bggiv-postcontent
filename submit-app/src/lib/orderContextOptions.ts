@@ -135,8 +135,6 @@ const POSITIVE_SELECTION_PATTERNS = [
 const PESSIMISTIC_OPTION_KEYS = new Set([
   "extended_text_limit",
   "additional_images",
-  "embedded_video",
-  "weekly_newsletter_feature",
 ]);
 
 export function normalizeOptionKey(value: string): string {
