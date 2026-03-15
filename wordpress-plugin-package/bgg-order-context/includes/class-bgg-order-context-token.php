@@ -7,27 +7,19 @@ if (!defined('ABSPATH')) {
 final class BGG_Order_Context_Token {
     private const TRANSIENT_PREFIX = 'bgg_oc_tok_';
 
-    public static function get_ttl_seconds(): int {
-        $ttl = (int) apply_filters('bgg_order_context_token_ttl', 20 * MINUTE_IN_SECONDS);
-        return max(10 * MINUTE_IN_SECONDS, min(30 * MINUTE_IN_SECONDS, $ttl));
-    }
-
     public static function issue_for_order(int $order_id): array {
-        $ttl = self::get_ttl_seconds();
         $token = self::generate_token();
-        $expires_at = time() + $ttl;
 
         $payload = [
             'order_id' => $order_id,
-            'exp' => $expires_at,
         ];
 
-        set_transient(self::transient_key($token), $payload, $ttl);
+        set_transient(self::transient_key($token), $payload, 0);
 
         return [
             'token' => $token,
-            'expires_in' => $ttl,
-            'expires_at' => gmdate('c', $expires_at),
+            'expires_in' => null,
+            'expires_at' => null,
         ];
     }
 
@@ -42,16 +34,14 @@ final class BGG_Order_Context_Token {
         }
 
         $order_id = isset($payload['order_id']) ? (int) $payload['order_id'] : 0;
-        $exp = isset($payload['exp']) ? (int) $payload['exp'] : 0;
 
-        if ($order_id <= 0 || $exp <= time()) {
+        if ($order_id <= 0) {
             delete_transient(self::transient_key($token));
             return null;
         }
 
         return [
             'order_id' => $order_id,
-            'exp' => $exp,
         ];
     }
 

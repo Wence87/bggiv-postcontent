@@ -5,7 +5,6 @@ type SubmissionEditTokenPayload = {
   submission_id: string;
   email: string;
   iat: number;
-  exp: number;
 };
 
 const TOKEN_PREFIX = "bgg_edit";
@@ -35,20 +34,17 @@ function isValidPayload(value: unknown): value is SubmissionEditTokenPayload {
     payload.kind === "submission_edit" &&
     typeof payload.submission_id === "string" &&
     typeof payload.email === "string" &&
-    typeof payload.iat === "number" &&
-    typeof payload.exp === "number"
+    typeof payload.iat === "number"
   );
 }
 
 export function createSubmissionEditToken(input: { submissionId: string; email: string; ttlSeconds?: number }): string {
   const now = Math.floor(Date.now() / 1000);
-  const ttlSeconds = Math.max(300, input.ttlSeconds ?? 14 * 24 * 60 * 60);
   const payload: SubmissionEditTokenPayload = {
     kind: "submission_edit",
     submission_id: input.submissionId,
     email: input.email.trim().toLowerCase(),
     iat: now,
-    exp: now + ttlSeconds,
   };
   const payloadB64 = toBase64Url(JSON.stringify(payload));
   const signature = crypto.createHmac("sha256", getSecret()).update(payloadB64).digest("hex");
@@ -80,9 +76,5 @@ export function verifySubmissionEditToken(token: string): SubmissionEditTokenPay
   if (!isValidPayload(decoded)) {
     throw new Error("TOKEN_INVALID_PAYLOAD");
   }
-  if (decoded.exp < Math.floor(Date.now() / 1000)) {
-    throw new Error("TOKEN_EXPIRED");
-  }
   return decoded;
 }
-

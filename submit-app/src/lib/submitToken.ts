@@ -9,7 +9,6 @@ export type SubmitTokenPayload = {
   product_type: SubmitTokenProductType;
   duration_weeks: number | null;
   iat: number;
-  exp: number;
 };
 
 function fromBase64Url(input: string): string {
@@ -46,8 +45,7 @@ function isValidPayload(payload: unknown): payload is SubmitTokenPayload {
     typeof value.email === "string" &&
     validProduct &&
     validDuration &&
-    typeof value.iat === "number" &&
-    typeof value.exp === "number"
+    typeof value.iat === "number"
   );
 }
 
@@ -76,10 +74,6 @@ export function verifySubmitToken(token: string): SubmitTokenPayload {
 
   if (!isValidPayload(decoded)) {
     throw new Error("TOKEN_INVALID_PAYLOAD");
-  }
-
-  if (decoded.exp < Math.floor(Date.now() / 1000)) {
-    throw new Error("TOKEN_EXPIRED");
   }
 
   return decoded;

@@ -128,7 +128,7 @@ final class BGG_Order_Context_REST {
         if (!$token_payload || empty($token_payload['order_id'])) {
             BGG_Order_Context_Rate_Limit::mark_invalid('token', $ip);
             self::debug_log('invalid_token', ['route' => 'order-context', 'ip' => $ip, 'token_hash' => substr(md5($token), 0, 12)]);
-            return new WP_Error('invalid_token', 'Invalid or expired token.', ['status' => 403]);
+            return new WP_Error('invalid_token', 'Invalid token.', ['status' => 403]);
         }
 
         $order = wc_get_order((int) $token_payload['order_id']);

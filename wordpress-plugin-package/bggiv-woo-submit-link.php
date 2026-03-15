@@ -235,7 +235,6 @@ final class BGGIV_Woo_Submit_Link {
             'currency' => (string) $order->get_currency(),
             'line_items' => $line_items,
             'iat' => $iat,
-            'exp' => $iat + (30 * DAY_IN_SECONDS),
         ];
 
         return apply_filters('bggiv_wc_order_payload', $payload, $order);

@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
     payload = verifySubmitToken(token);
   } catch (error) {
     const code = error instanceof Error ? error.message : "TOKEN_INVALID";
-    return unauthorized(code, "Invalid or expired token");
+    return unauthorized(code, "Invalid token");
   }
 
   await cleanupExpiredReservations();
