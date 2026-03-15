@@ -335,16 +335,24 @@ function extractWpErrorCode(payload: unknown): string | null {
 function mapContextHttpFailure(status: number, payload: unknown): ContextFailure {
   const code = extractWpErrorCode(payload);
   if (code === "missing_token") return { message: "Token not found", reason: code };
-  if (code === "invalid_token") return { message: "Token expired or invalid", reason: code };
+  if (code === "invalid_token") return { message: "Invalid token", reason: code };
+  if (code === "submission_completed") return { message: "Submission already completed", reason: code };
+  if (code === "order_status_not_allowed") {
+    return {
+      message: "This submission link is no longer available because the related order is no longer active.",
+      reason: code,
+    };
+  }
   if (code === "forbidden_origin") return { message: "Network / CORS error while loading order context", reason: code };
   if (code === "rate_limited") return { message: "Too many requests. Please retry in a moment.", reason: code };
   if (code === "config_missing" || code === "woocommerce_missing") {
     return { message: "Order context unavailable", reason: code };
   }
-  if (code === "order_not_found" || code === "order_status_not_allowed") {
+  if (code === "order_not_found") {
     return { message: "Order context unavailable", reason: code };
   }
-  if (status === 403) return { message: "Token expired or invalid", reason: code ?? "http_403" };
+  if (status === 403) return { message: "Invalid token", reason: code ?? "http_403" };
+  if (status === 409) return { message: "Submission already completed", reason: code ?? "http_409" };
   if (status === 404) return { message: "Order context unavailable", reason: code ?? "http_404" };
   if (status === 429) return { message: "Too many requests. Please retry in a moment.", reason: code ?? "http_429" };
   return { message: "Order context unavailable", reason: code ?? `http_${status}` };

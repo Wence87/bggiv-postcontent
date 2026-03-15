@@ -85,11 +85,15 @@ export async function POST(request: NextRequest) {
   let context;
   try {
     context = await fetchWPOrderContextByToken(token);
-  } catch {
+  } catch (error) {
     if (!allowRateLimited(`submit-reserve-invalid:${ip}`, 10, 15 * 60 * 1000)) {
       return apiError(429, "RATE_LIMITED", "Too many invalid attempts");
     }
-    return apiError(401, "TOKEN_INVALID", "Invalid or expired token");
+    const code = error instanceof Error ? error.message : "TOKEN_INVALID";
+    if (code === "order_status_not_allowed" || code === "ORDER_STATUS_NOT_ALLOWED") {
+      return apiError(403, "order_status_not_allowed", "This submission link is no longer available because the related order is no longer active.");
+    }
+    return apiError(401, "TOKEN_INVALID", "Invalid token");
   }
 
   try {

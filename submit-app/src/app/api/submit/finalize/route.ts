@@ -368,7 +368,13 @@ export async function POST(request: NextRequest) {
       return apiError(429, "RATE_LIMITED", "Too many invalid attempts");
     }
     const code = tokenError instanceof Error ? tokenError.message : "TOKEN_INVALID";
-    return apiError(401, code, "Invalid or expired token");
+    if (code === "order_status_not_allowed" || code === "ORDER_STATUS_NOT_ALLOWED") {
+      return apiError(403, "order_status_not_allowed", "This submission link is no longer available because the related order is no longer active.");
+    }
+    if (code === "SUBMISSION_COMPLETED") {
+      return apiError(409, code, "Submission already completed");
+    }
+    return apiError(401, code, "Invalid token");
   }
 
   if (context.product.product_key !== productKey) {
@@ -459,7 +465,7 @@ export async function POST(request: NextRequest) {
       existingSubmissionForEdit.contactEmail.trim().toLowerCase() !== effectiveContactEmail.trim().toLowerCase()
     )
   ) {
-    return apiError(403, "TOKEN_INVALID", "Invalid or expired token");
+    return apiError(403, "TOKEN_INVALID", "Invalid token");
   }
   let effectiveStartDate = startDate;
   let effectiveEndDate = normalizeString(formData.end_date);

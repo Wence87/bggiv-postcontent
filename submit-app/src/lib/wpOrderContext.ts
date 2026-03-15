@@ -139,13 +139,31 @@ export async function fetchWPOrderContextByToken(token: string): Promise<WPOrder
   }
 
   if (!response.ok) {
+    const upstreamCode =
+      payload && typeof payload === "object" && typeof (payload as Record<string, unknown>).code === "string"
+        ? ((payload as Record<string, unknown>).code as string)
+        : null;
+    if (upstreamCode === "order_status_not_allowed") {
+      throw new Error("order_status_not_allowed");
+    }
     throw new Error("TOKEN_INVALID");
   }
   if (!payload || typeof payload !== "object" || !("product" in payload)) {
     throw new Error("CONTEXT_INVALID");
   }
+  const context = payload as WPOrderContext;
+  const linkedOrderId = resolveLinkedOrderIdFromContext(context);
+  if (linkedOrderId) {
+    const existingSubmission = await prisma.submitFormSubmission.findFirst({
+      where: { linkedOrderId },
+      select: { id: true },
+    });
+    if (existingSubmission) {
+      throw new Error("SUBMISSION_COMPLETED");
+    }
+  }
 
-  return payload as WPOrderContext;
+  return context;
 }
 
 function normalizeWooOrderId(value: unknown): string | null {
