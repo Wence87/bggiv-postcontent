@@ -85,7 +85,7 @@ const BODY_HELPER_TEXT =
   "This is the main content of the post. Use it to describe the product, explain the giveaway, and provide any relevant information players should know.";
 
 const COVER_IMAGE_HELPER =
-  "Minimum size: 1200 x 675 px. Allowed file extensions: webp, jpg, jpeg. Images larger than this may be cropped automatically to fit. Max file size: 500 KB.";
+  "Minimum size: 1200 x 675 px. Larger images are supported. Allowed file extensions: webp, jpg, jpeg. Max file size: 500 KB.";
 
 const ADDITIONAL_IMAGES_HELPER =
   "To help us place the images correctly in your post, insert the image file names between the relevant paragraphs of your text.";
@@ -582,7 +582,7 @@ async function processPostsCoverImage(file: File): Promise<ProcessedCoverImageRe
 
   return {
     file: new File([blob], file.name, { type: outputType }),
-    message: "Image accepted. It will be center-cropped automatically to 1200 x 675 px.",
+    message: "Image accepted. Your image will be automatically resized to the final display size (1200 × 675 px) and cropped if necessary.",
   };
 }
 
@@ -1549,7 +1549,7 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
           ) : null}
           {field.key === "cover_image_upload" ? (
             <p className="text-xs text-muted-foreground">
-              Minimum size: 1200 x 675 px. Images larger than this may be cropped automatically to fit.
+              Minimum size: 1200 × 675 px. Larger images are supported.
             </p>
           ) : null}
           {field.key === "additional_image_3" ? (
