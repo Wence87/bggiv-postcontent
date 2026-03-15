@@ -152,7 +152,12 @@ export function stripTrailingPriceFragment(value: string): string {
 }
 
 export function normalizeOptionSelectionLabel(value: string): string {
-  return stripTrailingPriceFragment(decodeBasicHtmlEntities(value).replace(/\s+/g, " ").trim());
+  return stripTrailingPriceFragment(
+    decodeBasicHtmlEntities(value)
+      .replace(/[\u2018\u2019]/g, "'")
+      .replace(/\s+/g, " ")
+      .trim()
+  );
 }
 
 export function canonicalizeBusinessOptionKey(rawKey: string): string {
@@ -194,8 +199,18 @@ export function isPositiveOptionSelection(value: string): boolean {
   const normalized = normalizeOptionSelectionLabel(value).toLowerCase();
   if (!normalized) return false;
   if (NEGATIVE_SELECTION_PATTERNS.some((pattern) => normalized.includes(pattern))) return false;
+  if (/\b\d+\s*(day|days|week|weeks)\b/.test(normalized)) return true;
   if (POSITIVE_SELECTION_PATTERNS.some((pattern) => normalized.includes(pattern))) return true;
   return !NEGATIVE_SELECTION_PATTERNS.some((pattern) => normalized.includes(pattern));
+}
+
+function classifyOptionSelection(value: string): "positive" | "negative" | "unknown" {
+  const normalized = normalizeOptionSelectionLabel(value).toLowerCase();
+  if (!normalized) return "unknown";
+  if (NEGATIVE_SELECTION_PATTERNS.some((pattern) => normalized.includes(pattern))) return "negative";
+  if (/\b\d+\s*(day|days|week|weeks)\b/.test(normalized)) return "positive";
+  if (POSITIVE_SELECTION_PATTERNS.some((pattern) => normalized.includes(pattern))) return "positive";
+  return "unknown";
 }
 
 function parseBoolish(value: unknown): boolean | null {
@@ -218,30 +233,24 @@ function resolveFallbackSelectionLabel(canonical: string, selected: boolean): st
 function resolveSelectionState(option: OrderContextOptionLike, canonical: string, enabledSet: Set<string>): BusinessOptionSelection | null {
   const selectedLabel = normalizeOptionSelectionLabel(option.selected_value_en ?? option.selected_value ?? "");
   const explicitEnabled = parseBoolish(option.enabled);
-  const hasNegativeLabel = selectedLabel ? !isPositiveOptionSelection(selectedLabel) : false;
-  const hasPositiveLabel = selectedLabel ? isPositiveOptionSelection(selectedLabel) : false;
+  const selectionClass = selectedLabel ? classifyOptionSelection(selectedLabel) : "unknown";
 
   let selected = false;
-  if (explicitEnabled === true) {
-    selected = selectedLabel ? hasPositiveLabel : true;
+  if (selectionClass === "positive") {
+    selected = true;
+  } else if (selectionClass === "negative") {
+    selected = false;
   } else if (explicitEnabled === false) {
     selected = false;
-  } else if (selectedLabel) {
-    selected = hasPositiveLabel;
   } else {
     selected = enabledSet.has(canonical);
   }
 
   let displayLabel = selectedLabel;
-  if (explicitEnabled === false && (!displayLabel || hasPositiveLabel)) {
+  if (explicitEnabled === false && (!displayLabel || selectionClass === "positive")) {
     displayLabel = resolveFallbackSelectionLabel(canonical, false);
-  } else if (explicitEnabled === true && !displayLabel) {
-    displayLabel = resolveFallbackSelectionLabel(canonical, true);
   } else if (!displayLabel) {
     displayLabel = resolveFallbackSelectionLabel(canonical, selected);
-  } else if (selected && hasNegativeLabel) {
-    displayLabel = resolveFallbackSelectionLabel(canonical, false);
-    selected = false;
   }
 
   return {
@@ -254,9 +263,11 @@ function resolveSelectionState(option: OrderContextOptionLike, canonical: string
 
 function scoreSelection(selection: BusinessOptionSelection, option: OrderContextOptionLike): number {
   const explicitEnabled = parseBoolish(option.enabled);
+  const selectionClass = selection.selectedLabel ? classifyOptionSelection(selection.selectedLabel) : "unknown";
   let score = selection.selected ? 10 : 0;
-  if (explicitEnabled === true) score += 6;
+  if (selectionClass !== "unknown") score += 8;
   if (explicitEnabled === false) score += 4;
+  if (explicitEnabled === true && selectionClass !== "unknown") score += 2;
   if (selection.selectedLabel) score += 2;
   return score;
 }
