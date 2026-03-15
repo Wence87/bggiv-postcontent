@@ -304,7 +304,7 @@ export function PostsCalendar({
             <>
               <p className="mt-2 font-medium">Selected hour</p>
               <p className="text-muted-foreground">
-                {selectedDayKey} {String(selectedHour).padStart(2, "0")}:00 ({statusLabel(inspectedHourStatus)})
+                {String(selectedHour).padStart(2, "0")}:00 ({statusLabel(inspectedHourStatus)})
               </p>
             </>
           ) : null}

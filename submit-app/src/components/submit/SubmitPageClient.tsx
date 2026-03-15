@@ -424,44 +424,6 @@ function hasOption(enabledOptions: string[], optionKey: string): boolean {
   });
 }
 
-function toTitleFromKey(raw: string): string {
-  return raw
-    .replace(/_/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(/\b\w/g, (m) => m.toUpperCase());
-}
-
-function extractWeeksLabel(value: string): string | null {
-  const normalized = value.toLowerCase().trim();
-  const weekMatch = /([1-4])\s*week/.exec(normalized);
-  if (weekMatch) {
-    const weeks = Number(weekMatch[1]);
-    return `${weeks} Week${weeks > 1 ? "s" : ""}`;
-  }
-  const dayMatch = /(7|14|21|28)\s*day/.exec(normalized);
-  if (dayMatch) {
-    const weeks = Number(dayMatch[1]) / 7;
-    return `${weeks} Week${weeks > 1 ? "s" : ""}`;
-  }
-  return null;
-}
-
-function extractDaysLabel(value: string): string | null {
-  const normalized = value.toLowerCase().trim();
-  const dayMatch = /(1|2|3|4|5|6|7|14|21|28)\s*day/.exec(normalized);
-  if (dayMatch) {
-    const days = Number(dayMatch[1]);
-    return `${days} Day${days > 1 ? "s" : ""}`;
-  }
-  const weekMatch = /([1-4])\s*week/.exec(normalized);
-  if (weekMatch) {
-    const days = Number(weekMatch[1]) * 7;
-    return `${days} Days`;
-  }
-  return null;
-}
-
 function stripTrailingPriceFragment(value: string): string {
   const decodedDollar = value.replace(/&#0*36;|&dollar;/gi, "$").replace(/&nbsp;/gi, " ");
   return decodedDollar.replace(/\s*\(\s*\+?\s*\$?\s*[\d\s.,]+(?:\s*[A-Za-z]{3})?\s*\)\s*$/u, "").trim();
@@ -477,9 +439,10 @@ function decodeBasicHtmlEntities(value: string): string {
     .replace(/&nbsp;|&#0*160;/gi, " ");
 }
 
-function normalizeSocialBoostValue(value: string): string {
-  const decoded = decodeBasicHtmlEntities(value).replace(/\s+/g, " ").trim();
-  return decoded.replace(/\bX\s*&\s*TikTok\b/gi, "X, TikTok");
+function normalizeOptionSelectionLabel(value: string): string {
+  const normalized = stripTrailingPriceFragment(decodeBasicHtmlEntities(value).replace(/\s+/g, " ").trim());
+  if (!normalized) return "";
+  return normalized.replace(/\bX\s*&\s*TikTok\b/gi, "X & TikTok");
 }
 
 function resolvePostBodyMaxLength(derivedValues: Record<string, unknown>, enabledOptions: string[]): number | null {
@@ -963,13 +926,8 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
     currentContext.order?.order_id ??
     (typeof currentContext.order?.id === "number" ? String(currentContext.order.id) : null);
   const destinationRequiredMessage = "You must select at least one destination where the prize can be shipped.";
-  const activeOptionSummaries = (() => {
+  const optionSummaries = (() => {
     const options = Array.isArray(currentContext.options) ? currentContext.options : [];
-    const enabledKeys = new Set(
-      (currentContext.enabled_options ?? [])
-        .filter((v): v is string => typeof v === "string")
-        .map((v) => normalizeOptionKey(v))
-    );
     const labelByCanonical: Record<string, string> = {
       audience_amplifier: "Audience Amplifier",
       duration: "Duration",
@@ -1021,76 +979,11 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
       return normalized;
     };
 
-    const resolveValue = (canonical: string, option: { selected_value?: string | null; selected_value_en?: string | null }): string => {
-      const selectedEn = decodeBasicHtmlEntities((option.selected_value_en ?? "").trim());
-      if (selectedEn) {
-        return stripTrailingPriceFragment(selectedEn);
-      }
-
-      const rawSelected = stripTrailingPriceFragment(decodeBasicHtmlEntities((option.selected_value ?? "").trim()));
-      const normalizedRaw = rawSelected.toLowerCase();
-
-      if (canonical === "duration") {
-        if (rawSelected) {
-          const fromRaw = extractWeeksLabel(rawSelected);
-          if (fromRaw) return fromRaw;
-        }
-        if (derivedGiveawayDurationDaysUsed) {
-          const weeks = Math.max(1, Math.round(derivedGiveawayDurationDaysUsed / 7));
-          return `${weeks} Week${weeks > 1 ? "s" : ""}`;
-        }
-        return "";
-      }
-
-      if (canonical === "extended_text_limit") {
-        if (normalizedRaw.includes("no character limit") || normalizedRaw.includes("unlimited") || normalizedRaw.includes("illimité")) {
-          return "No character limit";
-        }
-        return "No character limit";
-      }
-
-      if (canonical === "additional_images") {
-        return "Up to 3 additional images";
-      }
-
-      if (canonical === "hero_grid" || canonical === "sticky_post" || canonical === "sidebar_spotlight") {
-        if (rawSelected) {
-          const fromRaw = extractDaysLabel(rawSelected);
-          if (fromRaw) return fromRaw;
-        }
-        return "Enabled";
-      }
-
-      if (canonical === "audience_amplifier") {
-        if (rawSelected && !/^\d+$/.test(rawSelected)) return toTitleFromKey(rawSelected);
-        return "Enabled";
-      }
-
-      if (canonical === "social_boost") {
-        if (rawSelected && !/^\d+$/.test(rawSelected)) return normalizeSocialBoostValue(rawSelected);
-        return "Enabled";
-      }
-
-      if (canonical === "embedded_video" || canonical === "weekly_newsletter_feature") {
-        return "Enabled";
-      }
-
-      if (rawSelected && !/^\d+$/.test(rawSelected)) {
-        if (normalizedRaw.includes("de ") && normalizedRaw.includes("jour")) return "Enabled";
-        if (normalizedRaw.includes("illimité")) return "No character limit";
-        return rawSelected;
-      }
-
-      return "Enabled";
-    };
-
     for (const option of options) {
-      const optionNorm = normalizeOptionKey(option.option_key);
-      if (!Boolean(option.enabled) && !enabledKeys.has(optionNorm)) continue;
       const canonical = option.canonical_key ? toCanonical(option.canonical_key) : toCanonical(option.option_key);
       if (!canonical || summaryByCanonical.has(canonical)) continue;
       if (!labelByCanonical[canonical]) continue;
-      const value = resolveValue(canonical, option);
+      const value = normalizeOptionSelectionLabel(option.selected_value_en ?? option.selected_value ?? "");
       if (!value) continue;
       summaryByCanonical.set(canonical, {
         key: canonical,
@@ -1137,17 +1030,13 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
     setFileValues((previous) => ({ ...previous, [key]: file }));
   }
 
-  function setBoundedNumberFieldValue(key: string, raw: string, min?: number, max?: number) {
+  function setIntegerFieldValue(key: string, raw: string) {
     if (raw.trim() === "") {
       setFieldValue(key, "");
       return;
     }
-    const numeric = Number(raw);
-    if (!Number.isFinite(numeric)) return;
-    let bounded = numeric;
-    if (typeof min === "number" && bounded < min) bounded = min;
-    if (typeof max === "number" && bounded > max) bounded = max;
-    setFieldValue(key, String(Math.trunc(bounded)));
+    const digitsOnly = raw.replace(/[^0-9]/g, "");
+    setFieldValue(key, digitsOnly);
   }
 
   function buildReservationPayload(): ReservationChoice | null {
@@ -1384,7 +1273,7 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
 
       if (field.type === "number" && values[field.key]) {
         const numeric = Number(values[field.key]);
-        if (!Number.isFinite(numeric)) {
+        if (!Number.isFinite(numeric) || !Number.isInteger(numeric) || numeric < 0) {
           setValidationError(`Invalid number: ${field.label}`);
           return false;
         }
@@ -1720,13 +1609,12 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
           <Input
             id={field.key}
             name={field.key}
-            type="number"
-            min={field.min}
-            max={field.max}
-            step={1}
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
             required={Boolean(field.required)}
             value={values[field.key] ?? ""}
-            onChange={(event) => setBoundedNumberFieldValue(field.key, event.target.value, field.min, field.max)}
+            onChange={(event) => setIntegerFieldValue(field.key, event.target.value)}
           />
           {field.key === "prize_unit_value_usd" ? (
             <p className="text-xs text-muted-foreground">Minimum value: $10.</p>
@@ -1906,6 +1794,10 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
 
   return (
     <div className="space-y-6">
+      <section className="rounded-md border border-emerald-200 bg-emerald-50 p-4">
+        <h2 className="text-2xl font-bold tracking-tight text-emerald-700">Thank you for your order</h2>
+      </section>
+
       <section className="rounded-md border bg-white p-4">
         <div className="flex items-center justify-between">
           <h2 className="text-base font-semibold">Submission Context</h2>
@@ -1916,11 +1808,11 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
         {resolvedOrderNumber ? (
           <p className="text-sm text-muted-foreground">Order number: {resolvedOrderNumber}</p>
         ) : null}
-        {activeOptionSummaries.length > 0 ? (
+        {optionSummaries.length > 0 ? (
           <div className="mt-3 rounded-md border bg-slate-50 p-3">
-            <p className="text-xs font-semibold text-slate-700">Purchased options</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-700">Options</p>
             <div className="mt-2 grid gap-1 sm:grid-cols-2">
-              {activeOptionSummaries.map((item) => (
+              {optionSummaries.map((item) => (
                 <p key={item.key} className="text-xs text-muted-foreground">
                   <span className="font-medium text-slate-700">{item.label}:</span> {item.value}
                 </p>
