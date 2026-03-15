@@ -947,6 +947,7 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
     key: entry.key,
     label: entry.label,
     value: entry.selectedLabel,
+    selected: entry.selected,
   }));
   const getGroupSelectionState = (countries: string[]) => {
     if (!countries.length) return "none" as const;
@@ -1781,7 +1782,10 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
             <div className="mt-2 grid gap-1 sm:grid-cols-2">
               {optionSummaries.map((item) => (
                 <p key={item.key} className="text-xs text-muted-foreground">
-                  <span className="font-medium text-slate-700">{item.label}:</span> {item.value}
+                  <span className="font-medium text-slate-700">{item.label}:</span>{" "}
+                  <span className={item.selected ? "font-medium text-emerald-800" : "font-medium text-red-800"}>
+                    {item.value}
+                  </span>
                 </p>
               ))}
             </div>

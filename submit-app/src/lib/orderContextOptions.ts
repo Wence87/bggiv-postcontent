@@ -25,6 +25,11 @@ export type BusinessOptionSelection = {
   selected: boolean;
 };
 
+type CanonicalOptionCopy = {
+  positive: string;
+  negative: string;
+};
+
 const OPTION_LABELS: Record<string, string> = {
   audience_amplifier: "Audience Amplifier",
   duration: "Duration",
@@ -51,17 +56,80 @@ const DISPLAY_ORDER = [
   "weekly_newsletter_feature",
 ];
 
+const OPTION_COPY: Record<string, CanonicalOptionCopy> = {
+  audience_amplifier: {
+    positive: "I need extra engagement.",
+    negative: "I don't need extra engagement.",
+  },
+  duration: {
+    positive: "4 Weeks",
+    negative: "1 Week",
+  },
+  social_boost: {
+    positive: "Social Boost on FB, Insta, X & TikTok",
+    negative: "Not selected",
+  },
+  hero_grid: {
+    positive: "Feature my giveaway in the Hero Grid.",
+    negative: "Do not feature my giveaway.",
+  },
+  sticky_post: {
+    positive: "Pin my giveaway.",
+    negative: "Do not pin my giveaway.",
+  },
+  sidebar_spotlight: {
+    positive: "Highlight my giveaway in the sidebar spotlight.",
+    negative: "Do not highlight my giveaway.",
+  },
+  extended_text_limit: {
+    positive: "No character limit.",
+    negative: "I limit my post to 1,000 characters.",
+  },
+  additional_images: {
+    positive: "I enrich my post with up to three additional images.",
+    negative: "I use the cover image only.",
+  },
+  embedded_video: {
+    positive: "I enhance my post with an embedded video.",
+    negative: "I do not include an embedded video.",
+  },
+  weekly_newsletter_feature: {
+    positive: "I feature my giveaway in the weekly newsletter.",
+    negative: "I do not feature my giveaway in the weekly newsletter.",
+  },
+};
+
 const NEGATIVE_SELECTION_PATTERNS = [
   "i do not",
+  "i don't",
   "not selected",
+  "do not pin",
+  "do not feature",
+  "do not highlight",
+  "i use the cover image only",
   "no sticky post",
   "cover image only",
   "limit my post to 1,000 characters",
+  "i don't need extra engagement",
   "not include",
   "without",
   "none",
   "aucun",
   "pas ",
+];
+
+const POSITIVE_SELECTION_PATTERNS = [
+  "no character limit",
+  "unlimited",
+  "up to three additional images",
+  "up to 3 additional images",
+  "embedded video",
+  "feature my giveaway in the weekly newsletter",
+  "social boost on",
+  "4 week",
+  "multi-action",
+  "pin my giveaway",
+  "highlight my giveaway",
 ];
 
 export function normalizeOptionKey(value: string): string {
@@ -125,7 +193,72 @@ export function canonicalizeBusinessOptionKey(rawKey: string): string {
 export function isPositiveOptionSelection(value: string): boolean {
   const normalized = normalizeOptionSelectionLabel(value).toLowerCase();
   if (!normalized) return false;
+  if (NEGATIVE_SELECTION_PATTERNS.some((pattern) => normalized.includes(pattern))) return false;
+  if (POSITIVE_SELECTION_PATTERNS.some((pattern) => normalized.includes(pattern))) return true;
   return !NEGATIVE_SELECTION_PATTERNS.some((pattern) => normalized.includes(pattern));
+}
+
+function parseBoolish(value: unknown): boolean | null {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return null;
+  if (["true", "yes", "enabled", "1", "on"].includes(normalized)) return true;
+  if (["false", "no", "disabled", "0", "off"].includes(normalized)) return false;
+  return null;
+}
+
+function resolveFallbackSelectionLabel(canonical: string, selected: boolean): string {
+  const copy = OPTION_COPY[canonical];
+  if (!copy) return selected ? "Selected" : "Not selected";
+  return selected ? copy.positive : copy.negative;
+}
+
+function resolveSelectionState(option: OrderContextOptionLike, canonical: string, enabledSet: Set<string>): BusinessOptionSelection | null {
+  const selectedLabel = normalizeOptionSelectionLabel(option.selected_value_en ?? option.selected_value ?? "");
+  const explicitEnabled = parseBoolish(option.enabled);
+  const hasNegativeLabel = selectedLabel ? !isPositiveOptionSelection(selectedLabel) : false;
+  const hasPositiveLabel = selectedLabel ? isPositiveOptionSelection(selectedLabel) : false;
+
+  let selected = false;
+  if (explicitEnabled === true) {
+    selected = selectedLabel ? hasPositiveLabel : true;
+  } else if (explicitEnabled === false) {
+    selected = false;
+  } else if (selectedLabel) {
+    selected = hasPositiveLabel;
+  } else {
+    selected = enabledSet.has(canonical);
+  }
+
+  let displayLabel = selectedLabel;
+  if (explicitEnabled === false && (!displayLabel || hasPositiveLabel)) {
+    displayLabel = resolveFallbackSelectionLabel(canonical, false);
+  } else if (explicitEnabled === true && !displayLabel) {
+    displayLabel = resolveFallbackSelectionLabel(canonical, true);
+  } else if (!displayLabel) {
+    displayLabel = resolveFallbackSelectionLabel(canonical, selected);
+  } else if (selected && hasNegativeLabel) {
+    displayLabel = resolveFallbackSelectionLabel(canonical, false);
+    selected = false;
+  }
+
+  return {
+    key: canonical,
+    label: option.display_label && option.display_label.trim() ? option.display_label.trim() : OPTION_LABELS[canonical],
+    selectedLabel: displayLabel,
+    selected,
+  };
+}
+
+function scoreSelection(selection: BusinessOptionSelection, option: OrderContextOptionLike): number {
+  const explicitEnabled = parseBoolish(option.enabled);
+  let score = selection.selected ? 10 : 0;
+  if (explicitEnabled === true) score += 6;
+  if (explicitEnabled === false) score += 4;
+  if (selection.selectedLabel) score += 2;
+  return score;
 }
 
 function socialBoostAutoSelection(productType?: string): BusinessOptionSelection | null {
@@ -140,27 +273,31 @@ function socialBoostAutoSelection(productType?: string): BusinessOptionSelection
 
 export function extractBusinessOptionSelections(context: OrderContextLike): BusinessOptionSelection[] {
   const map = new Map<string, BusinessOptionSelection>();
+  const scores = new Map<string, number>();
   const options = Array.isArray(context.options) ? context.options : [];
+  const enabledSet = new Set(
+    (Array.isArray(context.enabled_options) ? context.enabled_options : []).map((entry) => canonicalizeBusinessOptionKey(entry))
+  );
 
   for (const option of options) {
     const rawKey = option.canonical_key || option.option_key || "";
     const canonical = canonicalizeBusinessOptionKey(rawKey);
-    if (!OPTION_LABELS[canonical] || map.has(canonical)) continue;
+    if (!OPTION_LABELS[canonical]) continue;
 
-    const selectedLabel = normalizeOptionSelectionLabel(option.selected_value_en ?? option.selected_value ?? "");
-    if (!selectedLabel) continue;
-
-    map.set(canonical, {
-      key: canonical,
-      label: option.display_label && option.display_label.trim() ? option.display_label.trim() : OPTION_LABELS[canonical],
-      selectedLabel,
-      selected: isPositiveOptionSelection(selectedLabel),
-    });
+    const resolved = resolveSelectionState(option, canonical, enabledSet);
+    if (!resolved) continue;
+    const score = scoreSelection(resolved, option);
+    const previousScore = scores.get(canonical) ?? Number.NEGATIVE_INFINITY;
+    if (score >= previousScore) {
+      map.set(canonical, resolved);
+      scores.set(canonical, score);
+    }
   }
 
   const socialBoost = socialBoostAutoSelection(context.product?.product_type);
   if (socialBoost && !map.has("social_boost")) {
     map.set("social_boost", socialBoost);
+    scores.set("social_boost", 100);
   }
 
   return DISPLAY_ORDER.map((key) => map.get(key)).filter((entry): entry is BusinessOptionSelection => Boolean(entry));
