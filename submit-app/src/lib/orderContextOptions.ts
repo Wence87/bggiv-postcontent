@@ -132,6 +132,13 @@ const POSITIVE_SELECTION_PATTERNS = [
   "highlight my giveaway",
 ];
 
+const PESSIMISTIC_OPTION_KEYS = new Set([
+  "extended_text_limit",
+  "additional_images",
+  "embedded_video",
+  "weekly_newsletter_feature",
+]);
+
 export function normalizeOptionKey(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
@@ -234,11 +241,14 @@ function resolveSelectionState(option: OrderContextOptionLike, canonical: string
   const selectedLabel = normalizeOptionSelectionLabel(option.selected_value_en ?? option.selected_value ?? "");
   const explicitEnabled = parseBoolish(option.enabled);
   const selectionClass = selectedLabel ? classifyOptionSelection(selectedLabel) : "unknown";
+  const requiresNegativeDefault = PESSIMISTIC_OPTION_KEYS.has(canonical);
 
   let selected = false;
   if (selectionClass === "positive") {
     selected = true;
   } else if (selectionClass === "negative") {
+    selected = false;
+  } else if (requiresNegativeDefault) {
     selected = false;
   } else if (explicitEnabled === false) {
     selected = false;
@@ -249,6 +259,9 @@ function resolveSelectionState(option: OrderContextOptionLike, canonical: string
   let displayLabel = selectedLabel;
   if (explicitEnabled === false && (!displayLabel || selectionClass === "positive")) {
     displayLabel = resolveFallbackSelectionLabel(canonical, false);
+  } else if (requiresNegativeDefault && selectionClass !== "positive") {
+    displayLabel = resolveFallbackSelectionLabel(canonical, false);
+    selected = false;
   } else if (!displayLabel) {
     displayLabel = resolveFallbackSelectionLabel(canonical, selected);
   }
