@@ -1954,6 +1954,43 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
 
                 {isGiveaway ? (
                   <>
+                    {hasAudienceAmplifier ? (
+                      <div className="rounded-md border bg-slate-50 p-4 space-y-3">
+                        <h4 className="text-sm font-semibold">AUDIENCE AMPLIFIER</h4>
+                        <p className="text-xs text-muted-foreground">
+                          Configure the Multi-Action Entry interactions for this giveaway.
+                        </p>
+                        <div className="space-y-3">
+                          {AUDIENCE_AMPLIFIER_FIELDS.map((field) => (
+                            <div key={field.key} className="rounded-md border bg-white p-3 space-y-2">
+                              <p className="text-sm font-semibold">{field.title}</p>
+                              <p className="text-xs text-muted-foreground">{field.helper}</p>
+                              {field.type === "url" ? (
+                                <Input
+                                  id={field.key}
+                                  name={field.key}
+                                  type="url"
+                                  required={field.key !== "audience_amplifier_referral_target_url"}
+                                  value={values[field.key] ?? ""}
+                                  onChange={(event) => setFieldValue(field.key, event.target.value)}
+                                />
+                              ) : (
+                                <textarea
+                                  id={field.key}
+                                  name={field.key}
+                                  required
+                                  value={values[field.key] ?? ""}
+                                  onChange={(event) => setFieldValue(field.key, event.target.value)}
+                                  className="w-full rounded-md border px-3 py-2 text-sm"
+                                  rows={3}
+                                />
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+
                     <div className="rounded-md border bg-slate-50 p-4 space-y-3">
                       <h4 className="text-sm font-semibold">DISTRIBUTION / ELIGIBILITY</h4>
                       <p className="text-xs text-muted-foreground">Select where you can ship the giveaway prize.</p>
@@ -2078,43 +2115,6 @@ export function SubmitPageClient({ token, diag = false }: SubmitPageClientProps)
                         })}
                       </div>
                     </div>
-
-                    {hasAudienceAmplifier ? (
-                      <div className="rounded-md border bg-slate-50 p-4 space-y-3">
-                        <h4 className="text-sm font-semibold">AUDIENCE AMPLIFIER</h4>
-                        <p className="text-xs text-muted-foreground">
-                          Configure the Multi-Action Entry interactions for this giveaway.
-                        </p>
-                        <div className="space-y-3">
-                          {AUDIENCE_AMPLIFIER_FIELDS.map((field) => (
-                            <div key={field.key} className="rounded-md border bg-white p-3 space-y-2">
-                              <p className="text-sm font-semibold">{field.title}</p>
-                              <p className="text-xs text-muted-foreground">{field.helper}</p>
-                              {field.type === "url" ? (
-                                <Input
-                                  id={field.key}
-                                  name={field.key}
-                                  type="url"
-                                  required={field.key !== "audience_amplifier_referral_target_url"}
-                                  value={values[field.key] ?? ""}
-                                  onChange={(event) => setFieldValue(field.key, event.target.value)}
-                                />
-                              ) : (
-                                <textarea
-                                  id={field.key}
-                                  name={field.key}
-                                  required
-                                  value={values[field.key] ?? ""}
-                                  onChange={(event) => setFieldValue(field.key, event.target.value)}
-                                  className="w-full rounded-md border px-3 py-2 text-sm"
-                                  rows={3}
-                                />
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
                   </>
                 ) : null}
 
